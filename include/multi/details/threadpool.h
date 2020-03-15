@@ -19,30 +19,31 @@
 
 namespace multi
 {
-    class ThreadPool
-    {
-        public:
-			using function = std::function<void()>;
+	class ThreadPool
+	{
+	public:
+		using function = std::function<void()>;
 
-			ThreadPool() = default;
-			~ThreadPool();
+		ThreadPool() = default;
+		ThreadPool(const ThreadPool&) = delete;
+		~ThreadPool();
 
-            void start(size_t threadCount = std::thread::hardware_concurrency());
-            void stop();
+		void start(size_t threadCount = std::thread::hardware_concurrency());
+		void stop();
 
-            void queue(function&& func);
-            size_t threadCount() const;
+		void queue(function&& func);
+		size_t threadCount() const;
 
-        private:
-            void threadMain();
+	private:
+		void threadMain();
 
-        private:
-            std::vector<std::thread> m_threads;
-            multi::Queue<function> m_queue;
-            multi::NullLock m_lock;
-            std::condition_variable_any m_sync;
-            std::atomic<bool> m_active{ false };
-    };
-}
+	private:
+		std::vector<std::thread> m_threads;
+		multi::Queue<function> m_queue;
+		multi::NullLock m_lock;
+		std::condition_variable_any m_sync;
+		std::atomic<bool> m_active{false};
+	};
+} // namespace multi
 
 #endif // _MULTI_THREADPOOL_H_

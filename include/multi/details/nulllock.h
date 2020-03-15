@@ -11,12 +11,12 @@
 
 namespace multi
 {
-    class NullLock
-    {
-        public:
-            inline void lock() {}
-            inline void unlock() {}
-    };
-}
+	class NullLock
+	{
+	public:
+		inline void lock() {}
+		inline void unlock() {}
+	};
+} // namespace multi
 
 #endif // _MULTI_NULLLOCK_H_

@@ -18,14 +18,14 @@ namespace multi
 	class Queue
 	{
 	public:
-		inline void push(const T &value)
+		inline void push(const T& value)
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			m_queue.push(value);
 		}
 
 		template <typename... ARGS>
-		void emplace(ARGS &&... args)
+		void emplace(ARGS&&... args)
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			m_queue.emplace(std::forward<ARGS>(args)...);
@@ -37,7 +37,7 @@ namespace multi
 			return m_queue.empty();
 		}
 
-		inline bool pop(T *value)
+		inline bool pop(T* value)
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			if (!m_queue.empty())
