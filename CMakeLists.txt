@@ -21,8 +21,12 @@ option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/details/queue.h
+
     # Source
+    src/dummy.cpp
 )
+target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_link_libraries(${PROJECT_NAME}
     Threads::Threads
 )
