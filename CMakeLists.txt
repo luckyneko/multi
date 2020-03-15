@@ -21,15 +21,16 @@ option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
-    include/details/queue.h
+    include/multi/details/nulllock.h
+    include/multi/details/queue.h
+    include/multi/details/threadpool.h
 
     # Source
-    src/dummy.cpp
+    src/threadpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_link_libraries(${PROJECT_NAME}
-    Threads::Threads
-)
+target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall
 	-Wextra
