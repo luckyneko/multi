@@ -5,6 +5,15 @@
 
 namespace multi
 {
+	ThreadPool::ThreadPool()
+		: m_threads()
+		, m_queue()
+		, m_lock()
+		, m_sync()
+		, m_active(false)
+	{
+	}
+
 	ThreadPool::~ThreadPool()
 	{
 		assert(m_threads.size() == 0);
@@ -33,7 +42,7 @@ namespace multi
 		m_threads.clear();
 	}
 
-	void ThreadPool::queue(std::function<void()>&& func)
+	void ThreadPool::queue(multi::Function&& func)
 	{
 		if (m_active)
 		{
@@ -54,15 +63,15 @@ namespace multi
 	void ThreadPool::threadMain()
 	{
 		std::unique_lock<NullLock> lk(m_lock);
-		std::function<void()> task;
+		multi::Function func;
 		while (m_active)
 		{
 			m_sync.wait_for(lk, std::chrono::seconds(1), [&]() { return !m_active || !m_queue.empty(); });
-			while (m_queue.pop(&task))
+			while (m_queue.pop(&func))
 			{
-				if (task)
-					task();
-				task = nullptr;
+				if (func)
+					func();
+				func = nullptr;
 			}
 		}
 	}

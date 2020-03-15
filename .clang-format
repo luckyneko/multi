@@ -12,6 +12,8 @@ UseTab: Always
 Language: Cpp
 AccessModifierOffset: -4
 AllowShortIfStatementsOnASingleLine: false
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
 BreakBeforeBraces: Allman
 IndentCaseLabels: true
 IndentPPDirectives: AfterHash

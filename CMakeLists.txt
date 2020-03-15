@@ -21,6 +21,7 @@ option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/multi/details/function.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
