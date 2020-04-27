@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch.hpp>
 
+#include "multi/details/jobnode.h"
 #include "multi/details/queue.h"
 #include "multi/details/threadpool.h"
 
@@ -64,4 +65,47 @@ TEST_CASE("Test ThreadPool", "[threadpool]")
 		testPool.stop();
 		REQUIRE(testPool.threadCount() == 0);
 	}
+}
+
+TEST_CASE("Test JobNode", "[jobnode]")
+{
+	int value = 0; 
+	auto func = [&value](){ ++value; };
+	multi::JobNode* parent = new multi::JobNode(
+		func, 
+		new multi::JobNode(
+			func, 
+			new multi::JobNode(func)
+		)
+	);
+	multi::JobNode* childA = new multi::JobNode(parent, func);
+	multi::JobNode* childB = new multi::JobNode(parent, func);
+
+	auto next = parent->run();
+	CHECK(value == 1);
+	REQUIRE(next == nullptr);
+
+	next = childA->run();
+	CHECK(value == 2);
+	REQUIRE(next == parent);
+
+	next = next->run();
+	CHECK(value == 2);
+	REQUIRE(next == nullptr);
+
+	next = childB->run();
+	CHECK(value == 3);
+	REQUIRE(next == parent);
+
+	next = next->run();
+	CHECK(value == 3);
+	REQUIRE(next != nullptr);
+
+	next = next->run();
+	CHECK(value == 4);
+	REQUIRE(next != nullptr);
+
+	next = next->run();
+	CHECK(value == 5);
+	CHECK(next == nullptr);
 }

@@ -22,11 +22,13 @@ find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
     include/multi/details/function.h
+    include/multi/details/jobnode.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
 
     # Source
+    src/jobnode.cpp
     src/threadpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
