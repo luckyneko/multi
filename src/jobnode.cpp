@@ -1,4 +1,5 @@
 #include "multi/details/jobnode.h"
+#include <assert.h>
 
 namespace multi
 {

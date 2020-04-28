@@ -10,6 +10,7 @@
 #define _MULTI_JOBNODE_H_
 
 #include "multi/details/function.h"
+#include <atomic>
 
 namespace multi
 {
