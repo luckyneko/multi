@@ -16,8 +16,6 @@ namespace multi
 	class JobNode
 	{
 	public:
-		JobNode();
-		JobNode(multi::Function&& task, multi::JobNode* next = nullptr);
 		JobNode(multi::JobNode* parent, multi::Function&& task, multi::JobNode* next = nullptr);
 		JobNode(const JobNode&) = delete;
 		~JobNode() = default;

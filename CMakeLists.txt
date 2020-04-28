@@ -22,19 +22,25 @@ find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
     include/multi/details/function.h
+    include/multi/details/handle.h
     include/multi/details/jobnode.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
+    include/multi/context.h
+    include/multi/multi.h
 
     # Source
+    src/context.cpp
     src/jobnode.cpp
+    src/multi.cpp
     src/threadpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 target_compile_options(${PROJECT_NAME} PRIVATE
+    -Werror
     -Wall
 	-Wextra
 )
@@ -47,5 +53,5 @@ if(MULTI_BUILD_TESTING)
         test/main.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
-    catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "${PROJECT_NAME} :")
+    catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
 endif()

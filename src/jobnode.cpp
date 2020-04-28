@@ -2,24 +2,6 @@
 
 namespace multi
 {
-	JobNode::JobNode()
-		: m_parent(nullptr)
-		, m_func()
-		, m_numChildren(0)
-		, m_state(State::NONE)
-		, m_next(nullptr)
-	{
-	}
-
-	JobNode::JobNode(multi::Function&& task, multi::JobNode* next)
-		: m_parent(nullptr)
-		, m_func(std::move(task))
-		, m_numChildren(0)
-		, m_state(State::NONE)
-		, m_next(next)
-	{
-	}
-
 	JobNode::JobNode(multi::JobNode* parent, multi::Function&& task, multi::JobNode* next)
 		: m_parent(parent)
 		, m_func(std::move(task))
@@ -27,7 +9,8 @@ namespace multi
 		, m_state(State::NONE)
 		, m_next(next)
 	{
-		m_parent->m_numChildren++;
+		if(m_parent)
+			m_parent->m_numChildren++;
 	}
 
 	multi::JobNode* JobNode::run()
@@ -42,9 +25,7 @@ namespace multi
 			if (m_func)
 				m_func();
 			m_func = nullptr;
-
-			State runState = State::RUNNING;
-			m_state.compare_exchange_strong(runState, State::WAITING);
+			m_state =State::WAITING;
 		}
 
 		// Complete Node when all children complete
