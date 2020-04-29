@@ -39,11 +39,12 @@ add_library(${PROJECT_NAME} STATIC
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
-target_compile_options(${PROJECT_NAME} PRIVATE
-    -Werror
-    -Wall
-	-Wextra
-)
+if(MSVC)
+    string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    target_compile_options(${PROJECT_NAME} PRIVATE /WX /W4)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -Werror -Wall -Wextra)
+endif()
 
 # Testing Target
 if(MULTI_BUILD_TESTING)
