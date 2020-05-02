@@ -1,6 +1,6 @@
 /*
  *  Created by LuckyNeko on 27/04/2020.
- *  Copyright 2013 LuckyNeko
+ *  Copyright 2020 LuckyNeko
  *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
