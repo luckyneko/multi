@@ -16,6 +16,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Options
 option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
+option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 
 # Static Library Target
 find_package(Threads REQUIRED)
@@ -55,4 +56,10 @@ if(MULTI_BUILD_TESTING)
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
+endif()
+
+# Benchmark Target
+if(MULTI_BUILD_BENCHMARK)
+    add_executable(bench-${PROJECT_NAME} benchmark/main.cpp )
+    target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME})
 endif()
