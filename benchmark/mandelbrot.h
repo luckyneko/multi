@@ -12,6 +12,9 @@
 #include "graph.h"
 #include "utils.h"
 
+#include <multi/multi.h>
+#include <vector>
+
 //------------------------------------------------------------------------------
 // Mandelbrot algorithm
 // https://rosettacode.org/wiki/Mandelbrot_set#C
@@ -94,10 +97,10 @@ void mandelbrotStdAsync(Graph& g, double er, int numIter)
 void mandelbrotMulti(Graph& g, double er, int numIter)
 {
 	Graph* gp = &g;
-	multi::async([gp, er, numIter]() {
-		for (int y = 0; y < gp->height(); ++y)
-		{
-			multi::parallel([gp, er, numIter, y]() {
+	multi::async([gp, er, numIter](multi::JobContext& jb) {
+		jb.range(
+			multi::Order::par, 0, gp->height(), 1,
+			[gp, er, numIter](multi::JobContext& jb, int y) {
 				double Cy = gp->getY(y);
 				for (int x = 0; x < gp->width(); ++x)
 				{
@@ -107,7 +110,6 @@ void mandelbrotMulti(Graph& g, double er, int numIter)
 					gp->writeColour(colour, x, y);
 				}
 			});
-		}
 	});
 }
 

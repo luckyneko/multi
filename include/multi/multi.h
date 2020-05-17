@@ -35,33 +35,15 @@ namespace multi
 	}
 
 	// Work functions
-	inline Handle async(Function&& func)
+	inline Handle async(Task&& task)
 	{
-		return context()->async(std::forward<Function>(func));
+		return context()->async(std::forward<Task>(task));
+	}
+	inline Handle async(Job&& job)
+	{
+		return context()->async(std::forward<Job>(job));
 	}
 
-	inline void parallel(Function&& func)
-	{
-		context()->parallel(std::forward<Function>(func));
-	}
-
-	template <typename ITER, typename FUNC>
-	void parallelFor(ITER begin, ITER end, FUNC&& func)
-	{
-		context()->parallelFor(begin, end, std::forward<FUNC>(func));
-	}
-
-	template <typename... FUNCS>
-	void serial(FUNCS... funcs)
-	{
-		context()->serial(std::forward<FUNCS>(funcs)...);
-	}
-
-	template <typename ITER, typename FUNC>
-	void serialFor(ITER begin, ITER end, FUNC&& func)
-	{
-		context()->serialFor(begin, end, std::forward<FUNC>(func));
-	}
 } // namespace multi
 
 #endif // _MULTI_H_

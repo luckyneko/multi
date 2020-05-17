@@ -7,11 +7,13 @@
  */
 
 #include "multi/context.h"
+#include "multi/details/jobnode.h"
+#include "multi/details/threadpool.h"
 
 namespace multi
 {
 	Context::Context()
-		: m_threadPool()
+		: m_threadPool(new ThreadPool())
 	{
 	}
 
@@ -21,45 +23,34 @@ namespace multi
 
 	void Context::start(size_t threadCount)
 	{
-		m_threadPool.start(threadCount);
+		m_threadPool->start(threadCount);
 	}
 
 	void Context::stop()
 	{
-		m_threadPool.stop();
+		m_threadPool->stop();
 	}
 
 	size_t Context::threadCount() const
 	{
-		return m_threadPool.threadCount();
+		return m_threadPool->threadCount();
 	}
 
-	Handle Context::async(Function&& func)
+	Handle Context::async(Task&& task)
 	{
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
-		queueJobNode(allocJobNode(nullptr, std::move(func), [promise]() { promise->set_value(); }));
+		auto promiseNode = new JobNode(nullptr, [promise](JobContext&) { promise->set_value(); });
+		queueJobNode(new JobNode(nullptr, std::move(task), promiseNode));
 		return hdl;
-	}
-
-	JobNode* Context::allocJobNode(JobNode* parent, Function&& func, JobNode* next)
-	{
-		return new JobNode(parent, std::move(func), next);
-	}
-
-	thread_local JobNode* s_activeJob = nullptr;
-	JobNode*& Context::activeJobNode()
-	{
-		return s_activeJob;
 	}
 
 	void Context::queueJobNode(JobNode* node)
 	{
-		m_threadPool.queue([this, node]() {
-			auto& activeNode = activeJobNode();
-			activeNode = node;
+		m_threadPool->queue([this, node]() {
+			auto activeNode = node;
 			while (activeNode != nullptr)
-				activeNode = activeNode->run();
+				activeNode = activeNode->run(this);
 		});
 	}
 } // namespace multi

@@ -50,7 +50,7 @@ namespace multi
 		m_threads.clear();
 	}
 
-	void ThreadPool::queue(multi::Function&& func)
+	void ThreadPool::queue(std::function<void()>&& func)
 	{
 		if (m_active)
 		{
@@ -71,7 +71,7 @@ namespace multi
 	void ThreadPool::threadMain()
 	{
 		std::unique_lock<NullLock> lk(m_lock);
-		multi::Function func;
+		std::function<void()> func;
 		while (m_active)
 		{
 			m_sync.wait_for(lk, std::chrono::seconds(1), [&]() { return !m_active || !m_queue.empty(); });

@@ -9,19 +9,20 @@
 #ifndef _MULTI_JOBNODE_H_
 #define _MULTI_JOBNODE_H_
 
-#include "multi/details/function.h"
+#include "multi/task.h"
 #include <atomic>
 
 namespace multi
 {
+	class Context;
 	class JobNode
 	{
 	public:
-		JobNode(multi::JobNode* parent, multi::Function&& task, multi::JobNode* next = nullptr);
+		JobNode(JobNode* parent, Task&& task, JobNode* next = nullptr);
 		JobNode(const JobNode&) = delete;
 		~JobNode() = default;
 
-		multi::JobNode* run();
+		JobNode* run(Context* context = nullptr);
 
 	private:
 		enum State
@@ -32,11 +33,11 @@ namespace multi
 			COMPLETE
 		};
 
-		multi::JobNode* m_parent;
-		multi::Function m_func;
+		JobNode* m_parent;
+		Task m_func;
 		std::atomic<int> m_numChildren;
 		std::atomic<State> m_state;
-		multi::JobNode* m_next;
+		JobNode* m_next;
 	};
 } // namespace multi
 

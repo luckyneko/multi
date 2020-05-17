@@ -9,7 +9,6 @@
 #ifndef _MULTI_THREADPOOL_H_
 #define _MULTI_THREADPOOL_H_
 
-#include "multi/details/function.h"
 #include "multi/details/nulllock.h"
 #include "multi/details/queue.h"
 
@@ -30,7 +29,7 @@ namespace multi
 		void start(size_t threadCount = std::thread::hardware_concurrency());
 		void stop();
 
-		void queue(multi::Function&& func);
+		void queue(std::function<void()>&& func);
 		size_t threadCount() const;
 
 	private:
@@ -38,8 +37,8 @@ namespace multi
 
 	private:
 		std::vector<std::thread> m_threads;
-		multi::Queue<multi::Function> m_queue;
-		multi::NullLock m_lock;
+		Queue<std::function<void()>> m_queue;
+		NullLock m_lock;
 		std::condition_variable_any m_sync;
 		std::atomic<bool> m_active;
 	};

@@ -7,34 +7,36 @@
  */
 
 #include "multi/details/jobnode.h"
+#include "multi/jobcontext.h"
 #include <assert.h>
 
 namespace multi
 {
-	JobNode::JobNode(multi::JobNode* parent, multi::Function&& task, multi::JobNode* next)
+	JobNode::JobNode(JobNode* parent, Task&& task, JobNode* next)
 		: m_parent(parent)
 		, m_func(std::move(task))
 		, m_numChildren(0)
 		, m_state(State::NONE)
 		, m_next(next)
 	{
-		if(m_parent)
+		if (m_parent)
 			m_parent->m_numChildren++;
 	}
 
-	multi::JobNode* JobNode::run()
+	JobNode* JobNode::run(Context* context)
 	{
-		multi::JobNode* next = nullptr;
+		JobNode* next = nullptr;
 		assert(m_numChildren >= 0);
 
 		// Run Node
 		State noState = State::NONE;
 		if (m_state.compare_exchange_strong(noState, State::RUNNING))
 		{
+			JobContext jobContext(context, this);
 			if (m_func)
-				m_func();
+				m_func(jobContext);
 			m_func = nullptr;
-			m_state =State::WAITING;
+			m_state = State::WAITING;
 		}
 
 		// Complete Node when all children complete

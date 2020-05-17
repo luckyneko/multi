@@ -13,7 +13,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <multi/multi.h>
 #include <string>
 
 using Colour = std::array<float, 3>;

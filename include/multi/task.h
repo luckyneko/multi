@@ -1,20 +1,21 @@
 /*
- *  Created by LuckyNeko on 15/03/2020.
+ *  Created by LuckyNeko on 13/05/2020.
  *  Copyright 2020 LuckyNeko
  *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_FUNCTION_H_
-#define _MULTI_FUNCTION_H_
+#ifndef _MULTI_TASK_H_
+#define _MULTI_TASK_H_
 
 #include <functional>
 
 namespace multi
 {
-	using Function = std::function<void()>;
+	class JobContext;
+	using Task = std::function<void(JobContext&)>;
 
 } // namespace multi
 
-#endif // _MULTI_FUNCTION_H_
+#endif // _MULTI_TASK_H_

@@ -22,17 +22,23 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
-    include/multi/details/function.h
-    include/multi/details/handle.h
+    include/multi/details/jobcontext.inl
     include/multi/details/jobnode.h
+    include/multi/details/meta.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
     include/multi/context.h
+    include/multi/handle.h
+    include/multi/job.h
+    include/multi/jobcontext.h
     include/multi/multi.h
+    include/multi/order.h
+    include/multi/task.h
 
     # Source
     src/context.cpp
+    src/jobcontext.cpp
     src/jobnode.cpp
     src/multi.cpp
     src/threadpool.cpp
@@ -53,6 +59,11 @@ if(MULTI_BUILD_TESTING)
     enable_testing()
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
+        test/context.cpp
+        test/jobcontext.cpp
+        test/jobnode.cpp
+        test/queue.cpp
+        test/threadpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
