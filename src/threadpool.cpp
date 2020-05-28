@@ -74,13 +74,13 @@ namespace multi
 		std::function<void()> func;
 		while (m_active)
 		{
-			m_sync.wait_for(lk, std::chrono::seconds(1), [&]() { return !m_active || !m_queue.empty(); });
-			while (m_queue.pop(&func))
+			m_sync.wait_for(lk, std::chrono::seconds(1), [&]() { return m_queue.pop(&func) || !m_active; });
+			do
 			{
 				if (func)
 					func();
 				func = nullptr;
-			}
+			} while (m_queue.pop(&func));
 		}
 	}
 } // namespace multi
