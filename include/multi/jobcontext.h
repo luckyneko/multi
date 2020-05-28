@@ -19,50 +19,43 @@ namespace multi
 	class Job;
 	class JobNode;
 
+	/*
+	 * JobContext
+	 * Handles adding children tasks to a job
+	 */
 	class JobContext
 	{
 	public:
 		JobContext(Context* context = nullptr, JobNode* parent = nullptr);
 		JobContext(const JobContext&) = delete;
 
+		// Add subtasks to job
 		template <typename... FUNCS>
 		void add(Order order, FUNCS... funcs);
 		void add(Job&& job);
 
+		// Add subtask for each item in iterable
 		template <typename ITER, typename FUNC>
 		void each(Order order, ITER begin, ITER end, FUNC&& func);
 
+		// Add subtask for a range of values
 		template <typename ITER, typename FUNC>
 		void range(Order order, ITER begin, ITER end, ITER step, FUNC&& func);
 
+		// Add subtask to sequentially run function until predicate returns true
 		template <typename FUNC, typename PRED>
 		void until(PRED&& pred, FUNC&& func);
 
 	private:
 		template <typename... TASKS>
-		JobNode* allocJobNode(Task&& task, TASKS... tasks)
-		{
-			return allocJobNode(
-				std::forward<Task>(task),
-				allocJobNode(std::forward<TASKS>(tasks)...));
-		}
+		JobNode* allocJobNode(Task&& task, TASKS... tasks);
 		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
 
 		template <typename... TASKS>
-		void runTasks(TASKS... tasks)
-		{
-			doOnAll([this](Task&& task) { task(*this); }, std::forward<TASKS>(tasks)...);
-		}
+		void runTasks(TASKS... tasks);
 
 		template <typename... TASKS>
-		void queueTasks(TASKS... tasks)
-		{
-			doOnAll([this](Task&& task) {
-				queueJobNode(allocJobNode(std::forward<Task>(task)));
-			},
-					std::forward<TASKS>(tasks)...);
-		}
-
+		void queueTasks(TASKS... tasks);
 		void queueJobNode(JobNode* node);
 
 	private:

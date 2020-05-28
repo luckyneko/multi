@@ -99,3 +99,26 @@ void JobContext::until(PRED&& pred, FUNC&& func)
 		}
 	}
 }
+
+template <typename... TASKS>
+JobNode* JobContext::allocJobNode(Task&& task, TASKS... tasks)
+{
+	return allocJobNode(
+		std::forward<Task>(task),
+		allocJobNode(std::forward<TASKS>(tasks)...));
+}
+
+template <typename... TASKS>
+void JobContext::runTasks(TASKS... tasks)
+{
+	doOnAll([this](Task&& task) { task(*this); }, std::forward<TASKS>(tasks)...);
+}
+
+template <typename... TASKS>
+void JobContext::queueTasks(TASKS... tasks)
+{
+	doOnAll([this](Task&& task) {
+		queueJobNode(allocJobNode(std::forward<Task>(task)));
+	},
+			std::forward<TASKS>(tasks)...);
+}
