@@ -15,6 +15,12 @@
 namespace multi
 {
 	class Context;
+
+	/*
+	* JobNode
+	* A sequential linked-list like job tree.
+	* Can launch parallel children, or sequential next nodes.
+	*/
 	class JobNode
 	{
 	public:
@@ -22,15 +28,18 @@ namespace multi
 		JobNode(const JobNode&) = delete;
 		~JobNode() = default;
 
+		// Run JobNode
+		// If context is nullptr then it will run single threaded
+		// @return next node that needs to run or parent if none.
 		JobNode* run(Context* context = nullptr);
 
 	private:
-		enum State
+		enum class State
 		{
-			NONE,
-			RUNNING,
-			WAITING,
-			COMPLETE
+			none,
+			running,
+			waiting,
+			complete
 		};
 
 		JobNode* m_parent;

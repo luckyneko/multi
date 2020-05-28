@@ -16,7 +16,7 @@ namespace multi
 		: m_parent(parent)
 		, m_func(std::move(task))
 		, m_numChildren(0)
-		, m_state(State::NONE)
+		, m_state(State::none)
 		, m_next(next)
 	{
 		if (m_parent)
@@ -29,19 +29,19 @@ namespace multi
 		assert(m_numChildren >= 0);
 
 		// Run Node
-		State noState = State::NONE;
-		if (m_state.compare_exchange_strong(noState, State::RUNNING))
+		State noState = State::none;
+		if (m_state.compare_exchange_strong(noState, State::running))
 		{
 			JobContext jobContext(context, this);
 			if (m_func)
 				m_func(jobContext);
 			m_func = nullptr;
-			m_state = State::WAITING;
+			m_state = State::waiting;
 		}
 
 		// Complete Node when all children complete
-		State waitState = State::WAITING;
-		if (m_numChildren == 0 && m_state.compare_exchange_strong(waitState, State::COMPLETE))
+		State waitState = State::waiting;
+		if (m_numChildren == 0 && m_state.compare_exchange_strong(waitState, State::complete))
 		{
 			if (m_parent)
 				m_parent->m_numChildren--;
