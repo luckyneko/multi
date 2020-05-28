@@ -8,32 +8,22 @@
 
 #include "multi/context.h"
 #include "multi/details/jobnode.h"
-#include "multi/details/threadpool.h"
 
 namespace multi
 {
-	Context::Context()
-		: m_threadPool(new ThreadPool())
-	{
-	}
-
-	Context::~Context()
-	{
-	}
-
 	void Context::start(size_t threadCount)
 	{
-		m_threadPool->start(threadCount);
+		m_threadPool.start(threadCount);
 	}
 
 	void Context::stop()
 	{
-		m_threadPool->stop();
+		m_threadPool.stop();
 	}
 
 	size_t Context::threadCount() const
 	{
-		return m_threadPool->threadCount();
+		return m_threadPool.threadCount();
 	}
 
 	Handle Context::async(Task&& task)
@@ -47,7 +37,7 @@ namespace multi
 
 	void Context::queueJobNode(JobNode* node)
 	{
-		m_threadPool->queue([this, node]() {
+		m_threadPool.queue([this, node]() {
 			auto activeNode = node;
 			while (activeNode != nullptr)
 				activeNode = activeNode->run(this);
