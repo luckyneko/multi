@@ -60,6 +60,7 @@ if(MULTI_BUILD_TESTING)
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
         test/context.cpp
+        test/job.cpp
         test/jobcontext.cpp
         test/jobnode.cpp
         test/queue.cpp

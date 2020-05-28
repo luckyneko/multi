@@ -13,30 +13,47 @@
 
 namespace multi
 {
+	/*
+	 * Job
+	 * Object to store a task. Will run locally on deletion.
+	 */
 	class Job
 	{
 	public:
-		inline Job(Task&& task) { m_root = std::move(task); }
+		inline Job(Task&& task)
+		{
+			m_root = std::move(task);
+			m_set = true;
+		}
+
 		Job(const Job&) = delete;
-		inline Job(Job&& mv) { m_root = std::move(mv.popTask()); }
+
+		inline Job(Job&& mv)
+		{
+			m_root = std::move(mv.m_root);
+			m_set = mv.m_set;
+			mv.m_set = false;
+		}
+
 		inline ~Job()
 		{
-			if (m_root)
+			if (m_set)
 			{
 				JobContext context;
 				m_root(context);
 			}
 		}
 
+		// Internal use only
 		inline Task&& popTask()
 		{
-			auto t = std::move(m_root);
-			m_root = nullptr;
-			return std::move(t);
+			m_set = false;
+			return std::move(m_root);
 		}
 
 	private:
 		Task m_root;
+		bool m_set;
 	};
 } // namespace multi
 
