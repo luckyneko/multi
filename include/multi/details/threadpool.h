@@ -19,6 +19,10 @@
 
 namespace multi
 {
+	/*
+	 * ThreadPool
+	 * Manage set of threads to run tasks
+	 */
 	class ThreadPool
 	{
 	public:

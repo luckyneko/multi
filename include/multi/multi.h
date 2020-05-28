@@ -43,7 +43,6 @@ namespace multi
 	{
 		return context()->async(std::forward<Job>(job));
 	}
-
 } // namespace multi
 
 #endif // _MULTI_H_

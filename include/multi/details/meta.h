@@ -13,6 +13,7 @@
 
 namespace multi
 {
+	// Run func on all items sequentially
 	template <typename FUNC, typename ITEM, typename... ITEMS>
 	void doOnAll(FUNC&& func, ITEM&& item, ITEMS&&... items)
 	{
@@ -20,6 +21,7 @@ namespace multi
 		doOnAll(func, std::forward<ITEMS>(items)...);
 	}
 
+	// Run func on single item
 	template <typename FUNC, typename ITEM>
 	void doOnAll(FUNC&& func, ITEM&& item)
 	{

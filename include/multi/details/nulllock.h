@@ -11,6 +11,10 @@
 
 namespace multi
 {
+	/*
+	 * NullLock
+	 * Empty lock class for use with std::condition_variable
+	 */
 	class NullLock
 	{
 	public:

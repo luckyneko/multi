@@ -14,11 +14,15 @@
 
 namespace multi
 {
+	/*
+	 * Queue
+	 * Thread-safe std::queue
+	 */
 	template <typename T>
 	class Queue
 	{
 	public:
-		inline void push(const T& value)
+		void push(const T& value)
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			m_queue.push(value);
@@ -31,13 +35,13 @@ namespace multi
 			m_queue.emplace(std::forward<ARGS>(args)...);
 		}
 
-		inline bool empty()
+		bool empty()
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			return m_queue.empty();
 		}
 
-		inline bool pop(T* value)
+		bool pop(T* value)
 		{
 			std::lock_guard<std::mutex> lk(m_lock);
 			if (!m_queue.empty())

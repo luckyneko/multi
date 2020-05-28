@@ -13,17 +13,26 @@
 
 namespace multi
 {
+	/*
+	 * Handle
+	 * Tracks state of async task/job. Will auto wait on destruction.
+	 */
 	class Handle
 	{
 	public:
-		inline Handle() {}
+		Handle() = default;
 		inline Handle(std::future<void>&& hdl) { m_handle = std::move(hdl); }
 		Handle(const Handle&) = delete;
 		inline Handle(Handle&& a) { m_handle = std::move(a.m_handle); }
 		inline ~Handle() { wait(); }
 
-		inline bool ready() { return valid() && m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
+		// Check if job is complete
+		inline bool complete() { return valid() && m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
+
+		// Check if handle has assigned job
 		inline bool valid() { return m_handle.valid(); }
+
+		// Wait for job to complete
 		inline void wait()
 		{
 			if (valid())
