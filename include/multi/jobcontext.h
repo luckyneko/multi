@@ -9,7 +9,6 @@
 #ifndef _MULTI_JOBCONTEXT_H_
 #define _MULTI_JOBCONTEXT_H_
 
-#include "multi/details/meta.h"
 #include "multi/order.h"
 #include "multi/task.h"
 
@@ -52,10 +51,12 @@ namespace multi
 		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
 
 		template <typename... TASKS>
-		void runTasks(TASKS... tasks);
+		void runTasks(Task&& task, TASKS... tasks);
+		inline void runTasks(Task&& task) { task(*this); }
 
 		template <typename... TASKS>
-		void queueTasks(TASKS... tasks);
+		void queueTasks(Task&& task, TASKS... tasks);
+		inline void queueTasks(Task&& task) { queueJobNode(allocJobNode(std::move(task))); }
 		void queueJobNode(JobNode* node);
 
 	private:

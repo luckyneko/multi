@@ -24,7 +24,6 @@ add_library(${PROJECT_NAME} STATIC
     # Headers
     include/multi/details/jobcontext.inl
     include/multi/details/jobnode.h
-    include/multi/details/meta.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h

@@ -109,16 +109,15 @@ JobNode* JobContext::allocJobNode(Task&& task, TASKS... tasks)
 }
 
 template <typename... TASKS>
-void JobContext::runTasks(TASKS... tasks)
+void JobContext::runTasks(Task&& task, TASKS... tasks)
 {
-	doOnAll([this](Task&& task) { task(*this); }, std::forward<TASKS>(tasks)...);
+	runTasks(std::move(task));
+	runTasks(std::forward<TASKS>(tasks)...);
 }
 
 template <typename... TASKS>
-void JobContext::queueTasks(TASKS... tasks)
+void JobContext::queueTasks(Task&& task, TASKS... tasks)
 {
-	doOnAll([this](Task&& task) {
-		queueJobNode(allocJobNode(std::forward<Task>(task)));
-	},
-			std::forward<TASKS>(tasks)...);
+	queueTasks(std::move(task));
+	queueTasks(std::forward<TASKS>(tasks)...);
 }
