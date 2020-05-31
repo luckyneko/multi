@@ -106,7 +106,7 @@ before_script:
 
 script:
   - cd ${TRAVIS_BUILD_DIR}
-  - cmake -H. -GNinja -Bbuild/$BUILD_TYPE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+  - cmake -H. -Bbuild/$BUILD_TYPE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
   - cmake --build build/$BUILD_TYPE
   - cd build/$BUILD_TYPE
   - ctest -j2 --output-on-failure
