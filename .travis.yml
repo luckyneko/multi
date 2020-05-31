@@ -69,13 +69,6 @@ matrix:
       os: linux
       addons: *clang35
 
-    # osx: Build=Debug/Release
-    - env: BUILD_TYPE=Debug
-      os: osx
-
-    - env: BUILD_TYPE=Release
-      os: osx
-
     # Test clang-10.0: Build=Debug/Release
     - env: CLANG_VERSION=10 BUILD_TYPE=Debug
       os: linux
@@ -86,6 +79,20 @@ matrix:
       os: linux
       dist: bionic
       addons: *clang10
+
+    # osx: Build=Debug/Release
+    - env: BUILD_TYPE=Debug
+      os: osx
+
+    - env: BUILD_TYPE=Release
+      os: osx
+
+    # Windows
+    - env: BUILD_TYPE=Debug
+      os: windows
+
+    - env: BUILD_TYPE=Release
+      os: windows
 
 
 before_script:
