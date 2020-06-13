@@ -1,4 +1,4 @@
-# multi [![Build Status](https://travis-ci.org/luckyneko/multi.svg?branch=master)](https://travis-ci.org/luckyneko/multi)&nbsp; [![Release](https://img.shields.io/github/release/luckyneko/multi.svg)](https://github.com/luckyneko/multi/releases/latest)
+# multi [![Build Status](https://travis-ci.org/luckyneko/multi.svg?branch=master)](https://travis-ci.org/luckyneko/multi)&nbsp; ![Release](https://img.shields.io/github/v/release/luckyneko/multi?include_prereleases)
 C++11 real-time threading framework
 
 ## Build / Integrate
