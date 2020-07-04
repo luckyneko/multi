@@ -27,21 +27,21 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
-    include/multi/details/jobcontext.inl
+    include/multi/details/job.inl
     include/multi/details/jobnode.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
     include/multi/context.h
     include/multi/handle.h
-    include/multi/jobcontext.h
+    include/multi/job.h
     include/multi/multi.h
     include/multi/order.h
     include/multi/task.h
 
     # Source
     src/context.cpp
-    src/jobcontext.cpp
+    src/job.cpp
     src/jobnode.cpp
     src/multi.cpp
     src/task.cpp
@@ -64,7 +64,7 @@ if(MULTI_BUILD_TESTING)
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
         test/context.cpp
-        test/jobcontext.cpp
+        test/job.cpp
         test/jobnode.cpp
         test/queue.cpp
         test/task.cpp

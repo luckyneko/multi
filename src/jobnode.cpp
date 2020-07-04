@@ -7,7 +7,7 @@
  */
 
 #include "multi/details/jobnode.h"
-#include "multi/jobcontext.h"
+#include "multi/job.h"
 #include <assert.h>
 
 namespace multi
@@ -32,8 +32,8 @@ namespace multi
 		State noState = State::none;
 		if (m_state.compare_exchange_strong(noState, State::running))
 		{
-			JobContext jobContext(context, this);
-			m_task.run(jobContext);
+			Job jb(context, this);
+			m_task.run(jb);
 			m_state = State::waiting;
 		}
 

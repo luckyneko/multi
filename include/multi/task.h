@@ -6,14 +6,14 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_JOB_H_
-#define _MULTI_JOB_H_
+#ifndef _MULTI_TASK_H_
+#define _MULTI_TASK_H_
 
 #include <functional>
 
 namespace multi
 {
-	class JobContext;
+	class Job;
 
 	/*
 	 * Task
@@ -43,11 +43,11 @@ namespace multi
 
 		~Task();
 
-		void run(JobContext&);
+		void run(Job&);
 
 	private:
-		std::function<void(JobContext&)> m_func;
+		std::function<void(Job&)> m_func;
 	};
 } // namespace multi
 
-#endif // _MULTI_JOB_H_
+#endif // _MULTI_TASK_H_

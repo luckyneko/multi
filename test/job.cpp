@@ -10,7 +10,7 @@
 #include <catch2/catch.hpp>
 #include <multi/multi.h>
 
-TEST_CASE("multi::JobContext::add()")
+TEST_CASE("multi::Job::add()")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -19,9 +19,9 @@ TEST_CASE("multi::JobContext::add()")
 
 	// Paralell check
 	std::atomic<int> a(0);
-	context.async([&](multi::JobContext& jb) {
+	context.async([&](multi::Job& jb) {
 		++a;
-		jb.add(multi::Order::par, [&](multi::JobContext& jb) {
+		jb.add(multi::Order::par, [&](multi::Job& jb) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			a = a.load() * 3;
 		});
@@ -31,15 +31,15 @@ TEST_CASE("multi::JobContext::add()")
 
 	// Sequential check
 	std::atomic<int> b(0);
-	context.async([&](multi::JobContext& jb) {
+	context.async([&](multi::Job& jb) {
 		jb.add(
-			multi::Order::seq, [&](multi::JobContext& jb) {
+			multi::Order::seq, [&](multi::Job& jb) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			++b; },
-			[&](multi::JobContext& jb) {
+			[&](multi::Job& jb) {
 				b = b * 2;
 			},
-			[&](multi::JobContext& jb) {
+			[&](multi::Job& jb) {
 				++b;
 			});
 	});
@@ -49,7 +49,7 @@ TEST_CASE("multi::JobContext::add()")
 	REQUIRE(context.threadCount() == 0);
 }
 
-TEST_CASE("multi::JobContext::each()")
+TEST_CASE("multi::Job::each()")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -59,8 +59,8 @@ TEST_CASE("multi::JobContext::each()")
 	// Parallel check
 	std::atomic<int> a(0);
 	std::array<int, 4> b = {1, 2, 3, 4};
-	context.async([&](multi::JobContext& jb) {
-		jb.each(multi::Order::par, b.begin(), b.end(), [&](multi::JobContext& jb, int i) {
+	context.async([&](multi::Job& jb) {
+		jb.each(multi::Order::par, b.begin(), b.end(), [&](multi::Job& jb, int i) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(i));
 			a += i;
 		});
@@ -70,8 +70,8 @@ TEST_CASE("multi::JobContext::each()")
 	// Seq check
 	int c = 1;
 	std::array<int, 4> d = {1, 2, 3, 4};
-	context.async([&](multi::JobContext& jb) {
-		jb.each(multi::Order::seq, d.begin(), d.end(), [&](multi::JobContext& jb, int i) {
+	context.async([&](multi::Job& jb) {
+		jb.each(multi::Order::seq, d.begin(), d.end(), [&](multi::Job& jb, int i) {
 			c *= i;
 		});
 	});
@@ -81,7 +81,7 @@ TEST_CASE("multi::JobContext::each()")
 	REQUIRE(context.threadCount() == 0);
 }
 
-TEST_CASE("multi::JobContext::range()")
+TEST_CASE("multi::Job::range()")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -91,8 +91,8 @@ TEST_CASE("multi::JobContext::range()")
 	// Parallel check
 	std::atomic<int> a(0);
 	std::array<int, 4> b = {1, 2, 3, 4};
-	context.async([&](multi::JobContext& jb) {
-		jb.range(multi::Order::par, 0, int(b.size()), 1, [&](multi::JobContext& jb, int i) {
+	context.async([&](multi::Job& jb) {
+		jb.range(multi::Order::par, 0, int(b.size()), 1, [&](multi::Job& jb, int i) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(i));
 			a += b[i];
 		});
@@ -102,8 +102,8 @@ TEST_CASE("multi::JobContext::range()")
 	// Seq check
 	int c = 1;
 	std::array<int, 4> d = {1, 2, 3, 4};
-	context.async([&](multi::JobContext& jb) {
-		jb.range(multi::Order::seq, 0, int(d.size()), 1, [&](multi::JobContext& jb, int i) {
+	context.async([&](multi::Job& jb) {
+		jb.range(multi::Order::seq, 0, int(d.size()), 1, [&](multi::Job& jb, int i) {
 			c *= d[i];
 		});
 	});
@@ -113,7 +113,7 @@ TEST_CASE("multi::JobContext::range()")
 	REQUIRE(context.threadCount() == 0);
 }
 
-TEST_CASE("multi::JobContext::until()")
+TEST_CASE("multi::Job::until()")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -124,8 +124,8 @@ TEST_CASE("multi::JobContext::until()")
 	int c = 1;
 	int i = 0;
 	std::array<int, 4> d = {1, 2, 3, 4};
-	context.async([&](multi::JobContext& jb) {
-		jb.until([&]() { return c > 4 && i < d.size(); }, [&](multi::JobContext& jb) { c *= d[i]; ++i; });
+	context.async([&](multi::Job& jb) {
+		jb.until([&]() { return c > 4 && i < d.size(); }, [&](multi::Job& jb) { c *= d[i]; ++i; });
 	});
 	CHECK(c == 6);
 

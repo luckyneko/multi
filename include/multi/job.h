@@ -6,8 +6,8 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_JOBCONTEXT_H_
-#define _MULTI_JOBCONTEXT_H_
+#ifndef _MULTI_JOB_H_
+#define _MULTI_JOB_H_
 
 #include "multi/order.h"
 #include "multi/task.h"
@@ -18,14 +18,14 @@ namespace multi
 	class JobNode;
 
 	/*
-	 * JobContext
+	 * Job
 	 * Handles adding children tasks to a job
 	 */
-	class JobContext
+	class Job
 	{
 	public:
-		JobContext(Context* context = nullptr, JobNode* parent = nullptr);
-		JobContext(const JobContext&) = delete;
+		Job(Context* context = nullptr, JobNode* parent = nullptr);
+		Job(const Job&) = delete;
 
 		// Add subtasks to job
 		template <typename... FUNCS>
@@ -62,7 +62,7 @@ namespace multi
 		JobNode* m_parent;
 	};
 
-#include "multi/details/jobcontext.inl"
+#include "multi/details/job.inl"
 } // namespace multi
 
-#endif // _MULTI_JOBCONTEXT_H_
+#endif // _MULTI_JOB_H_

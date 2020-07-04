@@ -1,19 +1,19 @@
 #include "multi/task.h"
 
-#include "multi/jobcontext.h"
+#include "multi/job.h"
 
 namespace multi
 {
 	Task::~Task()
 	{
-		JobContext jc;
-		run(jc);
+		Job jb;
+		run(jb);
 	}
 
-	void Task::run(JobContext& jc)
+	void Task::run(Job& jb)
 	{
 		if (m_func)
-			m_func(jc);
+			m_func(jb);
 		m_func = nullptr;
 	}
 } // namespace multi

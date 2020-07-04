@@ -11,7 +11,7 @@
 
 #include "multi/details/threadpool.h"
 #include "multi/handle.h"
-#include "multi/jobcontext.h"
+#include "multi/job.h"
 #include <memory>
 
 namespace multi

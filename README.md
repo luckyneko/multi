@@ -32,7 +32,7 @@ target_link_libraries(${PROJECT_NAME} multi)
 - Only write functions once for single & multi threaded
 
 ## Examples
-For extra examples please see `tests/jobcontext.cpp`
+For extra examples please see `tests/job.cpp`
 
 ### Basic Async
 ``` C++
@@ -46,7 +46,7 @@ int main()
 
     // Run job
     std::atomic<int> i(0);
-    multi::Handle jobHdl = multi::async([&](JobContext&)
+    multi::Handle jobHdl = multi::async([&](Job&)
     {
         ++i;
     });
@@ -55,7 +55,7 @@ int main()
     jobHdl.wait();
 
     // async will automatically wait if handle not captured
-    multi::async([&](JobContext&)
+    multi::async([&](Job&)
     {
         ++i;
     });
@@ -70,15 +70,15 @@ int main()
 void function()
 {
     // Automatically wait for async
-    multi::async([](JobContext& jc)
+    multi::async([](Job& jb)
     {
         // Launch all as child tasks in parallel
-        jc.add(multi::Order::par, 
-            [](JobContext&)
+        jb.add(multi::Order::par, 
+            [](Job&)
             {
 
             },
-            [](JobContext&)
+            [](Job&)
             {
 
             }
@@ -86,11 +86,11 @@ void function()
 
         // Launch as a sequence of child tasks
         jc.add(multi::Order::seq, 
-            [](JobContext&)
+            [](Job&)
             {
 
             },
-            [](JobContext&)
+            [](Job&)
             {
 
             }
@@ -101,18 +101,18 @@ void function()
 
 ### Job object / Task Wrapper
 ``` C++
-multi::Job function(const std::vector<int>& indices)
+multi::Task function(const std::vector<int>& indices)
 {
-    return Job([indices](JobContext& jc)
+    return [indices](Job& jb)
     {
         // For each index do something
-        jc.each(multi::Order::par, indices.begin(), indices.end(),
-            [](JobContext&, int value)
+        jb.each(multi::Order::par, indices.begin(), indices.end(),
+            [](Job&, int value)
             {
                 // Do work per index
             }
         );
-    });
+    };
 }
 
 void run(const std::vector<int>& indices)
@@ -124,9 +124,9 @@ void run(const std::vector<int>& indices)
     multi::async( function(indices) );
 
     // Run function as child task
-    multi::async([&](JobContext& jc)
+    multi::async([&](Job& jb)
     {
-        jc.add( function(jc) );
+        jc.add(multi::Order::par, function(jc));
     });
 }
 ```
