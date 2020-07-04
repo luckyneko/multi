@@ -9,13 +9,13 @@
 #include <catch2/catch.hpp>
 #include <multi/context.h>
 
-multi::Job add(std::atomic<int>& a)
+multi::Task add(std::atomic<int>& a)
 {
 	std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	return multi::Job([&](multi::JobContext&) { printf("A\n"); a++; });
+	return [&](multi::JobContext&) { printf("A\n"); a++; };
 }
 
-TEST_CASE("multi::Job")
+TEST_CASE("multi::Task")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -38,7 +38,7 @@ TEST_CASE("multi::Job")
 	std::atomic<int> c(0);
 	context.async([&](multi::JobContext& jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		jb.add(add(c));
+		jb.add(multi::Order::par, add(c));
 	});
 	CHECK(c == 1);
 

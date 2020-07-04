@@ -15,7 +15,6 @@
 namespace multi
 {
 	class Context;
-	class Job;
 	class JobNode;
 
 	/*
@@ -31,7 +30,6 @@ namespace multi
 		// Add subtasks to job
 		template <typename... FUNCS>
 		void add(Order order, FUNCS... funcs);
-		void add(Job&& job);
 
 		// Add subtask for each item in iterable
 		template <typename ITER, typename FUNC>
@@ -52,7 +50,7 @@ namespace multi
 
 		template <typename... TASKS>
 		void runTasks(Task&& task, TASKS... tasks);
-		inline void runTasks(Task&& task) { task(*this); }
+		inline void runTasks(Task&& task) { task.run(*this); }
 
 		template <typename... TASKS>
 		void queueTasks(Task&& task, TASKS... tasks);

@@ -34,7 +34,6 @@ add_library(${PROJECT_NAME} STATIC
     include/multi/details/threadpool.h
     include/multi/context.h
     include/multi/handle.h
-    include/multi/job.h
     include/multi/jobcontext.h
     include/multi/multi.h
     include/multi/order.h
@@ -45,6 +44,7 @@ add_library(${PROJECT_NAME} STATIC
     src/jobcontext.cpp
     src/jobnode.cpp
     src/multi.cpp
+    src/task.cpp
     src/threadpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
@@ -64,10 +64,10 @@ if(MULTI_BUILD_TESTING)
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
         test/context.cpp
-        test/job.cpp
         test/jobcontext.cpp
         test/jobnode.cpp
         test/queue.cpp
+        test/task.cpp
         test/threadpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)

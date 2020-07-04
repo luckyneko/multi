@@ -11,11 +11,6 @@ namespace multi
 	{
 	}
 
-	void JobContext::add(Job&& job)
-	{
-		queueJobNode(allocJobNode(job.popTask()));
-	}
-
 	JobNode* JobContext::allocJobNode(Task&& task, JobNode* next)
 	{
 		return new JobNode(m_parent, std::move(task), next);

@@ -43,7 +43,7 @@ namespace multi
 		};
 
 		JobNode* m_parent;
-		Task m_func;
+		Task m_task;
 		std::atomic<int> m_numChildren;
 		std::atomic<State> m_state;
 		JobNode* m_next;

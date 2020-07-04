@@ -14,7 +14,7 @@ namespace multi
 {
 	JobNode::JobNode(JobNode* parent, Task&& task, JobNode* next)
 		: m_parent(parent)
-		, m_func(std::move(task))
+		, m_task(std::move(task))
 		, m_numChildren(0)
 		, m_state(State::none)
 		, m_next(next)
@@ -33,9 +33,7 @@ namespace multi
 		if (m_state.compare_exchange_strong(noState, State::running))
 		{
 			JobContext jobContext(context, this);
-			if (m_func)
-				m_func(jobContext);
-			m_func = nullptr;
+			m_task.run(jobContext);
 			m_state = State::waiting;
 		}
 
