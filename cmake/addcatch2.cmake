@@ -6,7 +6,7 @@ find_package(Catch2 CONFIG)
 
 if (${Catch2_FOUND})       
 else ()
-	set(CATCH2_VER "2.12.1")
+	set(CATCH2_VER "2.13.1")
 	if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER}.tar.gz")
 		message(STATUS "Downloading Catch2 (${CATCH2_VER})")
 		file(DOWNLOAD 
