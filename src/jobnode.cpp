@@ -7,14 +7,14 @@
  */
 
 #include "multi/details/jobnode.h"
-#include "multi/jobcontext.h"
+#include "multi/job.h"
 #include <assert.h>
 
 namespace multi
 {
 	JobNode::JobNode(JobNode* parent, Task&& task, JobNode* next)
 		: m_parent(parent)
-		, m_func(std::move(task))
+		, m_task(std::move(task))
 		, m_numChildren(0)
 		, m_state(State::none)
 		, m_next(next)
@@ -32,10 +32,8 @@ namespace multi
 		State noState = State::none;
 		if (m_state.compare_exchange_strong(noState, State::running))
 		{
-			JobContext jobContext(context, this);
-			if (m_func)
-				m_func(jobContext);
-			m_func = nullptr;
+			Job jb(context, this);
+			m_task.run(jb);
 			m_state = State::waiting;
 		}
 

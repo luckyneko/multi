@@ -12,7 +12,7 @@
 TEST_CASE("multi::JobNode")
 {
 	int value = 0;
-	auto func = [&value](multi::JobContext& jb) { ++value; };
+	auto func = [&value](multi::Job& jb) { ++value; };
 	multi::JobNode* parent = new multi::JobNode(nullptr,
 												func,
 												new multi::JobNode(nullptr,

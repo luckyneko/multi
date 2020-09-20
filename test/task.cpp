@@ -9,7 +9,13 @@
 #include <catch2/catch.hpp>
 #include <multi/context.h>
 
-TEST_CASE("multi::Context")
+multi::Task add(std::atomic<int>& a)
+{
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	return [&](multi::Job&) { printf("A\n"); a++; };
+}
+
+TEST_CASE("multi::Task")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
@@ -18,22 +24,23 @@ TEST_CASE("multi::Context")
 	context.start(4);
 	REQUIRE(context.threadCount() == 4);
 
-	// Test handle wait
+	// Single thread Job
 	std::atomic<int> a(0);
-	auto hdl = context.async([&](multi::Job& jb) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		++a;
-	});
-	CHECK(a == 0);
-	hdl.wait();
+	add(a);
 	CHECK(a == 1);
 
-	// Test drop handle
+	// Multi-thread Job
+	std::atomic<int> b(0);
+	context.async(add(b));
+	CHECK(b == 1);
+
+	// Subtask
+	std::atomic<int> c(0);
 	context.async([&](multi::Job& jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		++a;
+		jb.add(multi::Order::par, add(c));
 	});
-	CHECK(a == 2);
+	CHECK(c == 1);
 
 	// Stop threads
 	context.stop();

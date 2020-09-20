@@ -1,48 +1,134 @@
 /*
- *  Created by LuckyNeko on 17/05/2020.
+ *  Created by LuckyNeko on 15/03/2020.
  *  Copyright 2020 LuckyNeko
  *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
 
+#include <array>
 #include <catch2/catch.hpp>
-#include <multi/context.h>
+#include <multi/multi.h>
 
-multi::Job add(std::atomic<int>& a)
-{
-	std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	return multi::Job([&](multi::JobContext&) { printf("A\n"); a++; });
-}
-
-TEST_CASE("multi::Job")
+TEST_CASE("multi::Job::add()")
 {
 	multi::Context context;
 	REQUIRE(context.threadCount() == 0);
-
-	// Start threads
 	context.start(4);
 	REQUIRE(context.threadCount() == 4);
 
-	// Single thread Job
+	// Paralell check
 	std::atomic<int> a(0);
-	add(a);
-	CHECK(a == 1);
-
-	// Multi-thread Job
-	std::atomic<int> b(0);
-	context.async(add(b));
-	CHECK(b == 1);
-
-	// Subtask
-	std::atomic<int> c(0);
-	context.async([&](multi::JobContext& jb) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		jb.add(add(c));
+	context.async([&](multi::Job& jb) {
+		++a;
+		jb.add(multi::Order::par, [&](multi::Job& jb) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			a = a.load() * 3;
+		});
+		++a;
 	});
-	CHECK(c == 1);
+	CHECK(a == 6);
 
-	// Stop threads
+	// Sequential check
+	std::atomic<int> b(0);
+	context.async([&](multi::Job& jb) {
+		jb.add(
+			multi::Order::seq, [&](multi::Job& jb) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+			++b; },
+			[&](multi::Job& jb) {
+				b = b * 2;
+			},
+			[&](multi::Job& jb) {
+				++b;
+			});
+	});
+	CHECK(b == 3);
+
+	context.stop();
+	REQUIRE(context.threadCount() == 0);
+}
+
+TEST_CASE("multi::Job::each()")
+{
+	multi::Context context;
+	REQUIRE(context.threadCount() == 0);
+	context.start(4);
+	REQUIRE(context.threadCount() == 4);
+
+	// Parallel check
+	std::atomic<int> a(0);
+	std::array<int, 4> b = {1, 2, 3, 4};
+	context.async([&](multi::Job& jb) {
+		jb.each(multi::Order::par, b.begin(), b.end(), [&](multi::Job& jb, int i) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(i));
+			a += i;
+		});
+	});
+	CHECK(a == 10);
+
+	// Seq check
+	int c = 1;
+	std::array<int, 4> d = {1, 2, 3, 4};
+	context.async([&](multi::Job& jb) {
+		jb.each(multi::Order::seq, d.begin(), d.end(), [&](multi::Job& jb, int i) {
+			c *= i;
+		});
+	});
+	CHECK(c == 24);
+
+	context.stop();
+	REQUIRE(context.threadCount() == 0);
+}
+
+TEST_CASE("multi::Job::range()")
+{
+	multi::Context context;
+	REQUIRE(context.threadCount() == 0);
+	context.start(4);
+	REQUIRE(context.threadCount() == 4);
+
+	// Parallel check
+	std::atomic<int> a(0);
+	std::array<int, 4> b = {1, 2, 3, 4};
+	context.async([&](multi::Job& jb) {
+		jb.range(multi::Order::par, 0, int(b.size()), 1, [&](multi::Job& jb, int i) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(i));
+			a += b[i];
+		});
+	});
+	CHECK(a == 10);
+
+	// Seq check
+	int c = 1;
+	std::array<int, 4> d = {1, 2, 3, 4};
+	context.async([&](multi::Job& jb) {
+		jb.range(multi::Order::seq, 0, int(d.size()), 1, [&](multi::Job& jb, int i) {
+			c *= d[i];
+		});
+	});
+	CHECK(c == 24);
+
+	context.stop();
+	REQUIRE(context.threadCount() == 0);
+}
+
+TEST_CASE("multi::Job::until()")
+{
+	multi::Context context;
+	REQUIRE(context.threadCount() == 0);
+	context.start(4);
+	REQUIRE(context.threadCount() == 4);
+
+	// Seq check
+	int c = 1;
+	int i = 0;
+	std::array<int, 4> d = {1, 2, 3, 4};
+	context.async([&](multi::Job& jb) {
+		jb.until([&]() { return c > 4 && i < d.size(); }, [&](multi::Job& jb) { c *= d[i]; ++i; });
+	});
+	CHECK(c == 6);
+
 	context.stop();
 	REQUIRE(context.threadCount() == 0);
 }

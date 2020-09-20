@@ -34,7 +34,6 @@ namespace multi
 
 		// Launch job/task onto a thread
 		// @return Handle to wait on parallel job.
-		inline Handle async(Job&& job) { return async(job.popTask()); }
 		Handle async(Task&& task);
 
 		void queueJobNode(JobNode* node);

@@ -1,5 +1,5 @@
 /*
- *  Created by LuckyNeko on 09/05/2020.
+ *  Created by LuckyNeko on 13/05/2020.
  *  Copyright 2013 LuckyNeko
  *
  *  Distributed under the MIT Software License
@@ -9,52 +9,60 @@
 #ifndef _MULTI_JOB_H_
 #define _MULTI_JOB_H_
 
-#include "multi/jobcontext.h"
+#include "multi/order.h"
+#include "multi/task.h"
 
 namespace multi
 {
+	class Context;
+	class JobNode;
+
 	/*
 	 * Job
-	 * Object to store a task. Will run locally on deletion.
+	 * Handles adding children tasks to a job
 	 */
 	class Job
 	{
 	public:
-		inline Job(Task&& task)
-		{
-			m_root = std::move(task);
-			m_set = true;
-		}
-
+		Job(Context* context = nullptr, JobNode* parent = nullptr);
 		Job(const Job&) = delete;
 
-		inline Job(Job&& mv)
-		{
-			m_root = std::move(mv.m_root);
-			m_set = mv.m_set;
-			mv.m_set = false;
-		}
+		// Add subtasks to job
+		template <typename... FUNCS>
+		void add(Order order, FUNCS... funcs);
 
-		inline ~Job()
-		{
-			if (m_set)
-			{
-				JobContext context;
-				m_root(context);
-			}
-		}
+		// Add subtask for each item in iterable
+		template <typename ITER, typename FUNC>
+		void each(Order order, ITER begin, ITER end, FUNC&& func);
 
-		// Internal use only
-		inline Task&& popTask()
-		{
-			m_set = false;
-			return std::move(m_root);
-		}
+		// Add subtask for a range of values
+		template <typename ITER, typename FUNC>
+		void range(Order order, ITER begin, ITER end, ITER step, FUNC&& func);
+
+		// Add subtask to sequentially run function until predicate returns true
+		template <typename FUNC, typename PRED>
+		void until(PRED&& pred, FUNC&& func);
 
 	private:
-		Task m_root;
-		bool m_set;
+		template <typename... TASKS>
+		JobNode* allocJobNode(Task&& task, TASKS... tasks);
+		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
+
+		template <typename... TASKS>
+		void runTasks(Task&& task, TASKS... tasks);
+		inline void runTasks(Task&& task) { task.run(*this); }
+
+		template <typename... TASKS>
+		void queueTasks(Task&& task, TASKS... tasks);
+		inline void queueTasks(Task&& task) { queueJobNode(allocJobNode(std::move(task))); }
+		void queueJobNode(JobNode* node);
+
+	private:
+		Context* m_context;
+		JobNode* m_parent;
 	};
+
+#include "multi/details/job.inl"
 } // namespace multi
 
 #endif // _MULTI_JOB_H_
