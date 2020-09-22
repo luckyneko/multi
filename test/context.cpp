@@ -28,6 +28,13 @@ TEST_CASE("multi::Context")
 	hdl.wait();
 	CHECK(a == 1);
 
+	// Reset handle
+	CHECK(hdl.valid() == true);
+	CHECK(hdl.complete() == true);
+	hdl = multi::Handle();
+	CHECK(hdl.valid() == false);
+	CHECK(hdl.complete() == false);
+
 	// Test drop handle
 	context.async([&](multi::Job& jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
