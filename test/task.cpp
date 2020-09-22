@@ -29,6 +29,16 @@ TEST_CASE("multi::Task")
 	add(a);
 	CHECK(a == 1);
 
+	// Task object tracking
+	auto tsk = add(a);
+	CHECK(a == 1);
+	tsk.run();
+	CHECK(a == 2);
+	tsk = add(a);
+	CHECK(a == 2);
+	tsk = multi::Task();
+	CHECK(a == 2);
+
 	// Multi-thread Job
 	std::atomic<int> b(0);
 	context.async(add(b));
