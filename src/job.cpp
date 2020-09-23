@@ -21,6 +21,6 @@ namespace multi
 		if (m_context)
 			m_context->queueJobNode(node);
 		else
-			node->run();
+			node->runJob();
 	}
 } // namespace multi

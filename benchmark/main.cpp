@@ -55,17 +55,16 @@ double run(Graph& g, const std::string& name, FUNC&& func, bool writeOutput = fa
 
 void log(const std::string& name, double duration, double maxDuration)
 {
-	printf(" %-9s | %8.3fs | %8.3fms | %8.3f | %5.3f%%\n",
+	printf(" %-9s | %8.3fs | %8.3fms | %8.3f | %8.3f%%\n",
 		   name.c_str(),
 		   duration,
 		   1000.0 * duration / ZOOM_FRAME_COUNT,
 		   double(ZOOM_FRAME_COUNT) / duration,
-		   maxDuration / (duration * std::thread::hardware_concurrency()));
+		   100.0 * maxDuration / (duration * std::thread::hardware_concurrency()));
 }
 
 int main()
 {
-	multi::start();
 	Graph g(IMAGE_WIDTH, IMAGE_HEIGHT, ZOOM_GRAPH_SCALE_START, GRAPH_ORIGIN_X, GRAPH_ORIGIN_Y);
 
 	printf("\n");
@@ -73,7 +72,10 @@ int main()
 
 	double singleDuration = run(g, "single", &mandelbrotSingle);
 	double asyncDuration = run(g, "async", &mandelbrotStdAsync);
+
+	multi::start();
 	double multiDuration = run(g, "multi", &mandelbrotMulti);
+	multi::stop();
 
 	// Log Results
 	printf("\n");
@@ -82,8 +84,6 @@ int main()
 	log("single", singleDuration, singleDuration);
 	log("async ", asyncDuration, singleDuration);
 	log("multi ", multiDuration, singleDuration);
-
-	multi::stop();
 
 	return EXIT_SUCCESS;
 }

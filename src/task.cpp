@@ -4,7 +4,7 @@
 
 namespace multi
 {
-	Task::~Task()
+	void Task::run()
 	{
 		Job jb;
 		run(jb);

@@ -22,28 +22,30 @@ namespace multi
 	class Task
 	{
 	public:
-		inline Task()
-			: m_func(nullptr)
-		{
-		}
-
+		inline Task() { m_func = nullptr; }
 		template <typename T>
-		Task(T&& func)
-			: m_func(std::move(func))
-		{
-		}
-
+		Task(T&& func) { m_func = std::move(func); }
 		Task(const Task&) = delete;
-
 		inline Task(Task&& mv)
 		{
 			m_func = std::move(mv.m_func);
-			mv.m_func = nullptr;
+			mv.reset();
 		}
+		inline ~Task() { run(); }
 
-		~Task();
+		// Run the task
+		void run();
+		void run(Job& jb);
 
-		void run(Job&);
+		// Reset the job without running
+		inline void reset() { m_func = nullptr; }
+
+		inline Task& operator=(Task&& t)
+		{
+			m_func = std::move(t.m_func);
+			t.reset();
+			return *this;
+		}
 
 	private:
 		std::function<void(Job&)> m_func;
