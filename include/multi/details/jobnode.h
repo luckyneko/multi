@@ -28,10 +28,14 @@ namespace multi
 		JobNode(const JobNode&) = delete;
 		~JobNode() = default;
 
+		// Run Job
+		// If context is nullptr then it will run single threaded
+		void runJob(Context* context = nullptr);
+
 		// Run JobNode
 		// If context is nullptr then it will run single threaded
 		// @return next node that needs to run or parent if none.
-		JobNode* run(Context* context = nullptr);
+		JobNode* runNode(Context* context = nullptr);
 
 	private:
 		enum class State

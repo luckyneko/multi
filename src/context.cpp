@@ -37,10 +37,6 @@ namespace multi
 
 	void Context::queueJobNode(JobNode* node)
 	{
-		m_threadPool.queue([this, node]() {
-			auto activeNode = node;
-			while (activeNode != nullptr)
-				activeNode = activeNode->run(this);
-		});
+		m_threadPool.queue(std::bind(&JobNode::runJob, node, this));
 	}
 } // namespace multi

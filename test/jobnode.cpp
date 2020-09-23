@@ -21,31 +21,31 @@ TEST_CASE("multi::JobNode")
 	multi::JobNode* childA = new multi::JobNode(parent, func);
 	multi::JobNode* childB = new multi::JobNode(parent, func);
 
-	auto next = parent->run();
+	auto next = parent->runNode();
 	CHECK(value == 1);
 	REQUIRE(next == nullptr);
 
-	next = childA->run();
+	next = childA->runNode();
 	CHECK(value == 2);
 	REQUIRE(next == parent);
 
-	next = next->run();
+	next = next->runNode();
 	CHECK(value == 2);
 	REQUIRE(next == nullptr);
 
-	next = childB->run();
+	next = childB->runNode();
 	CHECK(value == 3);
 	REQUIRE(next == parent);
 
-	next = next->run();
+	next = next->runNode();
 	CHECK(value == 3);
 	REQUIRE(next != nullptr);
 
-	next = next->run();
+	next = next->runNode();
 	CHECK(value == 4);
 	REQUIRE(next != nullptr);
 
-	next = next->run();
+	next = next->runNode();
 	CHECK(value == 5);
 	CHECK(next == nullptr);
 }
