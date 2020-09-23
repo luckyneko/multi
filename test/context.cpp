@@ -33,7 +33,7 @@ TEST_CASE("multi::Context")
 	CHECK(hdl.complete() == true);
 	hdl = multi::Handle();
 	CHECK(hdl.valid() == false);
-	CHECK(hdl.complete() == false);
+	CHECK(hdl.complete() == true);
 
 	// Test drop handle
 	context.async([&](multi::Job& jb) {

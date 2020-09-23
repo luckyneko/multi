@@ -31,13 +31,13 @@ namespace multi
 		inline ~Handle() { wait(); }
 
 		// Check if job is complete
-		inline bool complete() { return valid() && m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
+		inline bool complete() const { return !valid() || m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
 
 		// Reset handle
 		inline void reset() { m_handle = std::future<void>(); }
 
 		// Check if handle has assigned job
-		inline bool valid() { return m_handle.valid(); }
+		inline bool valid() const { return m_handle.valid(); }
 
 		// Wait for job to complete
 		inline void wait()
