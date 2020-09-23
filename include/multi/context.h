@@ -38,8 +38,12 @@ namespace multi
 
 		void queueJobNode(JobNode* node);
 
+		JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr);
+		void deallocJobNode(JobNode* node);
+
 	private:
 		ThreadPool m_threadPool;
+		Queue<void*> m_memoryPool;
 	};
 } // namespace multi
 

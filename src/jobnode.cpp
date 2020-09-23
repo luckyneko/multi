@@ -44,7 +44,6 @@ namespace multi
 			if (m_parent)
 				m_parent->m_numChildren--;
 			next = (m_next != nullptr) ? m_next : m_parent;
-			delete this;
 		}
 
 		return next;
