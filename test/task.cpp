@@ -12,7 +12,7 @@
 multi::Task add(std::atomic<int>& a)
 {
 	std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	return [&](multi::Job&) { printf("A\n"); a++; };
+	return [&](multi::Job&) { a++; };
 }
 
 TEST_CASE("multi::Task")
