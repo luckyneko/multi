@@ -76,6 +76,7 @@ int main()
 	multi::start();
 	double multiDuration = run(g, "multi", &mandelbrotMulti);
 	multi::stop();
+	double multiOffDuration = run(g, "multi-off", &mandelbrotMultiSingle);
 
 	// Log Results
 	printf("\n");
@@ -84,6 +85,7 @@ int main()
 	log("single", singleDuration, singleDuration);
 	log("async ", asyncDuration, singleDuration);
 	log("multi ", multiDuration, singleDuration);
+	log("multi-off", multiOffDuration, singleDuration);
 
 	return EXIT_SUCCESS;
 }
