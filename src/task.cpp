@@ -13,7 +13,7 @@ namespace multi
 	void Task::run(Job jb)
 	{
 		if (m_func)
-			m_func(jb);
+			m_func(std::move(jb));
 		m_func = nullptr;
 	}
 } // namespace multi
