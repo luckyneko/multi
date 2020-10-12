@@ -10,7 +10,7 @@ namespace multi
 		run(jb);
 	}
 
-	void Task::run(Job& jb)
+	void Task::run(Job jb)
 	{
 		if (m_func)
 			m_func(jb);

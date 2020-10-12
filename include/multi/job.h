@@ -25,7 +25,8 @@ namespace multi
 	{
 	public:
 		Job(Context* context = nullptr, JobNode* parent = nullptr);
-		Job(const Job&) = delete;
+		Job(const Job&) = default;
+		~Job() = default;
 
 		// Add subtasks to job
 		template <typename... FUNCS>

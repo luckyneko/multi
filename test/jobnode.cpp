@@ -8,11 +8,12 @@
 
 #include <catch2/catch.hpp>
 #include <multi/details/jobnode.h>
+#include <multi/job.h>
 
 TEST_CASE("multi::JobNode")
 {
 	int value = 0;
-	auto func = [&value](multi::Job& jb) { ++value; };
+	auto func = [&value](multi::Job) { ++value; };
 	multi::JobNode* parent = new multi::JobNode(nullptr,
 												func,
 												new multi::JobNode(nullptr,
