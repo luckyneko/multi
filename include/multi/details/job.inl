@@ -78,13 +78,6 @@ JobNode* Job::allocJobNode(Task&& task, TASKS... tasks)
 }
 
 template <typename... TASKS>
-void Job::runTasks(Task&& task, TASKS... tasks)
-{
-	runTasks(std::forward<Task>(task));
-	runTasks(std::forward<TASKS>(tasks)...);
-}
-
-template <typename... TASKS>
 void Job::queueTasks(Task&& task, TASKS... tasks)
 {
 	queueTasks(std::forward<Task>(task));
