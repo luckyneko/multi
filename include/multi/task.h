@@ -35,7 +35,7 @@ namespace multi
 
 		// Run the task
 		void run();
-		void run(Job& jb);
+		void run(Job jb);
 
 		// Reset the job without running
 		inline void reset() { m_func = nullptr; }
@@ -48,7 +48,7 @@ namespace multi
 		}
 
 	private:
-		std::function<void(Job&)> m_func;
+		std::function<void(Job)> m_func;
 	};
 } // namespace multi
 

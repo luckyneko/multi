@@ -94,13 +94,13 @@ void mandelbrotStdAsync(Graph& g, double er, int numIter)
 
 //------------------------------------------------------------------------------
 // multi
-void mandelbrotMulti(Graph& g, double er, int numIter)
+multi::Task mandelbrotMultiSingle(Graph& g, double er, int numIter)
 {
 	Graph* gp = &g;
-	multi::async([gp, er, numIter](multi::Job& jb) {
+	return [gp, er, numIter](multi::Job jb) {
 		jb.range(
 			multi::Order::par, 0, gp->height(), 1,
-			[gp, er, numIter](multi::Job& jb, int y) {
+			[gp, er, numIter](multi::Job jb, int y) {
 				double Cy = gp->getY(y);
 				for (int x = 0; x < gp->width(); ++x)
 				{
@@ -110,7 +110,12 @@ void mandelbrotMulti(Graph& g, double er, int numIter)
 					gp->writeColour(colour, x, y);
 				}
 			});
-	});
+	};
+}
+
+void mandelbrotMulti(Graph& g, double er, int numIter)
+{
+	multi::async(mandelbrotMultiSingle(g, er, numIter));
 }
 
 #endif // _MANDELBROT_H_

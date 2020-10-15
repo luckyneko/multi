@@ -25,7 +25,8 @@ namespace multi
 	{
 	public:
 		Job(Context* context = nullptr, JobNode* parent = nullptr);
-		Job(const Job&) = delete;
+		Job(const Job&) = default;
+		~Job() = default;
 
 		// Add subtasks to job
 		template <typename... FUNCS>
@@ -47,10 +48,6 @@ namespace multi
 		template <typename... TASKS>
 		JobNode* allocJobNode(Task&& task, TASKS... tasks);
 		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
-
-		template <typename... TASKS>
-		void runTasks(Task&& task, TASKS... tasks);
-		inline void runTasks(Task&& task) { task.run(*this); }
 
 		template <typename... TASKS>
 		void queueTasks(Task&& task, TASKS... tasks);

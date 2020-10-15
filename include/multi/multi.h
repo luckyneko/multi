@@ -37,7 +37,7 @@ namespace multi
 	// Work functions
 	inline Handle async(Task&& task)
 	{
-		return context()->async(std::forward<Task>(task));
+		return context()->async(std::move(task));
 	}
 } // namespace multi
 

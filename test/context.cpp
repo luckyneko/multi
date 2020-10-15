@@ -25,7 +25,7 @@ TEST_CASE("multi::Context")
 
 		// Test handle wait
 		std::atomic<int> a(0);
-		auto hdl = context.async([&](multi::Job& jb) {
+		auto hdl = context.async([&](multi::Job jb) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			++a;
 		});
@@ -42,7 +42,7 @@ TEST_CASE("multi::Context")
 		CHECK(hdl.complete() == true);
 
 		// Test drop handle
-		context.async([&](multi::Job& jb) {
+		context.async([&](multi::Job jb) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			++a;
 		});

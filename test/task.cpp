@@ -12,7 +12,7 @@
 multi::Task add(std::atomic<int>& a)
 {
 	std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	return [&](multi::Job&) { printf("A\n"); a++; };
+	return [&](multi::Job) { a++; };
 }
 
 TEST_CASE("multi::Task")
@@ -46,7 +46,7 @@ TEST_CASE("multi::Task")
 
 	// Subtask
 	std::atomic<int> c(0);
-	context.async([&](multi::Job& jb) {
+	context.async([&](multi::Job jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		jb.add(multi::Order::par, add(c));
 	});

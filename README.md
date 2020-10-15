@@ -46,7 +46,7 @@ int main()
 
     // Run job
     std::atomic<int> i(0);
-    multi::Handle jobHdl = multi::async([&](Job&)
+    multi::Handle jobHdl = multi::async([&](Job)
     {
         ++i;
     });
@@ -55,7 +55,7 @@ int main()
     jobHdl.wait();
 
     // async will automatically wait if handle not captured
-    multi::async([&](Job&)
+    multi::async([&](Job)
     {
         ++i;
     });
@@ -70,15 +70,15 @@ int main()
 void function()
 {
     // Automatically wait for async
-    multi::async([](Job& jb)
+    multi::async([](Job jb)
     {
         // Launch all as child tasks in parallel
         jb.add(multi::Order::par, 
-            [](Job&)
+            [](Job)
             {
 
             },
-            [](Job&)
+            [](Job)
             {
 
             }
@@ -86,11 +86,11 @@ void function()
 
         // Launch as a sequence of child tasks
         jc.add(multi::Order::seq, 
-            [](Job&)
+            [](Job)
             {
 
             },
-            [](Job&)
+            [](Job)
             {
 
             }
@@ -103,11 +103,11 @@ void function()
 ``` C++
 multi::Task function(const std::vector<int>& indices)
 {
-    return [indices](Job& jb)
+    return [indices](Job jb)
     {
         // For each index do something
         jb.each(multi::Order::par, indices.begin(), indices.end(),
-            [](Job&, int value)
+            [](Job, int value)
             {
                 // Do work per index
             }
@@ -124,7 +124,7 @@ void run(const std::vector<int>& indices)
     multi::async( function(indices) );
 
     // Run function as child task
-    multi::async([&](Job& jb)
+    multi::async([&](Job jb)
     {
         jc.add(multi::Order::par, function(jc));
     });

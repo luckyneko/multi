@@ -39,8 +39,7 @@ namespace multi
 		State noState = State::none;
 		if (m_state.compare_exchange_strong(noState, State::running))
 		{
-			Job jb(context, this);
-			m_task.run(jb);
+			m_task.run(Job(context, this));
 			m_state = State::waiting;
 		}
 

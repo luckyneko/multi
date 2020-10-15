@@ -38,7 +38,7 @@ TEST_CASE("multi::async()")
 	REQUIRE(multi::threadCount() == 4);
 
 	std::atomic<int> a(0);
-	auto hdl = multi::async([&](multi::Job& jb) {
+	auto hdl = multi::async([&](multi::Job jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		++a;
 	});
@@ -46,7 +46,7 @@ TEST_CASE("multi::async()")
 	hdl.wait();
 	CHECK(a == 1);
 
-	multi::async([&](multi::Job& jb) {
+	multi::async([&](multi::Job jb) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		++a;
 	});
