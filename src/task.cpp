@@ -6,8 +6,7 @@ namespace multi
 {
 	void Task::run()
 	{
-		Job jb;
-		run(jb);
+		run(Job());
 	}
 
 	void Task::run(Job jb)
