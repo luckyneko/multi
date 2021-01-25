@@ -32,7 +32,7 @@ namespace multi
 		auto hdl = promise->get_future();
 		auto promiseNode = new JobNode(nullptr, [promise](Job) { promise->set_value(); });
 		queueJobNode(new JobNode(nullptr, std::move(task), promiseNode));
-		return hdl;
+		return Handle(std::move(hdl));
 	}
 
 	void Context::queueJobNode(JobNode* node)
