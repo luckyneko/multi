@@ -29,6 +29,7 @@ add_library(${PROJECT_NAME} STATIC
     # Headers
     include/multi/details/job.inl
     include/multi/details/jobnode.h
+    include/multi/details/jobqueue.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
@@ -43,6 +44,7 @@ add_library(${PROJECT_NAME} STATIC
     src/context.cpp
     src/job.cpp
     src/jobnode.cpp
+    src/jobqueue.cpp
     src/multi.cpp
     src/task.cpp
     src/threadpool.cpp

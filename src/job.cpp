@@ -1,12 +1,12 @@
 #include "multi/job.h"
 
-#include "multi/context.h"
 #include "multi/details/jobnode.h"
+#include "multi/details/jobqueue.h"
 
 namespace multi
 {
-	Job::Job(Context* context, JobNode* parent)
-		: m_context(context)
+	Job::Job(iJobQueue* queue, JobNode* parent)
+		: m_queue(queue)
 		, m_parent(parent)
 	{
 	}
@@ -18,9 +18,7 @@ namespace multi
 
 	void Job::queueJobNode(JobNode* node)
 	{
-		if (m_context)
-			m_context->queueJobNode(node);
-		else
-			node->runJob();
+		assert(m_queue);
+		m_queue->queueJobNode(node);
 	}
 } // namespace multi

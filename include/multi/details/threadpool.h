@@ -34,6 +34,7 @@ namespace multi
 		void stop();
 
 		void queue(std::function<void()>&& func);
+		bool isActive() const;
 		size_t threadCount() const;
 
 	private:

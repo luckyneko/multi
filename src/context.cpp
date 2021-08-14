@@ -31,7 +31,17 @@ namespace multi
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
 		auto promiseNode = new JobNode(nullptr, [promise](Job) { promise->set_value(); });
-		queueJobNode(new JobNode(nullptr, std::move(task), promiseNode));
+		auto newJob = new JobNode(nullptr, std::move(task), promiseNode);
+		if (m_threadPool.isActive())
+		{
+			queueJobNode(newJob);
+		}
+		else
+		{
+			LocalJobQueue queue;
+			queue.queueJobNode(newJob);
+			queue.run();
+		}
 		return Handle(std::move(hdl));
 	}
 

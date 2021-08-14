@@ -14,7 +14,7 @@
 
 namespace multi
 {
-	class Context;
+	class iJobQueue;
 	class JobNode;
 
 	/*
@@ -24,7 +24,7 @@ namespace multi
 	class Job
 	{
 	public:
-		Job(Context* context = nullptr, JobNode* parent = nullptr);
+		Job(iJobQueue* queue, JobNode* parent = nullptr);
 		Job(const Job&) = default;
 		~Job() = default;
 
@@ -55,7 +55,7 @@ namespace multi
 		void queueJobNode(JobNode* node);
 
 	private:
-		Context* m_context;
+		iJobQueue* m_queue;
 		JobNode* m_parent;
 	};
 
