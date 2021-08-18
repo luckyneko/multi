@@ -16,6 +16,13 @@ namespace multi
 		return new JobNode(m_parent, std::move(task), next);
 	}
 
+	JobNode* Job::attachJobNode(JobNode* previous, JobNode* next)
+	{
+		if(previous)
+			previous->setNext(next);
+		return next;
+	}
+
 	void Job::queueJobNode(JobNode* node)
 	{
 		assert(m_queue);

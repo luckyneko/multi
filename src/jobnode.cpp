@@ -55,4 +55,10 @@ namespace multi
 
 		return next;
 	}
+
+	void JobNode::setNext(JobNode* next)
+	{
+		assert(m_next == nullptr && m_state == State::none);
+		m_next = next;
+	}
 } // namespace multi

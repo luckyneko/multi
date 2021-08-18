@@ -21,8 +21,13 @@ void Job::each(Order order, ITER begin, ITER end, FUNC&& func)
 		case Order::seq:
 		{
 			JobNode* head = nullptr;
-			for (auto iter = end; iter != begin; --iter)
-				head = allocJobNode([iter, func](Job jb) { func(jb, *(iter - 1)); }, head);
+			JobNode* tail = nullptr;
+			for (auto iter = begin; iter != end; ++iter)
+			{
+				tail = attachJobNode(tail, allocJobNode([iter, func](Job jb) { func(jb, *iter); }));
+				if(!head)
+					head = tail;
+			}
 			queueJobNode(head);
 			break;
 		}
@@ -43,14 +48,19 @@ void Job::range(Order order, ITER begin, ITER end, ITER step, FUNC&& func)
 		case Order::seq:
 		{
 			JobNode* head = nullptr;
-			for (auto idx = end; idx != begin; idx -= step)
-				head = allocJobNode([idx, step, func](Job jb) { func(jb, idx - step); }, head);
+			JobNode* tail = nullptr;
+			for (auto idx = begin; idx < end; idx += step)
+			{
+				tail = attachJobNode(tail, allocJobNode([idx, func](Job jb) { func(jb, idx); }));
+				if(!head)
+					head = tail;
+			}
 			queueJobNode(head);
 			break;
 		}
 		case Order::par:
 		{
-			for (auto idx = begin; idx != end; idx += step)
+			for (auto idx = begin; idx < end; idx += step)
 				queueJobNode(allocJobNode([idx, func](Job jb) { func(jb, idx); }));
 			break;
 		}

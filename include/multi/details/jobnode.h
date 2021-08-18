@@ -37,6 +37,10 @@ namespace multi
 		// @return next node that needs to run or parent if none.
 		JobNode* runNode(iJobQueue* queue);
 
+		// Set Next JobNode
+		// Can only run when no next is set & state is none.
+		void setNext(JobNode* next);
+
 	private:
 		enum class State
 		{

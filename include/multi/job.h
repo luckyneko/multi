@@ -49,6 +49,8 @@ namespace multi
 		JobNode* allocJobNode(Task&& task, TASKS... tasks);
 		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
 
+		JobNode* attachJobNode(JobNode* previous, JobNode* next);
+
 		template <typename... TASKS>
 		void queueTasks(Task&& task, TASKS... tasks);
 		inline void queueTasks(Task&& task) { queueJobNode(allocJobNode(std::move(task))); }
