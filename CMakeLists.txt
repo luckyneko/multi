@@ -27,9 +27,10 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/multi/details/icontext.h
     include/multi/details/job.inl
     include/multi/details/jobnode.h
-    include/multi/details/jobqueue.h
+    include/multi/details/localjobqueue.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
@@ -44,7 +45,7 @@ add_library(${PROJECT_NAME} STATIC
     src/context.cpp
     src/job.cpp
     src/jobnode.cpp
-    src/jobqueue.cpp
+    src/localjobqueue.cpp
     src/multi.cpp
     src/task.cpp
     src/threadpool.cpp

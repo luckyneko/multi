@@ -23,14 +23,14 @@ namespace multi
 			m_parent->m_numChildren++;
 	}
 
-	void JobNode::runJob(iJobQueue* queue)
+	void JobNode::runJob(iContext* queue)
 	{
 		JobNode* active = this;
 		while (active)
 			active = active->runNode(queue);
 	}
 
-	JobNode* JobNode::runNode(iJobQueue* queue)
+	JobNode* JobNode::runNode(iContext* queue)
 	{
 		JobNode* next = nullptr;
 		assert(m_numChildren >= 0);

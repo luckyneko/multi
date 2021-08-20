@@ -6,40 +6,26 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_JOBQUEUE_H_
-#define _MULTI_JOBQUEUE_H_
+#ifndef _MULTI_LOCALJOBQUEUE_H_
+#define _MULTI_LOCALJOBQUEUE_H_
 
+#include "multi/details/icontext.h"
 #include <queue>
 
 namespace multi
 {
-	class JobNode;
-
-	/*
-	* iJobQueue
-	* A generic interface to Queue JobNodes
-	*/
-	class iJobQueue
-	{
-	public:
-		virtual ~iJobQueue() = default;
-
-		virtual void queueJobNode(JobNode* node) = 0;
-	};
-
 	/*
 	* LocalJobQueue
 	* A local queue for queueing jobs
 	*/
-	class LocalJobQueue : public iJobQueue
+	class LocalJobQueue : public iContext
 	{
 	public:
 		LocalJobQueue() = default;
 		virtual ~LocalJobQueue() = default;
 
+		JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr) final;
 		void queueJobNode(JobNode* node) final;
-
-		bool popNode(JobNode** node);
 
 		void run();
 
@@ -48,4 +34,4 @@ namespace multi
 	};
 } // namespace multi
 
-#endif // _MULTI_JOBQUEUE_H_
+#endif // _MULTI_LOCALJOBQUEUE_H_

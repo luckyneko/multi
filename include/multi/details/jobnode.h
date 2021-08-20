@@ -15,7 +15,7 @@
 namespace multi
 {
 	class Job;
-	class iJobQueue;
+	class iContext;
 
 	/*
 	* JobNode
@@ -30,12 +30,12 @@ namespace multi
 		~JobNode() = default;
 
 		// Run Job
-		void runJob(iJobQueue* queue);
+		void runJob(iContext* queue);
 
 		// Run JobNode
 		// If context is nullptr then it will run single threaded
 		// @return next node that needs to run or parent if none.
-		JobNode* runNode(iJobQueue* queue);
+		JobNode* runNode(iContext* queue);
 
 		// Set Next JobNode
 		// Can only run when no next is set & state is none.

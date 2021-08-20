@@ -1,19 +1,14 @@
 #include "multi/job.h"
 
 #include "multi/details/jobnode.h"
-#include "multi/details/jobqueue.h"
+#include "multi/details/localjobqueue.h"
 
 namespace multi
 {
-	Job::Job(iJobQueue* queue, JobNode* parent)
-		: m_queue(queue)
+	Job::Job(iContext* context, JobNode* parent)
+		: m_context(context)
 		, m_parent(parent)
 	{
-	}
-
-	JobNode* Job::allocJobNode(Task&& task, JobNode* next)
-	{
-		return new JobNode(m_parent, std::move(task), next);
 	}
 
 	JobNode* Job::attachJobNode(JobNode* previous, JobNode* next)
@@ -34,11 +29,5 @@ namespace multi
 			}
 		};
 		m_parent->setNext(new JobNode(m_parent->getParent(), std::move(task)));
-	}
-
-	void Job::queueJobNode(JobNode* node)
-	{
-		assert(m_queue);
-		m_queue->queueJobNode(node);
 	}
 } // namespace multi

@@ -9,7 +9,7 @@
 #ifndef _MULTI_CONTEXT_H_
 #define _MULTI_CONTEXT_H_
 
-#include "multi/details/jobqueue.h"
+#include "multi/details/icontext.h"
 #include "multi/details/threadpool.h"
 #include "multi/handle.h"
 #include "multi/job.h"
@@ -23,7 +23,7 @@ namespace multi
 	 * Context
 	 * Holds multi-wide state.
 	 */
-	class Context : public iJobQueue
+	class Context : public iContext
 	{
 	public:
 		Context() = default;
@@ -37,6 +37,9 @@ namespace multi
 		// @return Handle to wait on parallel job.
 		Handle async(Task&& task);
 
+	protected:
+		// iContext
+		JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr) final;
 		void queueJobNode(JobNode* node) final;
 
 	private:

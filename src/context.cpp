@@ -8,6 +8,7 @@
 
 #include "multi/context.h"
 #include "multi/details/jobnode.h"
+#include "multi/details/localjobqueue.h"
 
 namespace multi
 {
@@ -30,8 +31,8 @@ namespace multi
 	{
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
-		auto promiseNode = new JobNode(nullptr, [promise](Job) { promise->set_value(); });
-		auto newJob = new JobNode(nullptr, std::move(task), promiseNode);
+		auto promiseNode = allocJobNode(nullptr, [promise](Job) { promise->set_value(); });
+		auto newJob = allocJobNode(nullptr, std::move(task), promiseNode);
 		if (m_threadPool.isActive())
 		{
 			queueJobNode(newJob);
@@ -43,6 +44,11 @@ namespace multi
 			queue.run();
 		}
 		return Handle(std::move(hdl));
+	}
+
+	JobNode* Context::allocJobNode(JobNode* parent, Task&& task, JobNode* next)
+	{
+		return new JobNode(parent, std::move(task), next);
 	}
 
 	void Context::queueJobNode(JobNode* node)

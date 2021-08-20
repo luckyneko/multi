@@ -6,7 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#include "multi/details/jobqueue.h"
+#include "multi/details/localjobqueue.h"
 #include "multi/details/jobnode.h"
 
 namespace multi
@@ -16,19 +16,17 @@ namespace multi
 		m_queue.push(node);
 	}
 
-	bool LocalJobQueue::popNode(JobNode** node)
+	JobNode* LocalJobQueue::allocJobNode(JobNode* parent, Task&& task, JobNode* next)
 	{
-		if (m_queue.empty())
-			return false;
-		*node = std::move(m_queue.front());
-		m_queue.pop();
-		return true;
+		return new JobNode(parent, std::move(task), next);
 	}
 
 	void LocalJobQueue::run()
 	{
-		JobNode* node = nullptr;
-		while (popNode(&node))
-			node->runJob(this);
+		while (!m_queue.empty())
+		{
+			m_queue.front()->runJob(this);
+			m_queue.pop();
+		}
 	}
 } // namespace multi

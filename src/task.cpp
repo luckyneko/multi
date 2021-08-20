@@ -1,6 +1,6 @@
 #include "multi/task.h"
 
-#include "multi/details/jobqueue.h"
+#include "multi/details/localjobqueue.h"
 #include "multi/job.h"
 
 namespace multi

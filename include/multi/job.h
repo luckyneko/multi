@@ -11,10 +11,10 @@
 
 #include "multi/order.h"
 #include "multi/task.h"
+#include "multi/details/icontext.h"
 
 namespace multi
 {
-	class iJobQueue;
 	class JobNode;
 
 	/*
@@ -24,7 +24,7 @@ namespace multi
 	class Job
 	{
 	public:
-		Job(iJobQueue* queue, JobNode* parent = nullptr);
+		Job(iContext* context, JobNode* parent = nullptr);
 		Job(const Job&) = default;
 		~Job() = default;
 
@@ -45,20 +45,15 @@ namespace multi
 		void until(PRED&& pred, FUNC&& func);
 
 	private:
-		template <typename... TASKS>
-		JobNode* allocJobNode(Task&& task, TASKS... tasks);
-		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
-
 		JobNode* attachJobNode(JobNode* previous, JobNode* next);
 		void addUntil(std::function<bool()> pred, std::function<void(Job)> func);
 
 		template <typename... TASKS>
 		void queueTasks(Task&& task, TASKS... tasks);
-		inline void queueTasks(Task&& task) { queueJobNode(allocJobNode(std::move(task))); }
-		void queueJobNode(JobNode* node);
+		inline void queueTasks(Task&& task) { m_context->queueJobNode(m_context->allocJobNode(m_parent, std::move(task))); }
 
 	private:
-		iJobQueue* m_queue;
+		iContext* m_context;
 		JobNode* m_parent;
 	};
 
