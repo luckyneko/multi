@@ -50,6 +50,7 @@ namespace multi
 		JobNode* allocJobNode(Task&& task, JobNode* next = nullptr);
 
 		JobNode* attachJobNode(JobNode* previous, JobNode* next);
+		void addUntil(std::function<bool()> pred, std::function<void(Job)> func);
 
 		template <typename... TASKS>
 		void queueTasks(Task&& task, TASKS... tasks);

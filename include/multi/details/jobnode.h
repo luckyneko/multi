@@ -41,6 +41,8 @@ namespace multi
 		// Can only run when no next is set & state is none.
 		void setNext(JobNode* next);
 
+		inline JobNode* getParent() const { return m_parent; }
+
 	private:
 		enum class State
 		{

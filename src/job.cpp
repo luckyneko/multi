@@ -23,6 +23,19 @@ namespace multi
 		return next;
 	}
 
+	void Job::addUntil(std::function<bool()> pred, std::function<void(Job)> func)
+	{
+		Task task = [pred, func](Job jb)
+		{
+			if(!pred())
+			{
+				func(jb);
+				jb.addUntil(pred, func);
+			}
+		};
+		m_parent->setNext(new JobNode(m_parent->getParent(), std::move(task)));
+	}
+
 	void Job::queueJobNode(JobNode* node)
 	{
 		assert(m_queue);

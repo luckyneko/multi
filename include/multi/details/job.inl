@@ -70,13 +70,11 @@ void Job::range(Order order, ITER begin, ITER end, ITER step, FUNC&& func)
 template <typename FUNC, typename PRED>
 void Job::until(PRED&& pred, FUNC&& func)
 {
-	if (!pred())
+	queueTasks([pred, func](Job jb)
 	{
-		add(
-			Order::seq,
-			[func](Job jb) { func(jb); },
-			[pred, func](Job jb) { jb.until(pred, func); });
-	}
+		jb.addUntil(pred, func);
+	});
+	
 }
 
 template <typename... TASKS>

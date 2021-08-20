@@ -58,7 +58,7 @@ namespace multi
 
 	void JobNode::setNext(JobNode* next)
 	{
-		assert(m_next == nullptr && m_state == State::none);
+		assert(m_next == nullptr && m_state <= State::running);
 		m_next = next;
 	}
 } // namespace multi
