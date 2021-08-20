@@ -28,6 +28,6 @@ namespace multi
 				jb.addUntil(pred, func);
 			}
 		};
-		m_parent->setNext(new JobNode(m_parent->getParent(), std::move(task)));
+		m_parent->setNext(m_context->allocJobNode(m_parent->getParent(), std::move(task)));
 	}
 } // namespace multi
