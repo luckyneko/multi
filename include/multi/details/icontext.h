@@ -33,6 +33,7 @@ namespace multi
         }
 
 		virtual JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr) = 0;
+		virtual void deallocJobNode(JobNode* node) = 0;
 		virtual void queueJobNode(JobNode* node) = 0;
 	};
 } // namespace multi

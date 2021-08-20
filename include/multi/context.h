@@ -40,6 +40,7 @@ namespace multi
 	protected:
 		// iContext
 		JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr) final;
+		void deallocJobNode(JobNode* node) final;
 		void queueJobNode(JobNode* node) final;
 
 	private:

@@ -23,14 +23,14 @@ namespace multi
 			m_parent->m_numChildren++;
 	}
 
-	void JobNode::runJob(iContext* queue)
+	void JobNode::runJob(iContext* context)
 	{
 		JobNode* active = this;
 		while (active)
-			active = active->runNode(queue);
+			active = active->runNode(context);
 	}
 
-	JobNode* JobNode::runNode(iContext* queue)
+	JobNode* JobNode::runNode(iContext* context)
 	{
 		JobNode* next = nullptr;
 		assert(m_numChildren >= 0);
@@ -39,7 +39,7 @@ namespace multi
 		State noState = State::none;
 		if (m_state.compare_exchange_strong(noState, State::running))
 		{
-			m_task.run(Job(queue, this));
+			m_task.run(Job(context, this));
 			m_state = State::waiting;
 		}
 
@@ -50,7 +50,7 @@ namespace multi
 			if (m_parent)
 				m_parent->m_numChildren--;
 			next = (m_next != nullptr) ? m_next : m_parent;
-			delete this;
+			context ? context->deallocJobNode(this) : delete this;
 		}
 
 		return next;

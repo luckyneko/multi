@@ -51,6 +51,11 @@ namespace multi
 		return new JobNode(parent, std::move(task), next);
 	}
 
+	void Context::deallocJobNode(JobNode* node)
+	{
+		delete node;
+	}
+
 	void Context::queueJobNode(JobNode* node)
 	{
 		m_threadPool.queue(std::bind(&JobNode::runJob, node, this));

@@ -21,6 +21,11 @@ namespace multi
 		return new JobNode(parent, std::move(task), next);
 	}
 
+	void LocalJobQueue::deallocJobNode(JobNode* node)
+	{
+		delete node;
+	}
+
 	void LocalJobQueue::run()
 	{
 		while (!m_queue.empty())

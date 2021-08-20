@@ -25,6 +25,7 @@ namespace multi
 		virtual ~LocalJobQueue() = default;
 
 		JobNode* allocJobNode(JobNode* parent, Task&& task, JobNode* next = nullptr) final;
+		void deallocJobNode(JobNode* node) final;
 		void queueJobNode(JobNode* node) final;
 
 		void run();
