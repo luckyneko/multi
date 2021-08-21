@@ -10,8 +10,10 @@
 #include <chrono>
 
 // Image settings
-const int IMAGE_WIDTH = 512;
-const int IMAGE_HEIGHT = 512;
+using ImageSize = std::pair<int, int>;
+const ImageSize IMAGE_TALL = {64, 4096};
+const ImageSize IMAGE_SQUARE = {512, 512};
+const ImageSize IMAGE_WIDE = {4096, 64};
 
 // Graph Settings
 const double GRAPH_ORIGIN_X = -(6.01000070505 / 11.0);
@@ -63,29 +65,59 @@ void log(const std::string& name, double duration, double maxDuration)
 		   100.0 * maxDuration / (duration * std::thread::hardware_concurrency()));
 }
 
-int main()
+struct Report
 {
-	Graph g(IMAGE_WIDTH, IMAGE_HEIGHT, ZOOM_GRAPH_SCALE_START, GRAPH_ORIGIN_X, GRAPH_ORIGIN_Y);
+	ImageSize imageSize;
+	double singleDuration;
+	double asyncDuration;
+	double multiDuration;
+	double multiOffDuration;
+
+	void print()
+	{
+		printf("\n");
+		printf("# Test %d jobs of %d size\n", imageSize.second, imageSize.first);
+		printf("Image Size: %dx%d\n", imageSize.first, imageSize.second);
+		printf("\n");
+		printf(" METHOD    | TOTAL     | PER FRAME  | FPS      | UTILIZATION\n");
+		printf("-----------|-----------|------------|----------|-------------\n");
+		log("single", singleDuration, singleDuration);
+		log("async ", asyncDuration, singleDuration);
+		log("multi ", multiDuration, singleDuration);
+		log("multi-off", multiOffDuration, singleDuration);
+		printf("-----------|-----------|------------|----------|-------------\n");
+	}
+};
+
+Report runForSize(const ImageSize& imageSize)
+{
+	Report out;
+	out.imageSize = imageSize;
+	Graph g(imageSize.first, imageSize.second, ZOOM_GRAPH_SCALE_START, GRAPH_ORIGIN_X, GRAPH_ORIGIN_Y);
 
 	printf("\n");
-	printf("Running benchmarks...\n");
+	printf("Running benchmarks for %dx%d...\n", imageSize.first, imageSize.second);
 
-	double singleDuration = run(g, "single", &mandelbrotSingle);
-	double asyncDuration = run(g, "async", &mandelbrotStdAsync);
+	out.singleDuration = run(g, "single", &mandelbrotSingle);
+	out.asyncDuration = run(g, "async", &mandelbrotStdAsync);
 
 	multi::start();
-	double multiDuration = run(g, "multi", &mandelbrotMulti);
+	out.multiDuration = run(g, "multi", &mandelbrotMulti);
 	multi::stop();
-	double multiOffDuration = run(g, "multi-off", &mandelbrotMultiSingle);
+	out.multiOffDuration = run(g, "multi-off", &mandelbrotMultiSingle);
 
-	// Log Results
-	printf("\n");
-	printf(" METHOD    | TOTAL     | PER FRAME  | FPS      | UTILIZATION\n");
-	printf("-----------|-----------|------------|----------|-------------\n");
-	log("single", singleDuration, singleDuration);
-	log("async ", asyncDuration, singleDuration);
-	log("multi ", multiDuration, singleDuration);
-	log("multi-off", multiOffDuration, singleDuration);
+	return out;
+}
+
+int main()
+{
+	std::vector<Report> reports;
+	reports.push_back(runForSize(IMAGE_TALL));
+	reports.push_back(runForSize(IMAGE_SQUARE));
+	reports.push_back(runForSize(IMAGE_WIDE));
+
+	for(auto& report : reports)
+		report.print();
 
 	return EXIT_SUCCESS;
 }
