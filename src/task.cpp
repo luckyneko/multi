@@ -1,12 +1,15 @@
 #include "multi/task.h"
 
+#include "multi/details/localjobqueue.h"
 #include "multi/job.h"
 
 namespace multi
 {
 	void Task::run()
 	{
-		run(Job());
+		LocalJobQueue jobQueue;
+		run(Job(&jobQueue));
+		jobQueue.run();
 	}
 
 	void Task::run(Job jb)

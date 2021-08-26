@@ -23,14 +23,14 @@ namespace multi
 			m_parent->m_numChildren++;
 	}
 
-	void JobNode::runJob(Context* context)
+	void JobNode::runJob(iContext* context)
 	{
 		JobNode* active = this;
 		while (active)
 			active = active->runNode(context);
 	}
 
-	JobNode* JobNode::runNode(Context* context)
+	JobNode* JobNode::runNode(iContext* context)
 	{
 		JobNode* next = nullptr;
 		assert(m_numChildren >= 0);
@@ -50,9 +50,15 @@ namespace multi
 			if (m_parent)
 				m_parent->m_numChildren--;
 			next = (m_next != nullptr) ? m_next : m_parent;
-			delete this;
+			context ? context->deallocJobNode(this) : delete this;
 		}
 
 		return next;
+	}
+
+	void JobNode::setNext(JobNode* next)
+	{
+		assert(m_next == nullptr && m_state <= State::running);
+		m_next = next;
 	}
 } // namespace multi

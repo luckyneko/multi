@@ -15,7 +15,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
 endif()
 
-project(multi LANGUAGES CXX VERSION 0.0.4)
+project(multi LANGUAGES CXX VERSION 0.0.5)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -27,8 +27,10 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/multi/details/icontext.h
     include/multi/details/job.inl
     include/multi/details/jobnode.h
+    include/multi/details/localjobqueue.h
     include/multi/details/nulllock.h
     include/multi/details/queue.h
     include/multi/details/threadpool.h
@@ -43,6 +45,7 @@ add_library(${PROJECT_NAME} STATIC
     src/context.cpp
     src/job.cpp
     src/jobnode.cpp
+    src/localjobqueue.cpp
     src/multi.cpp
     src/task.cpp
     src/threadpool.cpp

@@ -5,7 +5,7 @@ void Job::add(Order order, FUNCS... funcs)
 	switch (order)
 	{
 		case Order::seq:
-			queueJobNode(allocJobNode(std::forward<FUNCS>(funcs)...));
+			m_context->queueJobNode(m_context->allocJobNode(m_parent, std::forward<FUNCS>(funcs)...));
 			break;
 		case Order::par:
 			queueTasks(std::forward<FUNCS>(funcs)...);
@@ -21,15 +21,20 @@ void Job::each(Order order, ITER begin, ITER end, FUNC&& func)
 		case Order::seq:
 		{
 			JobNode* head = nullptr;
-			for (auto iter = end; iter != begin; --iter)
-				head = allocJobNode([iter, func](Job jb) { func(jb, *(iter - 1)); }, head);
-			queueJobNode(head);
+			JobNode* tail = nullptr;
+			for (auto iter = begin; iter != end; ++iter)
+			{
+				tail = attachJobNode(tail, m_context->allocJobNode(m_parent, [iter, func](Job jb) { func(jb, *iter); }));
+				if(!head)
+					head = tail;
+			}
+			m_context->queueJobNode(head);
 			break;
 		}
 		case Order::par:
 		{
 			for (auto iter = begin; iter != end; ++iter)
-				queueJobNode(allocJobNode([iter, func](Job jb) { func(jb, *iter); }));
+				m_context->queueJobNode(m_context->allocJobNode(m_parent, [iter, func](Job jb) { func(jb, *iter); }));
 			break;
 		}
 	}
@@ -43,15 +48,20 @@ void Job::range(Order order, ITER begin, ITER end, ITER step, FUNC&& func)
 		case Order::seq:
 		{
 			JobNode* head = nullptr;
-			for (auto idx = end; idx != begin; idx -= step)
-				head = allocJobNode([idx, step, func](Job jb) { func(jb, idx - step); }, head);
-			queueJobNode(head);
+			JobNode* tail = nullptr;
+			for (auto idx = begin; idx < end; idx += step)
+			{
+				tail = attachJobNode(tail, m_context->allocJobNode(m_parent, [idx, func](Job jb) { func(jb, idx); }));
+				if(!head)
+					head = tail;
+			}
+			m_context->queueJobNode(head);
 			break;
 		}
 		case Order::par:
 		{
-			for (auto idx = begin; idx != end; idx += step)
-				queueJobNode(allocJobNode([idx, func](Job jb) { func(jb, idx); }));
+			for (auto idx = begin; idx < end; idx += step)
+				m_context->queueJobNode(m_context->allocJobNode(m_parent, [idx, func](Job jb) { func(jb, idx); }));
 			break;
 		}
 	}
@@ -60,21 +70,11 @@ void Job::range(Order order, ITER begin, ITER end, ITER step, FUNC&& func)
 template <typename FUNC, typename PRED>
 void Job::until(PRED&& pred, FUNC&& func)
 {
-	if (!pred())
+	queueTasks([pred, func](Job jb)
 	{
-		add(
-			Order::seq,
-			[func](Job jb) { func(jb); },
-			[pred, func](Job jb) { jb.until(pred, func); });
-	}
-}
-
-template <typename... TASKS>
-JobNode* Job::allocJobNode(Task&& task, TASKS... tasks)
-{
-	return allocJobNode(
-		std::forward<Task>(task),
-		allocJobNode(std::forward<TASKS>(tasks)...));
+		jb.addUntil(pred, func);
+	});
+	
 }
 
 template <typename... TASKS>

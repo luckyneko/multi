@@ -32,10 +32,7 @@ TEST_CASE("multi::Job::add()")
 			});
 			++a;
 		});
-		if (threadCount == 0)
-			CHECK(a == 4);
-		else
-			CHECK(a == 6);
+		CHECK(a == 6);
 
 		// Sequential check
 		std::atomic<int> b(0);

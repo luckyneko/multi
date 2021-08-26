@@ -14,7 +14,8 @@
 
 namespace multi
 {
-	class Context;
+	class Job;
+	class iContext;
 
 	/*
 	* JobNode
@@ -29,13 +30,18 @@ namespace multi
 		~JobNode() = default;
 
 		// Run Job
-		// If context is nullptr then it will run single threaded
-		void runJob(Context* context = nullptr);
+		void runJob(iContext* context);
 
 		// Run JobNode
 		// If context is nullptr then it will run single threaded
 		// @return next node that needs to run or parent if none.
-		JobNode* runNode(Context* context = nullptr);
+		JobNode* runNode(iContext* context);
+
+		// Set Next JobNode
+		// Can only run when no next is set & state is none.
+		void setNext(JobNode* next);
+
+		inline JobNode* getParent() const { return m_parent; }
 
 	private:
 		enum class State

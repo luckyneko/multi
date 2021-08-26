@@ -63,6 +63,11 @@ namespace multi
 		}
 	}
 
+	bool ThreadPool::isActive() const
+	{
+		return m_active.load();
+	}
+
 	size_t ThreadPool::threadCount() const
 	{
 		return m_threads.size();
