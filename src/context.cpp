@@ -33,16 +33,7 @@ namespace multi
 		auto hdl = promise->get_future();
 		auto promiseNode = allocJobNode(nullptr, [promise](Job) { promise->set_value(); });
 		auto newJob = allocJobNode(nullptr, std::move(task), promiseNode);
-		if (m_threadPool.isActive())
-		{
-			queueJobNode(newJob);
-		}
-		else
-		{
-			LocalJobQueue queue;
-			queue.queueJobNode(newJob);
-			queue.run();
-		}
+		queueJobNode(newJob);
 		return Handle(std::move(hdl));
 	}
 
