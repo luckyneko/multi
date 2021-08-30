@@ -19,6 +19,7 @@ namespace multi
 		, m_lock()
 		, m_sync()
 		, m_active(false)
+		, m_runningLocal(false)
 	{
 	}
 
@@ -59,7 +60,23 @@ namespace multi
 		}
 		else
 		{
-			func();
+			bool notRunning = false;
+			if(m_runningLocal.compare_exchange_strong(notRunning, true))
+			{
+				std::function<void()> runFunc = std::move(func);
+				do
+				{
+					if(runFunc)
+						runFunc();
+					runFunc = nullptr;
+				}
+				while(m_queue.pop(&runFunc));
+				m_runningLocal = false;
+			}
+			else
+			{
+				m_queue.emplace(std::move(func));
+			}
 		}
 	}
 

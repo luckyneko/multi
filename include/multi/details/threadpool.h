@@ -46,6 +46,7 @@ namespace multi
 		NullLock m_lock;
 		std::condition_variable_any m_sync;
 		std::atomic<bool> m_active;
+		std::atomic<bool> m_runningLocal;
 	};
 } // namespace multi
 
