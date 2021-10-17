@@ -62,18 +62,24 @@ TEST_CASE("multi::Context")
 						 });
 		CHECK(a == 6);
 
-		// Test Each
+		// Test const Each
 		a = 0;
 		std::vector<int> intList{0, 1, 2, 3, 4};
 		context.each(intList.begin(), intList.end(), [&](int i)
 					 { a += i; });
 		CHECK(a == 10);
 
+		// Test mutable Each
+		std::vector<int> intBList{0, 1, 2, 3, 4};
+		context.each(intBList.begin(), intBList.end(), [](int& i)
+					 { i += 1; });
+		CHECK(intBList == std::vector<int>{1, 2, 3, 4, 5});
+
 		// Test Range
 		a = 0;
 		context.range(0, 4, 1, [&](int i)
 					  { a += i; });
-		CHECK(a == 10);
+		CHECK(a == 6);
 
 		// Stop threads
 		context.stop();

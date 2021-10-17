@@ -52,7 +52,7 @@ namespace multi
 			std::vector<Task> taskList;
 			taskList.reserve(end - begin);
 			for (ITER it = begin; it != end; ++it)
-				taskList.push_back(std::bind(func, *it));
+				taskList.push_back(std::bind(func, std::ref(*it)));
 			runQueueJob(std::move(taskList));
 		}
 
