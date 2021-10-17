@@ -10,7 +10,7 @@
 #define _MULTI_JOB_H_
 
 #include "multi/task.h"
-#include <future>
+#include <atomic>
 #include <vector>
 
 namespace multi
@@ -28,7 +28,10 @@ namespace multi
 		inline bool hasWork() const { return valid() && m_inner->next < m_inner->tasks.size(); }
 		inline bool complete() const { return !valid() || m_inner->unfinished == 0; }
 
+		// Try to run next task, returns false if no work left
 		bool tryRun();
+
+		// Run tasks and wait until all are complete
 		void waitRun();
 
 		Job& operator=(const Job& cpy);

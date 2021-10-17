@@ -36,48 +36,24 @@ namespace multi
 
 		// Launch parallel tasks
 		template <typename... TASKS>
-		void parallel(TASKS... tasks)
-		{
-			const size_t count = sizeof...(TASKS);
-			std::vector<Task> taskList;
-			taskList.reserve(count);
-			appendTasks(taskList, std::forward<TASKS>(tasks)...);
-			runQueueJob(std::move(taskList));
-		}
+		void parallel(TASKS... tasks);
 
 		// Launch task for each item
+		// ITER is an iterator
+		// FUNC is function void(T) or void(T&)
 		template <typename ITER, typename FUNC>
-		void each(ITER begin, ITER end, FUNC&& func)
-		{
-			std::vector<Task> taskList;
-			taskList.reserve(end - begin);
-			for (ITER it = begin; it != end; ++it)
-				taskList.push_back(std::bind(func, std::ref(*it)));
-			runQueueJob(std::move(taskList));
-		}
+		void each(ITER begin, ITER end, FUNC&& func);
 
-		// Launch task for each idx with step
+		// Launch task for each idx with step from begin < end
+		// IDX is a POD-type
+		// FUNC is void(IDX)
 		template <typename IDX, typename FUNC>
-		void range(IDX begin, IDX end, IDX step, FUNC&& func)
-		{
-			std::vector<Task> taskList;
-			taskList.reserve((end - begin) / step);
-			for (IDX i = begin; i < end; i += step)
-				taskList.push_back(std::bind(func, i));
-			runQueueJob(std::move(taskList));
-		}
+		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 
 	private:
 		template <typename... TASKS>
-		void appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks)
-		{
-			taskList.push_back(std::move(task));
-			appendTasks(taskList, std::forward<TASKS>(tasks)...);
-		}
-		inline void appendTasks(std::vector<Task>& taskList, Task&& task)
-		{
-			taskList.push_back(std::move(task));
-		}
+		void appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks) const;
+		inline void appendTasks(std::vector<Task>& taskList, Task&& task) const;
 
 		void runQueueJob(std::vector<Task>&& tasks);
 
@@ -85,5 +61,7 @@ namespace multi
 		ThreadPool m_threadPool;
 	};
 } // namespace multi
+
+#include "multi/details/context.inl"
 
 #endif // _MULTI_CONTEXT_H_

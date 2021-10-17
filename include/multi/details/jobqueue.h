@@ -22,30 +22,12 @@ namespace multi
 	class JobQueue
 	{
 	public:
-		inline void push(const Job& jb)
-		{
-			std::lock_guard<std::mutex> lk(m_lock);
-			m_queue.push(jb);
-		}
+		// Push Job into queue
+		void push(const Job& jb);
 
-		bool pop(Job* jb)
-		{
-			std::lock_guard<std::mutex> lk(m_lock);
-			while (!m_queue.empty())
-			{
-				auto& front = m_queue.front();
-				if (!front.hasWork())
-				{
-					m_queue.pop();
-				}
-				else
-				{
-					*jb = m_queue.front();
-					return true;
-				}
-			}
-			return false;
-		}
+		// Pop first Job with work
+		// Returns true if found
+		bool pop(Job* jb);
 
 	private:
 		std::queue<Job> m_queue;
