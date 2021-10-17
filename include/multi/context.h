@@ -62,7 +62,7 @@ namespace multi
 		{
 			std::vector<Task> taskList;
 			taskList.reserve((end - begin) / step);
-			for (IDX i = begin; i <= end; i += step)
+			for (IDX i = begin; i < end; i += step)
 				taskList.push_back(std::bind(func, i));
 			runQueueJob(std::move(taskList));
 		}
