@@ -101,10 +101,10 @@ Report runForSize(const ImageSize& imageSize)
 	out.singleDuration = run(g, "single", &mandelbrotSingle);
 	out.asyncDuration = run(g, "async", &mandelbrotStdAsync);
 
-	multi::start();
+	multi::start(std::thread::hardware_concurrency());
 	out.multiDuration = run(g, "multi", &mandelbrotMulti);
 	multi::stop();
-	out.multiOffDuration = run(g, "multi-off", &mandelbrotMultiSingle);
+	out.multiOffDuration = run(g, "multi-off", &mandelbrotMulti);
 
 	return out;
 }
@@ -116,7 +116,7 @@ int main()
 	reports.push_back(runForSize(IMAGE_SQUARE));
 	reports.push_back(runForSize(IMAGE_WIDE));
 
-	for(auto& report : reports)
+	for (auto& report : reports)
 		report.print();
 
 	return EXIT_SUCCESS;

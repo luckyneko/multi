@@ -7,8 +7,6 @@
  */
 
 #include "multi/context.h"
-#include "multi/details/jobnode.h"
-#include "multi/details/localjobqueue.h"
 
 namespace multi
 {
@@ -31,24 +29,21 @@ namespace multi
 	{
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
-		auto promiseNode = allocJobNode(nullptr, [promise](Job) { promise->set_value(); });
-		auto newJob = allocJobNode(nullptr, std::move(task), promiseNode);
-		queueJobNode(newJob);
+		std::vector<Task> tasks;
+		tasks.reserve(1);
+		tasks.emplace_back([task, promise]()
+						   {
+							   task();
+							   promise->set_value();
+						   });
+		m_threadPool.queue(std::move(tasks));
 		return Handle(std::move(hdl));
 	}
 
-	JobNode* Context::allocJobNode(JobNode* parent, Task&& task, JobNode* next)
+	void Context::runQueueJob(std::vector<Task>&& tasks)
 	{
-		return new JobNode(parent, std::move(task), next);
-	}
-
-	void Context::deallocJobNode(JobNode* node)
-	{
-		delete node;
-	}
-
-	void Context::queueJobNode(JobNode* node)
-	{
-		m_threadPool.queue(std::bind(&JobNode::runJob, node, this));
+		Job jb(std::move(tasks));
+		m_threadPool.queue(jb);
+		jb.waitRun();
 	}
 } // namespace multi
