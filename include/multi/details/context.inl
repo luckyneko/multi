@@ -21,7 +21,7 @@ namespace multi
 		std::vector<Task> taskList;
 		taskList.reserve(end - begin);
 		for (ITER it = begin; it != end; ++it)
-			taskList.push_back(std::bind(func, std::ref(*it)));
+			taskList.emplace_back(std::bind(func, std::ref(*it)));
 		runQueueJob(std::move(taskList));
 	}
 
@@ -34,18 +34,18 @@ namespace multi
 		std::vector<Task> taskList;
 		taskList.reserve((end - begin) / step);
 		for (IDX i = begin; i < end; i += step)
-			taskList.push_back(std::bind(func, i));
+			taskList.emplace_back(std::bind(func, i));
 		runQueueJob(std::move(taskList));
 	}
 
 	template <typename... TASKS>
 	void Context::appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks) const
 	{
-		taskList.push_back(std::move(task));
+		taskList.emplace_back(std::move(task));
 		appendTasks(taskList, std::forward<TASKS>(tasks)...);
 	}
 	inline void Context::appendTasks(std::vector<Task>& taskList, Task&& task) const
 	{
-		taskList.push_back(std::move(task));
+		taskList.emplace_back(std::move(task));
 	}
 } // namespace multi
