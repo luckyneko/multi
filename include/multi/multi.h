@@ -53,12 +53,22 @@ namespace multi
 	{
 		context()->each(begin, end, func);
 	}
+	template <typename ITER, typename FUNC>
+	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
+	{
+		context()->each(taskCount, begin, end, func);
+	}
 
 	// Launch task for each idx with step
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
 		context()->range(begin, end, step, func);
+	}
+	template <typename IDX, typename FUNC>
+	void range(size_t jobCount, IDX begin, IDX end, IDX step, FUNC&& func)
+	{
+		context()->range(jobCount, begin, end, step, func);
 	}
 } // namespace multi
 

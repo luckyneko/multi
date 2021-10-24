@@ -112,4 +112,22 @@ void mandelbrotMulti(Graph& g, double er, int numIter)
 				 });
 }
 
+template <size_t JOB_COUNT>
+void mandelbrotMultiFixed(Graph& g, double er, int numIter)
+{
+	Graph* gp = &g;
+	multi::range(JOB_COUNT, 0, gp->height(), 1,
+				 [gp, er, numIter](int y)
+				 {
+					 double Cy = gp->getY(y);
+					 for (int x = 0; x < gp->width(); ++x)
+					 {
+						 double Cx = gp->getX(x);
+						 int iter = mandelbrotIterations(Cx, Cy, er, numIter);
+						 auto colour = mandelbrotColour(iter, numIter);
+						 gp->writeColour(colour, x, y);
+					 }
+				 });
+}
+
 #endif // _MANDELBROT_H_

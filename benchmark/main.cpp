@@ -71,6 +71,7 @@ struct Report
 	double singleDuration;
 	double asyncDuration;
 	double multiDuration;
+	double multiFixedDuration;
 	double multiOffDuration;
 
 	void print()
@@ -84,6 +85,7 @@ struct Report
 		log("single", singleDuration, singleDuration);
 		log("async ", asyncDuration, singleDuration);
 		log("multi ", multiDuration, singleDuration);
+		log("multi32", multiFixedDuration, singleDuration);
 		log("multi-off", multiOffDuration, singleDuration);
 		printf("-----------|-----------|------------|----------|-------------\n");
 	}
@@ -103,6 +105,7 @@ Report runForSize(const ImageSize& imageSize)
 
 	multi::start(std::thread::hardware_concurrency());
 	out.multiDuration = run(g, "multi", &mandelbrotMulti);
+	out.multiFixedDuration = run(g, "multi32", &mandelbrotMultiFixed<32>);
 	multi::stop();
 	out.multiOffDuration = run(g, "multi-off", &mandelbrotMulti);
 

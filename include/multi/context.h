@@ -43,12 +43,16 @@ namespace multi
 		// FUNC is function void(T) or void(T&)
 		template <typename ITER, typename FUNC>
 		void each(ITER begin, ITER end, FUNC&& func);
+		template <typename ITER, typename FUNC>
+		void each(size_t taskCount, ITER begin, ITER end, FUNC&& func);
 
 		// Launch task for each idx with step from begin < end
 		// IDX is a POD-type
 		// FUNC is void(IDX)
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
+		template <typename IDX, typename FUNC>
+		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
 
 	private:
 		template <typename... TASKS>

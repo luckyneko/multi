@@ -64,22 +64,41 @@ TEST_CASE("multi::Context")
 
 		// Test const Each
 		a = 0;
-		std::vector<int> intList{0, 1, 2, 3, 4};
+		const std::vector<int> intList{0, 1, 2, 3, 4};
 		context.each(intList.begin(), intList.end(), [&](int i)
 					 { a += i; });
 		CHECK(a == 10);
 
+		// TEst const Each task set
+		a = 0;
+		context.each(4, intList.begin(), intList.end(), [&](int i)
+					 { a += i; });
+		CHECK(a == 10);
+
 		// Test mutable Each
-		std::vector<int> intBList{0, 1, 2, 3, 4};
-		context.each(intBList.begin(), intBList.end(), [](int& i)
+		std::vector<int> intAList = intList;
+		context.each(intAList.begin(), intAList.end(), [](int& i)
+					 { i += 1; });
+		CHECK(intAList == std::vector<int>{1, 2, 3, 4, 5});
+
+		// Test mutable Each task set
+		std::vector<int> intBList = intList;
+		context.each(4, intBList.begin(), intBList.end(), [](int& i)
 					 { i += 1; });
 		CHECK(intBList == std::vector<int>{1, 2, 3, 4, 5});
 
 		// Test Range
 		a = 0;
-		context.range(0, 4, 1, [&](int i)
+		context.range(1, 15, 2, [&](int i)
 					  { a += i; });
-		CHECK(a == 6);
+		CHECK(a == 1 + 3 + 5 + 7 + 9 + 11 + 13);
+
+		// Test Range task set
+		a = 0;
+		context.range(
+			4, 1, 15, 2, [&](int i)
+			{ a += i; });
+		CHECK(a == 1 + 3 + 5 + 7 + 9 + 11 + 13);
 
 		// Stop threads
 		context.stop();
