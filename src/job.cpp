@@ -43,7 +43,7 @@ namespace multi
 
 	bool Job::tryRun()
 	{
-		if (!valid() || !hasWork())
+		if (!hasWork())
 			return false;
 
 		size_t taskIdx = m_inner->next++;
