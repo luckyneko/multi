@@ -103,7 +103,7 @@ Report runForSize(const ImageSize& imageSize)
 	out.singleDuration = run(g, "single", &mandelbrotSingle);
 	out.asyncDuration = run(g, "async", &mandelbrotStdAsync);
 
-	multi::start(std::thread::hardware_concurrency());
+	multi::start(std::thread::hardware_concurrency() - 1);
 	out.multiDuration = run(g, "multi", &mandelbrotMulti);
 	out.multiFixedDuration = run(g, "multi32", &mandelbrotMultiFixed<32>);
 	multi::stop();
