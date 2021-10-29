@@ -29,17 +29,14 @@ namespace multi
 	void Context::each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
 	{
 		auto numLoops = (end - begin);
-		size_t outerStep = numLoops / taskCount;
-		if (numLoops % taskCount != 0)
-			++outerStep;
+		size_t outerStep = numLoops / (taskCount - 1);
+
 		std::vector<Task> taskList;
 		taskList.reserve(taskCount);
 		for (size_t i = 0; i < taskCount; ++i)
 		{
 			ITER innerBegin = begin + (i * outerStep);
-			ITER innerEnd = innerBegin + outerStep;
-			if (innerEnd > end)
-				innerEnd = end;
+			ITER innerEnd = (i + 1 == taskCount) ? end : innerBegin + outerStep;
 			taskList.emplace_back([innerBegin, innerEnd, func]()
 								  {
 									  for (ITER it = innerBegin; it < innerEnd; ++it)
@@ -66,9 +63,7 @@ namespace multi
 	void Context::range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
 		IDX numLoops = (end - begin) / step;
-		IDX outerStep = numLoops / taskCount;
-		if (numLoops % taskCount != 0)
-			++outerStep;
+		IDX outerStep = numLoops / (taskCount - 1);
 		range(begin, end, outerStep, [&](IDX innerBegin)
 			  {
 				  for (IDX i = innerBegin; i < innerBegin + outerStep && i < end; i += step)
