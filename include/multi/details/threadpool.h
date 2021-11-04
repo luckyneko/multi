@@ -9,19 +9,18 @@
 #ifndef _MULTI_THREADPOOL_H_
 #define _MULTI_THREADPOOL_H_
 
+#include "multi/details/jobqueue.h"
 #include "multi/details/nulllock.h"
-#include "multi/details/queue.h"
 
 #include <atomic>
 #include <condition_variable>
-#include <functional>
 #include <thread>
 
 namespace multi
 {
 	/*
 	 * ThreadPool
-	 * Manage set of threads to run tasks
+	 * Manage set of threads to run Jobs
 	 */
 	class ThreadPool
 	{
@@ -30,23 +29,22 @@ namespace multi
 		ThreadPool(const ThreadPool&) = delete;
 		~ThreadPool();
 
-		void start(size_t threadCount = std::thread::hardware_concurrency());
+		void start(size_t threadCount);
 		void stop();
 
-		void queue(std::function<void()>&& func);
-		bool isActive() const;
-		size_t threadCount() const;
+		void queue(const Job& jb);
+		inline bool isActive() const { return m_active; }
+		inline size_t threadCount() const { return m_threads.size(); }
 
 	private:
 		void threadMain();
 
 	private:
 		std::vector<std::thread> m_threads;
-		Queue<std::function<void()>> m_queue;
+		JobQueue m_queue;
 		NullLock m_lock;
 		std::condition_variable_any m_sync;
 		std::atomic<bool> m_active;
-		std::atomic<bool> m_runningLocal;
 	};
 } // namespace multi
 

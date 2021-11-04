@@ -26,13 +26,13 @@ target_link_libraries(${PROJECT_NAME} multi)
 - NB: In theory works on iOS & Android
 
 ## Features
-- Job completion tracking
-- Parallel & Sequential tasks
+- Simple in-line API
+- Will run on local-thread as well as workers
 - Single threaded mode
 - Only write functions once for single & multi threaded
 
 ## Examples
-For extra examples please see `tests/job.cpp`
+For extra examples please see `tests/context.cpp`
 
 ### Basic Async
 ``` C++
@@ -46,7 +46,7 @@ int main()
 
     // Run job
     std::atomic<int> i(0);
-    multi::Handle jobHdl = multi::async([&](Job)
+    multi::Handle jobHdl = multi::async([&]()
     {
         ++i;
     });
@@ -55,7 +55,7 @@ int main()
     jobHdl.wait();
 
     // async will automatically wait if handle not captured
-    multi::async([&](Job)
+    multi::async([&]()
     {
         ++i;
     });
@@ -65,68 +65,59 @@ int main()
 }
 ```
 
-### Parallel & Sequential child tasks
+### Parallel tasks
 ``` C++
 void function()
 {
-    // Automatically wait for async
-    multi::async([](Job jb)
-    {
-        // Launch all as child tasks in parallel
-        jb.add(multi::Order::par, 
-            [](Job)
-            {
-
-            },
-            [](Job)
-            {
-
-            }
-        );
-
-        // Launch as a sequence of child tasks
-        jc.add(multi::Order::seq, 
-            [](Job)
-            {
-
-            },
-            [](Job)
-            {
-
-            }
-        );
-    });
+    // Run 2 tasks side by side
+    multi::parallel(
+        // Task 1
+        []()
+        {
+        },
+        // Task 2
+        []()
+        {
+        }
+    );
 }
 ```
 
-### Job object / Task Wrapper
+### Run function on Each item
 ``` C++
-multi::Task function(const std::vector<int>& indices)
+void function()
 {
-    return [indices](Job jb)
+    std::vector<Item> items;
+
+    // Run task per item
+    multi::each(items.begin(), items.end(), [](Item& item)
     {
-        // For each index do something
-        jb.each(multi::Order::par, indices.begin(), indices.end(),
-            [](Job, int value)
-            {
-                // Do work per index
-            }
-        );
+        item.setValue();
+    };
+
+    // Run over all items, using 32 tasks
+    multi::each(32, items.end(), [](Item& item)
+    {
+        item.setValue();
     };
 }
+```
 
-void run(const std::vector<int>& indices)
+### Run function on range of numbers with step
+``` C++
+void function()
 {
-    // Run function single-threaded
-    function(indices);
 
-    // Run function multi-threaded
-    multi::async( function(indices) );
-
-    // Run function as child task
-    multi::async([&](Job jb)
+    // Run task per step
+    multi::range(0, 100, 2, [](int idx)
     {
-        jc.add(multi::Order::par, function(jc));
-    });
+        out += idx;
+    };
+
+    // Run task per step, using 32 tasks
+    multi::each(32, 0, 100, 2, [](int idx)
+    {
+        out += idx;
+    };
 }
 ```
