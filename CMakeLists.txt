@@ -27,27 +27,21 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
-    include/multi/details/icontext.h
-    include/multi/details/job.inl
-    include/multi/details/jobnode.h
-    include/multi/details/localjobqueue.h
+    include/multi/details/context.inl
+    include/multi/details/job.h
+    include/multi/details/jobqueue.h
     include/multi/details/nulllock.h
-    include/multi/details/queue.h
     include/multi/details/threadpool.h
     include/multi/context.h
     include/multi/handle.h
-    include/multi/job.h
     include/multi/multi.h
-    include/multi/order.h
     include/multi/task.h
 
     # Source
     src/context.cpp
     src/job.cpp
-    src/jobnode.cpp
-    src/localjobqueue.cpp
+    src/jobqueue.cpp
     src/multi.cpp
-    src/task.cpp
     src/threadpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
@@ -68,9 +62,7 @@ if(MULTI_BUILD_TESTING)
         test/main.cpp
         test/context.cpp
         test/job.cpp
-        test/jobnode.cpp
-        test/queue.cpp
-        test/task.cpp
+        test/jobqueue.cpp
         test/threadpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)

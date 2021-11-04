@@ -76,16 +76,17 @@ void mandelbrotStdAsync(Graph& g, double er, int numIter)
 	for (int y = 0; y < (int)g.height(); ++y)
 	{
 		Graph* gp = &g;
-		hndls[y] = std::async([gp, er, numIter, y]() {
-			double Cy = gp->getY(y);
-			for (int x = 0; x < gp->width(); ++x)
-			{
-				double Cx = gp->getX(x);
-				int iter = mandelbrotIterations(Cx, Cy, er, numIter);
-				auto colour = mandelbrotColour(iter, numIter);
-				gp->writeColour(colour, x, y);
-			}
-		});
+		hndls[y] = std::async([gp, er, numIter, y]()
+							  {
+								  double Cy = gp->getY(y);
+								  for (int x = 0; x < gp->width(); ++x)
+								  {
+									  double Cx = gp->getX(x);
+									  int iter = mandelbrotIterations(Cx, Cy, er, numIter);
+									  auto colour = mandelbrotColour(iter, numIter);
+									  gp->writeColour(colour, x, y);
+								  }
+							  });
 	}
 
 	for (size_t i = 0; i < hndls.size(); ++i)
@@ -94,28 +95,39 @@ void mandelbrotStdAsync(Graph& g, double er, int numIter)
 
 //------------------------------------------------------------------------------
 // multi
-multi::Task mandelbrotMultiSingle(Graph& g, double er, int numIter)
-{
-	Graph* gp = &g;
-	return [gp, er, numIter](multi::Job jb) {
-		jb.range(
-			multi::Order::par, 0, gp->height(), 1,
-			[gp, er, numIter](multi::Job jb, int y) {
-				double Cy = gp->getY(y);
-				for (int x = 0; x < gp->width(); ++x)
-				{
-					double Cx = gp->getX(x);
-					int iter = mandelbrotIterations(Cx, Cy, er, numIter);
-					auto colour = mandelbrotColour(iter, numIter);
-					gp->writeColour(colour, x, y);
-				}
-			});
-	};
-}
-
 void mandelbrotMulti(Graph& g, double er, int numIter)
 {
-	multi::async(mandelbrotMultiSingle(g, er, numIter));
+	Graph* gp = &g;
+	multi::range(0, gp->height(), 1,
+				 [gp, er, numIter](int y)
+				 {
+					 double Cy = gp->getY(y);
+					 for (int x = 0; x < gp->width(); ++x)
+					 {
+						 double Cx = gp->getX(x);
+						 int iter = mandelbrotIterations(Cx, Cy, er, numIter);
+						 auto colour = mandelbrotColour(iter, numIter);
+						 gp->writeColour(colour, x, y);
+					 }
+				 });
+}
+
+template <size_t JOB_COUNT>
+void mandelbrotMultiFixed(Graph& g, double er, int numIter)
+{
+	Graph* gp = &g;
+	multi::range(JOB_COUNT, 0, gp->height(), 1,
+				 [gp, er, numIter](int y)
+				 {
+					 double Cy = gp->getY(y);
+					 for (int x = 0; x < gp->width(); ++x)
+					 {
+						 double Cx = gp->getX(x);
+						 int iter = mandelbrotIterations(Cx, Cy, er, numIter);
+						 auto colour = mandelbrotColour(iter, numIter);
+						 gp->writeColour(colour, x, y);
+					 }
+				 });
 }
 
 #endif // _MANDELBROT_H_

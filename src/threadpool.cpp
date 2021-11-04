@@ -19,7 +19,6 @@ namespace multi
 		, m_lock()
 		, m_sync()
 		, m_active(false)
-		, m_runningLocal(false)
 	{
 	}
 
@@ -31,6 +30,9 @@ namespace multi
 	void ThreadPool::start(size_t threadCount)
 	{
 		assert(!m_active);
+		if (m_active)
+			return;
+
 		if (threadCount != 0)
 		{
 			m_active = true;
@@ -51,58 +53,34 @@ namespace multi
 		m_threads.clear();
 	}
 
-	void ThreadPool::queue(std::function<void()>&& func)
+	void ThreadPool::queue(const Job& jb)
 	{
 		if (m_active)
 		{
-			m_queue.emplace(std::move(func));
-			m_sync.notify_one();
+			m_queue.push(jb);
+			m_sync.notify_all();
 		}
 		else
 		{
-			bool notRunning = false;
-			if(m_runningLocal.compare_exchange_strong(notRunning, true))
-			{
-				std::function<void()> runFunc = std::move(func);
-				do
-				{
-					if(runFunc)
-						runFunc();
-					runFunc = nullptr;
-				}
-				while(m_queue.pop(&runFunc));
-				m_runningLocal = false;
-			}
-			else
-			{
-				m_queue.emplace(std::move(func));
-			}
+			Job tmp = jb;
+			tmp.waitRun();
 		}
-	}
-
-	bool ThreadPool::isActive() const
-	{
-		return m_active.load();
-	}
-
-	size_t ThreadPool::threadCount() const
-	{
-		return m_threads.size();
 	}
 
 	void ThreadPool::threadMain()
 	{
 		std::unique_lock<NullLock> lk(m_lock);
-		std::function<void()> func;
+		Job jb;
 		while (m_active)
 		{
-			m_sync.wait_for(lk, std::chrono::seconds(1), [&]() { return m_queue.pop(&func) || !m_active; });
+			m_sync.wait_for(lk, std::chrono::seconds(1), [&]()
+							{ return m_queue.pop(&jb) || !m_active; });
 			do
 			{
-				if (func)
-					func();
-				func = nullptr;
-			} while (m_queue.pop(&func));
+				while (jb.tryRun())
+					continue;
+				jb.reset();
+			} while (m_queue.pop(&jb));
 		}
 	}
 } // namespace multi

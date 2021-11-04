@@ -1,33 +1,77 @@
-#include "multi/job.h"
+#include "multi/details/job.h"
 
-#include "multi/details/jobnode.h"
-#include "multi/details/localjobqueue.h"
+#include <cassert>
+#include <thread>
 
 namespace multi
 {
-	Job::Job(iContext* context, JobNode* parent)
-		: m_context(context)
-		, m_parent(parent)
+	Job::Job()
+		: m_inner(nullptr)
 	{
 	}
 
-	JobNode* Job::attachJobNode(JobNode* previous, JobNode* next)
+	Job::Job(std::vector<Task>&& tasks)
+		: m_inner(new Inner)
 	{
-		if(previous)
-			previous->setNext(next);
-		return next;
+		m_inner->tasks = std::move(tasks);
+		m_inner->next = 0;
+		m_inner->unfinished = m_inner->tasks.size();
+		m_inner->ref = 1;
 	}
 
-	void Job::addUntil(std::function<bool()> pred, std::function<void(Job)> func)
+	Job::Job(const Job& cpy)
 	{
-		Task task = [pred, func](Job jb)
+		m_inner = cpy.m_inner;
+		if (valid())
+			m_inner->ref++;
+	}
+
+	Job::~Job()
+	{
+		reset();
+	}
+
+	void Job::reset()
+	{
+		if (valid())
 		{
-			if(!pred())
-			{
-				func(jb);
-				jb.addUntil(pred, func);
-			}
-		};
-		m_parent->setNext(m_context->allocJobNode(m_parent->getParent(), std::move(task)));
+			if (--m_inner->ref == 0)
+				delete m_inner;
+			m_inner = nullptr;
+		}
+	}
+
+	bool Job::tryRun()
+	{
+		if (!hasWork())
+			return false;
+
+		size_t taskIdx = m_inner->next++;
+		if (taskIdx >= m_inner->tasks.size())
+			return false;
+
+		m_inner->tasks[taskIdx]();
+		--m_inner->unfinished;
+		return true;
+	}
+
+	void Job::waitRun()
+	{
+		// Run
+		while (tryRun())
+			continue;
+
+		// Wait
+		while (!complete())
+			std::this_thread::yield();
+	}
+
+	Job& Job::operator=(const Job& cpy)
+	{
+		reset();
+		m_inner = cpy.m_inner;
+		if (valid())
+			m_inner->ref++;
+		return *this;
 	}
 } // namespace multi
