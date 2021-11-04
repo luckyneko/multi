@@ -15,7 +15,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
 endif()
 
-project(multi LANGUAGES CXX VERSION 0.0.6)
+project(multi LANGUAGES CXX VERSION 0.1.0)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
