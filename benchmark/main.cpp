@@ -44,7 +44,7 @@ double run(Graph& g, const std::string& name, FUNC&& func, bool writeOutput = fa
 		if (writeOutput)
 		{
 			char filename[50];
-			sprintf(filename, "%s-%06d.ppm", name.c_str(), frameIdx);
+			snprintf(filename, sizeof(filename), "%s-%06d.ppm", name.c_str(), frameIdx);
 			writePPM(filename, g.buffer(), g.width(), g.height());
 		}
 	}
