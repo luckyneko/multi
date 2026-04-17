@@ -4,123 +4,145 @@
  *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
+ *
+ *  Benchmark driver: runs every workload against every method, with warmup
+ *  + repeats, and reports min / median / stdev alongside speedup over the
+ *  single-threaded baseline. Methods flagged as per-task-thread-spawning
+ *  are skipped for workloads above a task-count cap.
  */
 
-#include "mandelbrot.h"
-#include <chrono>
+#include "methods.h"
+#include "simple_pool.h"
+#include "stats.h"
+#include "workloads.h"
 
-// Image settings
-using ImageSize = std::pair<int, int>;
-const ImageSize IMAGE_TALL = {64, 4096};
-const ImageSize IMAGE_SQUARE = {512, 512};
-const ImageSize IMAGE_WIDE = {4096, 64};
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <thread>
+#include <vector>
 
-// Graph Settings
-const double GRAPH_ORIGIN_X = -(6.01000070505 / 11.0);
-const double GRAPH_ORIGIN_Y = -(6.01000070505 / 11.0);
-
-// Zoom settings
-const double ZOOM_GRAPH_SCALE_START = 2.0;
-const double ZOOM_GRAPH_SCALE_END = 0.001;
-const int ZOOM_FRAME_COUNT = 100;
-const double ZOOM_SCALE = 1.05;
-
-// Mandelbrot Settings
-const int NUM_ITER = 256;
-const double ESCAPE_RADIUS = 2.0;
-
-template <typename FUNC>
-double run(Graph& g, const std::string& name, FUNC&& func, bool writeOutput = false)
+namespace
 {
-	printf("\t%-9s...", name.c_str());
-	auto start = std::chrono::high_resolution_clock::now();
+	const int WARMUP_RUNS = 2;
+	const int MEASURED_RUNS = 5;
 
-	for (int frameIdx = 1; frameIdx <= ZOOM_FRAME_COUNT; ++frameIdx)
+	// Skip std::async / std::thread when a workload submits more than this
+	// many tasks. A per-task-thread-spawn method with 100k tasks is useful
+	// as a cautionary data point, but 100k OS threads per run will crash
+	// or take minutes; 1k is enough to show the cost without that.
+	const int PER_TASK_THREAD_CAP = 2000;
+
+	struct Cell
 	{
-		double scale = ZOOM_GRAPH_SCALE_START / std::pow(ZOOM_SCALE, frameIdx);
-		g.setScale(scale);
-		func(g, ESCAPE_RADIUS, NUM_ITER);
+		std::string method;
+		Stats stats;
+		bool skipped = false;
+	};
 
-		if (writeOutput)
+	void printHeader(const Workload& wl, size_t threadCount)
+	{
+		std::printf("# Workload: %s  [%s]\n", wl.name.c_str(), wl.description.c_str());
+		std::printf("  threads=%zu  warmup=%d  repeats=%d\n",
+					threadCount, WARMUP_RUNS, MEASURED_RUNS);
+		std::printf(" %-16s | %10s | %10s | %10s | %9s | %9s\n",
+					"METHOD", "MIN (ms)", "MEDIAN", "MEAN", "STDEV", "SPEEDUP");
+		std::printf("------------------|------------|------------|------------|-----------|----------\n");
+	}
+
+	void printRow(const Cell& cell, double baselineMedian)
+	{
+		if (cell.skipped)
 		{
-			char filename[50];
-			snprintf(filename, sizeof(filename), "%s-%06d.ppm", name.c_str(), frameIdx);
-			writePPM(filename, g.buffer(), g.width(), g.height());
+			std::printf(" %-16s | %10s | %10s | %10s | %9s | %9s\n",
+						cell.method.c_str(), "(skipped)", "", "", "", "");
+			return;
 		}
+		double speedup = (baselineMedian > 0.0)
+							 ? baselineMedian / cell.stats.median_ms
+							 : 0.0;
+		std::printf(" %-16s | %10.3f | %10.3f | %10.3f | %9.3f | %8.2fx\n",
+					cell.method.c_str(),
+					cell.stats.min_ms,
+					cell.stats.median_ms,
+					cell.stats.mean_ms,
+					cell.stats.stdev_ms,
+					speedup);
 	}
-
-	std::chrono::duration<double> duration = std::chrono::high_resolution_clock::now() - start;
-	printf("%8.3fs\n", duration.count());
-
-	return duration.count();
-}
-
-void log(const std::string& name, double duration, double maxDuration)
-{
-	printf(" %-9s | %8.3fs | %8.3fms | %8.3f | %8.3f%%\n",
-		   name.c_str(),
-		   duration,
-		   1000.0 * duration / ZOOM_FRAME_COUNT,
-		   double(ZOOM_FRAME_COUNT) / duration,
-		   100.0 * maxDuration / (duration * std::thread::hardware_concurrency()));
-}
-
-struct Report
-{
-	ImageSize imageSize;
-	double singleDuration;
-	double asyncDuration;
-	double multiDuration;
-	double multiFixedDuration;
-	double multiOffDuration;
-
-	void print()
-	{
-		printf("\n");
-		printf("# Test %d jobs of %d size\n", imageSize.second, imageSize.first);
-		printf("Image Size: %dx%d\n", imageSize.first, imageSize.second);
-		printf("\n");
-		printf(" METHOD    | TOTAL     | PER FRAME  | FPS      | UTILIZATION\n");
-		printf("-----------|-----------|------------|----------|-------------\n");
-		log("single", singleDuration, singleDuration);
-		log("async ", asyncDuration, singleDuration);
-		log("multi ", multiDuration, singleDuration);
-		log("multi32", multiFixedDuration, singleDuration);
-		log("multi-off", multiOffDuration, singleDuration);
-		printf("-----------|-----------|------------|----------|-------------\n");
-	}
-};
-
-Report runForSize(const ImageSize& imageSize)
-{
-	Report out;
-	out.imageSize = imageSize;
-	Graph g(imageSize.first, imageSize.second, ZOOM_GRAPH_SCALE_START, GRAPH_ORIGIN_X, GRAPH_ORIGIN_Y);
-
-	printf("\n");
-	printf("Running benchmarks for %dx%d...\n", imageSize.first, imageSize.second);
-
-	out.singleDuration = run(g, "single", &mandelbrotSingle);
-	out.asyncDuration = run(g, "async", &mandelbrotStdAsync);
-
-	multi::start(std::thread::hardware_concurrency() - 1);
-	out.multiDuration = run(g, "multi", &mandelbrotMulti);
-	out.multiFixedDuration = run(g, "multi32", &mandelbrotMultiFixed<32>);
-	multi::stop();
-	out.multiOffDuration = run(g, "multi-off", &mandelbrotMulti);
-
-	return out;
-}
+} // namespace
 
 int main()
 {
-	std::vector<Report> reports;
-	reports.push_back(runForSize(IMAGE_TALL));
-	reports.push_back(runForSize(IMAGE_SQUARE));
-	reports.push_back(runForSize(IMAGE_WIDE));
+	// Line-buffer stdout so progress is visible when piped or redirected.
+	std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
-	for (auto& report : reports)
-		report.print();
+	size_t hw = std::thread::hardware_concurrency();
+	if (hw == 0)
+		hw = 4;
 
+	std::printf("multi benchmark\n");
+	std::printf("===============\n");
+	std::printf("hardware_concurrency = %zu\n\n", hw);
+
+	// multi uses (hw-1) workers because waitRun() executes on the caller,
+	// giving it hw effective parallel threads. Other methods use hw.
+	SimplePool simplePool(hw);
+	multi::start(hw > 0 ? hw - 1 : 1);
+
+	auto methods = buildMethods(simplePool);
+
+	std::vector<Workload> workloads;
+	workloads.push_back(makeMandelbrotWorkload(512, 512, 256, 10));
+	workloads.push_back(makeTinyWorkload(5000, 500));
+	workloads.push_back(makeImbalancedWorkload(200, 8000));
+	workloads.push_back(makeNestedWorkload(12, 6, 200000));
+
+	for (auto& wl : workloads)
+	{
+		printHeader(wl, hw);
+
+		std::vector<Cell> cells;
+		cells.reserve(methods.size());
+
+		const bool isNested = (wl.name == "nested");
+
+		for (auto& m : methods)
+		{
+			Cell c;
+			c.method = m.name;
+			const bool skipForThreadSpawn =
+				m.perTaskThreadSpawn && wl.totalTaskCount > PER_TASK_THREAD_CAP;
+			const bool skipForNested = isNested && !m.nestedSafe;
+			if (skipForThreadSpawn || skipForNested)
+			{
+				c.skipped = true;
+			}
+			else
+			{
+				c.stats = measure(WARMUP_RUNS, MEASURED_RUNS,
+								  [&]()
+								  { wl.run(m); });
+			}
+			cells.push_back(std::move(c));
+		}
+
+		// Baseline = single-threaded median; used for speedup column.
+		double baseline = 0.0;
+		for (const auto& c : cells)
+		{
+			if (!c.skipped && c.method == "single")
+			{
+				baseline = c.stats.median_ms;
+				break;
+			}
+		}
+
+		for (const auto& c : cells)
+			printRow(c, baseline);
+
+		std::printf("\n");
+	}
+
+	multi::stop();
 	return EXIT_SUCCESS;
 }
