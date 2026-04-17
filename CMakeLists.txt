@@ -28,10 +28,8 @@ find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
     include/multi/details/context.inl
-    include/multi/details/job.h
-    include/multi/details/jobqueue.h
-    include/multi/details/nulllock.h
-    include/multi/details/threadpool.h
+    include/multi/details/workstealdeque.h
+    include/multi/details/workerpool.h
     include/multi/context.h
     include/multi/handle.h
     include/multi/multi.h
@@ -39,10 +37,9 @@ add_library(${PROJECT_NAME} STATIC
 
     # Source
     src/context.cpp
-    src/job.cpp
-    src/jobqueue.cpp
     src/multi.cpp
-    src/threadpool.cpp
+    src/workstealdeque.cpp
+    src/workerpool.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
@@ -61,9 +58,8 @@ if(MULTI_BUILD_TESTING)
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
         test/context.cpp
-        test/job.cpp
-        test/jobqueue.cpp
-        test/threadpool.cpp
+        test/workstealdeque.cpp
+        test/workerpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")

@@ -9,7 +9,7 @@
 #ifndef _MULTI_CONTEXT_H_
 #define _MULTI_CONTEXT_H_
 
-#include "multi/details/threadpool.h"
+#include "multi/details/workerpool.h"
 #include "multi/handle.h"
 #include "multi/task.h"
 
@@ -62,7 +62,7 @@ namespace multi
 		void runQueueJob(std::vector<Task>&& tasks);
 
 	private:
-		ThreadPool m_threadPool;
+		WorkerPool m_workerPool;
 	};
 } // namespace multi
 
