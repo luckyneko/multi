@@ -44,26 +44,26 @@ namespace multi
 			return;
 		}
 
+		// Spread items as evenly as possible: first 'extra' chunks get (base+1)
+		// items and the rest get 'base'. Avoids iterator overflow that a simple
+		// outerStep-advance approach causes on non-final chunks.
+		const size_t total = static_cast<size_t>(totalTaskCount);
+		const size_t base = total / taskCount;
+		const size_t extra = total % taskCount;
+
 		std::vector<Task> taskList;
 		taskList.reserve(taskCount);
 		ITER innerBegin = begin;
-		ITER innerEnd = innerBegin;
-		const size_t outerStep = totalTaskCount / (taskCount - 1);
 		for (size_t i = 0; i < taskCount; ++i)
 		{
-			// Set end
-			if (i + 1 == taskCount)
-				innerEnd = end;
-			else
-				std::advance(innerEnd, outerStep);
-
-			taskList.emplace_back([innerBegin, innerEnd, func]()
-								  {
-									  for (ITER it = innerBegin; it != innerEnd; ++it)
-										  func(std::ref(*it));
-								  });
-
-			// Step begin
+			ITER innerEnd = innerBegin;
+			std::advance(innerEnd, i < extra ? base + 1 : base);
+			auto task = [innerBegin, innerEnd, func]()
+			{
+				for (ITER it = innerBegin; it != innerEnd; ++it)
+					func(std::ref(*it));
+			};
+			taskList.emplace_back(std::move(task));
 			innerBegin = innerEnd;
 		}
 		runQueueJob(std::move(taskList));
@@ -113,14 +113,27 @@ namespace multi
 			return;
 		}
 
-		IDX outerStep = step * (totalTaskCount / (taskCount - 1));
-		range(begin, end, outerStep, [&](IDX innerBegin)
-			  {
-				  for (IDX i = innerBegin; i < innerBegin + outerStep && i < end; i += step)
-				  {
-					  func(i);
-				  }
-			  });
+		// Balanced distribution: first 'extra' chunks get (base+1) items, rest get 'base'.
+		// Guarantees exactly taskCount chunks and avoids the ceiling-division collapse where
+		// ceil(total/ceil(total/N)) < N (e.g. total=15, N=14 → ceiling gives 8 chunks, not 14).
+		const size_t base = totalTaskCount / taskCount;
+		const size_t extra = totalTaskCount % taskCount;
+
+		std::vector<Task> taskList;
+		taskList.reserve(taskCount);
+		IDX innerBegin = begin;
+		for (size_t i = 0; i < taskCount; ++i)
+		{
+			IDX innerEnd = innerBegin + static_cast<IDX>(i < extra ? base + 1 : base) * step;
+			auto task = [innerBegin, innerEnd, step, func]()
+			{
+				for (IDX j = innerBegin; j < innerEnd; j += step)
+					func(j);
+			};
+			taskList.emplace_back(std::move(task));
+			innerBegin = innerEnd;
+		}
+		runQueueJob(std::move(taskList));
 	}
 
 	template <typename... TASKS>
