@@ -44,11 +44,13 @@ inline std::vector<Method> buildMethods(SimplePool& pool)
 	{
 		Method m;
 		m.name = "single";
-		m.parallel_for = [](int begin, int end, std::function<void(int)> f) {
+		m.parallel_for = [](int begin, int end, std::function<void(int)> f)
+		{
 			for (int i = begin; i < end; ++i)
 				f(i);
 		};
-		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b)
+		{
 			a();
 			b();
 		};
@@ -62,15 +64,18 @@ inline std::vector<Method> buildMethods(SimplePool& pool)
 		Method m;
 		m.name = "std::async";
 		m.perTaskThreadSpawn = true;
-		m.parallel_for = [](int begin, int end, std::function<void(int)> f) {
+		m.parallel_for = [](int begin, int end, std::function<void(int)> f)
+		{
 			std::vector<std::future<void>> futs;
 			futs.reserve(static_cast<size_t>(end - begin));
 			for (int i = begin; i < end; ++i)
-				futs.emplace_back(std::async(std::launch::async, [f, i]() { f(i); }));
+				futs.emplace_back(std::async(std::launch::async, [f, i]()
+											 { f(i); }));
 			for (auto& fut : futs)
 				fut.wait();
 		};
-		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b)
+		{
 			auto fut = std::async(std::launch::async, std::move(a));
 			b();
 			fut.wait();
@@ -83,15 +88,18 @@ inline std::vector<Method> buildMethods(SimplePool& pool)
 		Method m;
 		m.name = "std::thread";
 		m.perTaskThreadSpawn = true;
-		m.parallel_for = [](int begin, int end, std::function<void(int)> f) {
+		m.parallel_for = [](int begin, int end, std::function<void(int)> f)
+		{
 			std::vector<std::thread> ts;
 			ts.reserve(static_cast<size_t>(end - begin));
 			for (int i = begin; i < end; ++i)
-				ts.emplace_back([f, i]() { f(i); });
+				ts.emplace_back([f, i]()
+								{ f(i); });
 			for (auto& t : ts)
 				t.join();
 		};
-		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b)
+		{
 			std::thread t(std::move(a));
 			b();
 			t.join();
@@ -105,14 +113,17 @@ inline std::vector<Method> buildMethods(SimplePool& pool)
 		m.name = "simple_pool";
 		m.nestedSafe = false;
 		SimplePool* p = &pool;
-		m.parallel_for = [p](int begin, int end, std::function<void(int)> f) {
+		m.parallel_for = [p](int begin, int end, std::function<void(int)> f)
+		{
 			for (int i = begin; i < end; ++i)
-				p->submit([f, i]() { f(i); });
+				p->submit([f, i]()
+						  { f(i); });
 			p->wait_all();
 		};
 		// Run one side on the caller (avoids per-invoke thread-creation)
 		// but makes deep recursion risky — see simple_pool.h.
-		m.parallel_invoke = [p](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [p](std::function<void()> a, std::function<void()> b)
+		{
 			p->submit(std::move(a));
 			b();
 			p->wait_all();
@@ -124,31 +135,38 @@ inline std::vector<Method> buildMethods(SimplePool& pool)
 	{
 		Method m;
 		m.name = "multi(items)";
-		m.parallel_for = [](int begin, int end, std::function<void(int)> f) {
-			multi::range(begin, end, 1, [f](int i) { f(i); });
+		m.parallel_for = [](int begin, int end, std::function<void(int)> f)
+		{
+			multi::range(begin, end, 1, [f](int i)
+						 { f(i); });
 		};
-		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b)
+		{
 			multi::parallel(multi::Task(std::move(a)), multi::Task(std::move(b)));
 		};
 		methods.push_back(std::move(m));
 	}
 
-	// --- multi: chunked (one task per worker) ---
+	// --- multi: chunked (K tasks per worker) ---
 	{
 		Method m;
 		m.name = "multi(chunks)";
-		m.parallel_for = [](int begin, int end, std::function<void(int)> f) {
+		m.parallel_for = [](int begin, int end, std::function<void(int)> f)
+		{
 			int count = end - begin;
 			if (count <= 0)
 				return;
-			size_t chunks = multi::threadCount() + 1;
+			const size_t K = 8;
+			size_t chunks = (multi::threadCount() + 1) * K;
 			if (chunks < 2)
 				chunks = 2;
 			if (static_cast<int>(chunks) > count)
 				chunks = static_cast<size_t>(count);
-			multi::range(chunks, begin, end, 1, [f](int i) { f(i); });
+			multi::range(chunks, begin, end, 1, [f](int i)
+						 { f(i); });
 		};
-		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b) {
+		m.parallel_invoke = [](std::function<void()> a, std::function<void()> b)
+		{
 			multi::parallel(multi::Task(std::move(a)), multi::Task(std::move(b)));
 		};
 		methods.push_back(std::move(m));
