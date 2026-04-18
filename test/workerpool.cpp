@@ -3,11 +3,11 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#include <catch2/catch.hpp>
 #include <atomic>
+#include <catch2/catch.hpp>
 #include <future>
-#include <vector>
 #include <multi/details/workerpool.h>
+#include <vector>
 
 TEST_CASE("multi::WorkerPool")
 {
@@ -17,12 +17,15 @@ TEST_CASE("multi::WorkerPool")
 	SECTION("single-threaded mode executes inline")
 	{
 		int value = 0;
-		pool.submit([&value]() { value = 42; });
+		pool.submit([&value]()
+					{ value = 42; });
 		CHECK(value == 42);
 
 		std::vector<multi::Task> batch;
-		batch.emplace_back([&value]() { value += 1; });
-		batch.emplace_back([&value]() { value += 2; });
+		batch.emplace_back([&value]()
+						   { value += 1; });
+		batch.emplace_back([&value]()
+						   { value += 2; });
 		pool.submitBatch(std::move(batch));
 		CHECK(value == 45);
 	}
@@ -44,16 +47,14 @@ TEST_CASE("multi::WorkerPool")
 				pool.submit([triggerA, &value]()
 							{
 					value += 1;
-					triggerA->set_value();
-				});
+					triggerA->set_value(); });
 
 				auto triggerB = std::make_shared<std::promise<void>>();
 				auto handleB = triggerB->get_future();
 				pool.submit([triggerB, &value]()
 							{
 					value += 2;
-					triggerB->set_value();
-				});
+					triggerB->set_value(); });
 
 				handleA.wait();
 				handleB.wait();
@@ -73,8 +74,7 @@ TEST_CASE("multi::WorkerPool")
 					tasks.emplace_back([&counter, numTasks, done]()
 									   {
 						if (++counter == numTasks)
-							done->set_value();
-					});
+							done->set_value(); });
 				}
 				pool.submitBatch(std::move(tasks));
 
@@ -98,8 +98,7 @@ TEST_CASE("multi::WorkerPool")
 						value += 2;
 						triggerInner->set_value();
 					});
-					triggerOuter->set_value();
-				});
+					triggerOuter->set_value(); });
 
 				handleOuter.wait();
 				handleInner.wait();
@@ -114,7 +113,8 @@ TEST_CASE("multi::WorkerPool")
 
 				std::vector<multi::Task> tasks;
 				for (int i = 0; i < numTasks; ++i)
-					tasks.emplace_back([&counter]() { counter++; });
+					tasks.emplace_back([&counter]()
+									   { counter++; });
 				pool.submitBatch(std::move(tasks));
 
 				// Main thread steals some work too
@@ -149,8 +149,7 @@ TEST_CASE("multi::WorkerPool")
 						tasks.emplace_back([&counter, totalTasks, allDone]()
 										   {
 							if (++counter == totalTasks)
-								allDone->set_value();
-						});
+								allDone->set_value(); });
 					}
 					pool.submitBatch(std::move(tasks));
 				}
@@ -187,7 +186,8 @@ TEST_CASE("multi::WorkerPool stop drains remaining tasks")
 
 	std::vector<multi::Task> tasks;
 	for (int i = 0; i < numTasks; ++i)
-		tasks.emplace_back([&counter]() { counter++; });
+		tasks.emplace_back([&counter]()
+						   { counter++; });
 	pool.submitBatch(std::move(tasks));
 
 	pool.stop();

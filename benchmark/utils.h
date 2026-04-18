@@ -37,7 +37,7 @@ void HSVtoRGB(const Colour& hsv, Colour& rgb)
 	float x = c * (1.0f - fabs(fmod(h / 60.0f, 2) - 1.0f));
 	float m = v - c;
 
-	if(h >= 300.0f)
+	if (h >= 300.0f)
 		rgb = {c + m, 0.0f + m, x + m};
 	else if (h >= 240.0f)
 		rgb = {x + m, 0.0f + m, c + m};

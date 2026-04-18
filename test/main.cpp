@@ -41,8 +41,7 @@ TEST_CASE("multi::async()")
 	auto hdl = multi::async([&]()
 							{
 								std::this_thread::sleep_for(std::chrono::milliseconds(1));
-								++a;
-							});
+								++a; });
 	CHECK(a == 0);
 	hdl.wait();
 	CHECK(a == 1);
@@ -50,8 +49,7 @@ TEST_CASE("multi::async()")
 	multi::async([&]()
 				 {
 					 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-					 ++a;
-				 });
+					 ++a; });
 	CHECK(a == 2);
 
 	multi::stop();

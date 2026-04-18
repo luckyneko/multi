@@ -31,7 +31,8 @@ public:
 	{
 		m_threads.reserve(threadCount);
 		for (size_t i = 0; i < threadCount; ++i)
-			m_threads.emplace_back([this]() { workerLoop(); });
+			m_threads.emplace_back([this]()
+								   { workerLoop(); });
 	}
 
 	SimplePool(const SimplePool&) = delete;
@@ -61,7 +62,8 @@ public:
 	void wait_all()
 	{
 		std::unique_lock<std::mutex> lk(m_mutex);
-		m_done.wait(lk, [this]() { return m_pending == 0; });
+		m_done.wait(lk, [this]()
+					{ return m_pending == 0; });
 	}
 
 	size_t threadCount() const { return m_threads.size(); }
@@ -74,7 +76,8 @@ private:
 			Task task;
 			{
 				std::unique_lock<std::mutex> lk(m_mutex);
-				m_wake.wait(lk, [this]() { return m_stop || !m_queue.empty(); });
+				m_wake.wait(lk, [this]()
+							{ return m_stop || !m_queue.empty(); });
 				if (m_stop && m_queue.empty())
 					return;
 				task = std::move(m_queue.front());
