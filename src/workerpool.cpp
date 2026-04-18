@@ -37,7 +37,7 @@ namespace multi
 
 		m_workers.reserve(threadCount);
 		for (size_t i = 0; i < threadCount; ++i)
-			m_workers.push_back(new Worker());
+			m_workers.push_back(std::make_unique<Worker>());
 
 		m_threads.reserve(threadCount);
 		for (size_t i = 0; i < threadCount; ++i)
@@ -46,20 +46,19 @@ namespace multi
 
 	void WorkerPool::stop()
 	{
-		// Set m_active under the mutex so no worker can miss the state change
-		// between its predicate check and entering wait().
+		// Set m_active false then barrier+notify each worker so none can miss the
+		// state change between their predicate check and entering wait().
+		m_active.store(false, std::memory_order_relaxed);
+		for (auto& worker : m_workers)
 		{
-			std::lock_guard<std::mutex> lk(m_sleepMutex);
-			m_active.store(false, std::memory_order_relaxed);
+			worker->mutex.lock();
+			worker->mutex.unlock();
+			worker->cv.notify_one();
 		}
-		m_sleepCV.notify_all();
 
 		for (auto& thread : m_threads)
 			thread.join();
 		m_threads.clear();
-
-		for (auto* worker : m_workers)
-			delete worker;
 		m_workers.clear();
 	}
 
@@ -71,15 +70,15 @@ namespace multi
 			return;
 		}
 
+		// Push task
 		size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
-		m_workers[idx]->deque.push(std::move(task));
+		Worker* worker = m_workers[idx].get();
+		worker->deque.push(std::move(task));
 
-		// Lock-unlock before notify ensures any worker that already checked
-		// the predicate and found no work has entered wait() before we signal.
-		{
-			std::lock_guard<std::mutex> lk(m_sleepMutex);
-		}
-		m_sleepCV.notify_one();
+		// Notify Worker
+		worker->mutex.lock();
+		worker->mutex.unlock();
+		worker->cv.notify_one();
 	}
 
 	void WorkerPool::submitBatch(std::vector<Task>&& tasks)
@@ -94,6 +93,7 @@ namespace multi
 			return;
 		}
 
+		// Push work
 		size_t workerCount = m_workers.size();
 		size_t base = m_nextWorker.fetch_add(tasks.size(), std::memory_order_relaxed);
 		for (size_t i = 0; i < tasks.size(); ++i)
@@ -102,20 +102,15 @@ namespace multi
 			m_workers[idx]->deque.push(std::move(tasks[i]));
 		}
 
-		// Same lost-notification barrier as submit().
-		{
-			std::lock_guard<std::mutex> lk(m_sleepMutex);
-		}
-
+		// Barrier+notify each worker that received tasks. With per-worker condvars
+		// we target exactly the workers with new work rather than broadcasting.
 		size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
-		if (wakeCount == workerCount)
+		for (size_t i = 0; i < wakeCount; ++i)
 		{
-			m_sleepCV.notify_all();
-		}
-		else
-		{
-			for (size_t i = 0; i < wakeCount; ++i)
-				m_sleepCV.notify_one();
+			Worker* w = m_workers[(base + i) % workerCount].get();
+			w->mutex.lock();
+			w->mutex.unlock();
+			w->cv.notify_one();
 		}
 	}
 
@@ -131,14 +126,16 @@ namespace multi
 
 	void WorkerPool::workerMain(size_t workerIndex)
 	{
+		Worker* self = m_workers[workerIndex].get();
 		Task task;
 		while (m_active.load(std::memory_order_acquire))
 		{
-			// Sleep until notified
-			std::unique_lock<std::mutex> lk(m_sleepMutex);
-			m_sleepCV.wait(lk, [&]()
-						   { return tryGetTask(workerIndex, &task) || !m_active.load(std::memory_order_relaxed); });
-			lk.unlock();
+			// Sleep
+			{
+				std::unique_lock<std::mutex> lk(self->mutex);
+				self->cv.wait(lk, [&]()
+							  { return tryGetTask(workerIndex, &task) || !m_active.load(std::memory_order_relaxed); });
+			}
 
 			// Run all tasks
 			while (task)

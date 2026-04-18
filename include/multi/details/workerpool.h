@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -49,6 +50,8 @@ namespace multi
 		struct Worker
 		{
 			WorkStealDeque deque;
+			std::mutex mutex;
+			std::condition_variable cv;
 			// Pad to avoid false sharing between adjacent workers
 			char padding[64];
 		};
@@ -57,13 +60,10 @@ namespace multi
 		bool tryGetTask(size_t workerIndex, Task* task);
 
 	private:
-		std::vector<Worker*> m_workers;
+		std::vector<std::unique_ptr<Worker>> m_workers;
 		std::vector<std::thread> m_threads;
 		std::atomic<size_t> m_nextWorker;
 		std::atomic<bool> m_active;
-
-		std::mutex m_sleepMutex;
-		std::condition_variable m_sleepCV;
 	};
 } // namespace multi
 
