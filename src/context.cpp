@@ -32,33 +32,28 @@ namespace multi
 	{
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
-		auto wrappedTask = [task, promise]()
+		task = [task = std::move(task), promise]()
 		{
 			task();
 			promise->set_value();
 		};
-		m_workerPool.submit(std::move(wrappedTask));
+		m_workerPool.submit(std::move(task));
 		return Handle(std::move(hdl));
 	}
 
 	void Context::runQueueJob(std::vector<Task>&& tasks)
 	{
-		// Stack-allocated counter: safe because runQueueJob blocks (via the
-		// spin loop below) until every task has decremented it to zero, so
-		// the counter is always alive when workers access it.
+		// Insert counter into tasks
 		std::atomic<size_t> remaining(tasks.size());
-		std::vector<Task> wrapped;
-		wrapped.reserve(tasks.size());
-		for (auto& t : tasks)
+		for (size_t i = 0; i < tasks.size(); ++i)
 		{
-			auto wrappedTask = [&remaining, t = std::move(t)]()
+			tasks[i] = [&remaining, task = std::move(tasks[i])]()
 			{
-				t();
+				task();
 				remaining.fetch_sub(1, std::memory_order_release);
 			};
-			wrapped.emplace_back(std::move(wrappedTask));
 		}
-		m_workerPool.submitBatch(std::move(wrapped));
+		m_workerPool.submitBatch(std::move(tasks));
 
 		// Caller participates by stealing work while waiting
 		Task stolen;
