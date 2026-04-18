@@ -9,7 +9,6 @@
 #include "multi/context.h"
 
 #include <atomic>
-#include <memory>
 #include <thread>
 
 namespace multi
@@ -33,34 +32,37 @@ namespace multi
 	{
 		auto promise = std::make_shared<std::promise<void>>();
 		auto hdl = promise->get_future();
-		m_workerPool.submit([task, promise]()
-							{
-								task();
-								promise->set_value();
-							});
+		auto wrappedTask = [task, promise]()
+		{
+			task();
+			promise->set_value();
+		};
+		m_workerPool.submit(std::move(wrappedTask));
 		return Handle(std::move(hdl));
 	}
 
 	void Context::runQueueJob(std::vector<Task>&& tasks)
 	{
-		auto remaining = std::make_shared<std::atomic<size_t>>(tasks.size());
-
+		// Stack-allocated counter: safe because runQueueJob blocks (via the
+		// spin loop below) until every task has decremented it to zero, so
+		// the counter is always alive when workers access it.
+		std::atomic<size_t> remaining(tasks.size());
 		std::vector<Task> wrapped;
 		wrapped.reserve(tasks.size());
 		for (auto& t : tasks)
 		{
-			wrapped.emplace_back([remaining, t = std::move(t)]()
-								 {
-									 t();
-									 remaining->fetch_sub(1, std::memory_order_release);
-								 });
+			auto wrappedTask = [&remaining, t = std::move(t)]()
+			{
+				t();
+				remaining.fetch_sub(1, std::memory_order_release);
+			};
+			wrapped.emplace_back(std::move(wrappedTask));
 		}
-
 		m_workerPool.submitBatch(std::move(wrapped));
 
 		// Caller participates by stealing work while waiting
 		Task stolen;
-		while (remaining->load(std::memory_order_acquire) > 0)
+		while (remaining.load(std::memory_order_acquire) > 0)
 		{
 			if (m_workerPool.tryStealAny(&stolen))
 			{
