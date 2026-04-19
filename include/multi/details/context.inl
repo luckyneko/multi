@@ -20,8 +20,14 @@ namespace multi
 	{
 		std::vector<Task> taskList;
 		taskList.reserve(std::distance(begin, end));
+		// Capture func by reference: runQueueJob blocks until every task has
+		// run, so func outlives them. The resulting lambda is ~16 bytes and
+		// SBO-fits in std::function — std::bind builds a larger functor.
 		for (ITER it = begin; it != end; ++it)
-			taskList.emplace_back(std::bind(func, std::ref(*it)));
+		{
+			auto* item = &(*it);
+			taskList.emplace_back([&func, item]() { func(*item); });
+		}
 		runQueueJob(std::move(taskList));
 	}
 
@@ -83,8 +89,9 @@ namespace multi
 
 		std::vector<Task> taskList;
 		taskList.reserve((end - begin) / step);
+		// Capture func by reference (see each() above); i is captured by value.
 		for (IDX i = begin; i < end; i += step)
-			taskList.emplace_back(std::bind(func, i));
+			taskList.emplace_back([&func, i]() { func(i); });
 		runQueueJob(std::move(taskList));
 	}
 
