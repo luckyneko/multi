@@ -6,6 +6,7 @@
 #include "multi/details/workerpool.h"
 
 #include <cassert>
+#include <stdexcept>
 
 namespace multi
 {
@@ -37,9 +38,11 @@ namespace multi
 
 	void WorkerPool::start(size_t threadCount)
 	{
-		assert(!m_active.load(std::memory_order_relaxed));
+		// Surface double-start in both debug and release. Silently no-op'ing
+		// would let users keep submitting against a pool that doesn't match
+		// the threadCount they just requested.
 		if (m_active.load(std::memory_order_relaxed))
-			return;
+			throw std::logic_error("multi::WorkerPool::start called while pool is already active");
 
 		if (threadCount == 0)
 			return;

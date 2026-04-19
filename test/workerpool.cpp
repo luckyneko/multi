@@ -165,6 +165,19 @@ TEST_CASE("multi::WorkerPool")
 	}
 }
 
+TEST_CASE("WorkerPool::start throws when called while already active")
+{
+	multi::WorkerPool pool;
+	pool.start(2);
+	CHECK_THROWS_AS(pool.start(2), std::logic_error);
+	CHECK_THROWS_AS(pool.start(0), std::logic_error);
+	pool.stop();
+
+	// Stopping clears the active flag; starting again must succeed.
+	CHECK_NOTHROW(pool.start(1));
+	pool.stop();
+}
+
 TEST_CASE("multi::WorkerPool empty batch")
 {
 	multi::WorkerPool pool;
