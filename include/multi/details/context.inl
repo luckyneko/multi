@@ -26,7 +26,8 @@ namespace multi
 		for (ITER it = begin; it != end; ++it)
 		{
 			auto* item = &(*it);
-			taskList.emplace_back([&func, item]() { func(*item); });
+			taskList.emplace_back([&func, item]()
+								  { func(*item); });
 		}
 		runQueueJob(std::move(taskList));
 	}
@@ -79,6 +80,12 @@ namespace multi
 		runQueueJob(std::move(taskList));
 	}
 
+	template <typename IDX, typename FUNC>
+	void Context::range(IDX begin, IDX end, FUNC&& func)
+	{
+		range(begin, end, IDX(1), std::forward<FUNC>(func));
+	}
+
 	// Launch task for each idx with step from begin < end
 	// IDX is a POD-type
 	// FUNC is void(IDX)
@@ -95,7 +102,8 @@ namespace multi
 		taskList.reserve((end - begin) / step);
 		// Capture func by reference (see each() above); i is captured by value.
 		for (IDX i = begin; i < end; i += step)
-			taskList.emplace_back([&func, i]() { func(i); });
+			taskList.emplace_back([&func, i]()
+								  { func(i); });
 		runQueueJob(std::move(taskList));
 	}
 

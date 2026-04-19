@@ -59,6 +59,13 @@ namespace multi
 		context()->each(taskCount, begin, end, func);
 	}
 
+	// Step-less overload: default step to IDX(1) for the common case.
+	template <typename IDX, typename FUNC>
+	void range(IDX begin, IDX end, FUNC&& func)
+	{
+		context()->range(begin, end, func);
+	}
+
 	// Launch task for each idx with step
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, IDX step, FUNC&& func)

@@ -50,6 +50,8 @@ namespace multi
 		// IDX is a POD-type
 		// FUNC is void(IDX)
 		template <typename IDX, typename FUNC>
+		void range(IDX begin, IDX end, FUNC&& func);
+		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 		template <typename IDX, typename FUNC>
 		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
