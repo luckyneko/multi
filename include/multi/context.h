@@ -36,7 +36,7 @@ namespace multi
 
 		// Launch parallel tasks
 		template <typename... TASKS>
-		void parallel(TASKS... tasks);
+		void parallel(TASKS&&... tasks);
 
 		// Launch task for each item
 		// ITER is an iterator
@@ -58,9 +58,9 @@ namespace multi
 		bool tryRunSteal();
 
 	private:
-		template <typename... TASKS>
-		void appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks) const;
-		inline void appendTasks(std::vector<Task>& taskList, Task&& task) const;
+		template <typename T, typename... TASKS>
+		void appendTasks(std::vector<Task>& taskList, T&& task, TASKS&&... tasks) const;
+		inline void appendTasks(std::vector<Task>& taskList) const;
 
 		void runQueueJob(std::vector<Task>&& tasks);
 

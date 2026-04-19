@@ -42,7 +42,7 @@ namespace multi
 
 	// Parallel
 	template <typename... TASKS>
-	void parallel(TASKS... tasks)
+	void parallel(TASKS&&... tasks)
 	{
 		context()->parallel(std::forward<TASKS>(tasks)...);
 	}

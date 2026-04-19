@@ -3,7 +3,7 @@ namespace multi
 {
 	// Launch parallel tasks
 	template <typename... TASKS>
-	void Context::parallel(TASKS... tasks)
+	void Context::parallel(TASKS&&... tasks)
 	{
 		const size_t count = sizeof...(TASKS);
 		std::vector<Task> taskList;
@@ -147,14 +147,13 @@ namespace multi
 		runQueueJob(std::move(taskList));
 	}
 
-	template <typename... TASKS>
-	void Context::appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks) const
+	template <typename T, typename... TASKS>
+	void Context::appendTasks(std::vector<Task>& taskList, T&& task, TASKS&&... tasks) const
 	{
-		taskList.emplace_back(std::move(task));
+		taskList.emplace_back(std::forward<T>(task));
 		appendTasks(taskList, std::forward<TASKS>(tasks)...);
 	}
-	inline void Context::appendTasks(std::vector<Task>& taskList, Task&& task) const
+	inline void Context::appendTasks(std::vector<Task>& /*taskList*/) const
 	{
-		taskList.emplace_back(std::move(task));
 	}
 } // namespace multi

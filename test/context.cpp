@@ -286,6 +286,45 @@ TEST_CASE("async rethrows task exception and pool survives")
 	context.stop();
 }
 
+TEST_CASE("parallel accepts lvalue functors without extra top-level copies")
+{
+	multi::Context context;
+	context.start(2);
+
+	// Counts copies at the parallel() entry boundary. Before the forwarding
+	// fix, by-value TASKS... parameters forced an eager copy of each lvalue
+	// task; now arguments bind to forwarding references, so lvalues flow
+	// through as references until std::function ingests them.
+	struct CopyCounter
+	{
+		static std::atomic<int>& copies()
+		{
+			static std::atomic<int> n{0};
+			return n;
+		}
+		std::atomic<int>* counter;
+		CopyCounter(std::atomic<int>* c) : counter(c) {}
+		CopyCounter(const CopyCounter& o) : counter(o.counter) { copies()++; }
+		CopyCounter(CopyCounter&&) = default;
+		CopyCounter& operator=(const CopyCounter&) = default;
+		CopyCounter& operator=(CopyCounter&&) = default;
+		void operator()() const { (*counter)++; }
+	};
+
+	std::atomic<int> counter(0);
+	CopyCounter a(&counter), b(&counter);
+	int before = CopyCounter::copies().load();
+	context.parallel(a, b);
+	int after = CopyCounter::copies().load();
+
+	CHECK(counter == 2);
+	// std::function's type-erased storage copies once per task; anything
+	// more means parallel() itself re-copied the functor at its boundary.
+	CHECK((after - before) <= 2);
+
+	context.stop();
+}
+
 TEST_CASE("parallel rethrows first exception and still runs siblings")
 {
 	multi::Context context;
