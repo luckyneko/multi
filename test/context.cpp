@@ -210,6 +210,40 @@ void testRangeTaskCount(multi::Context& context, size_t taskCount)
 	}
 }
 
+TEST_CASE("Handle move-assign waits on old future before overwriting")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> firstRan(0);
+	auto h = context.async([&]()
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		firstRan = 1;
+	});
+
+	// Overwriting must not drop first task's wait: RAII-wait invariant.
+	h = context.async([&]() {});
+	CHECK(firstRan == 1);
+
+	h.wait();
+	context.stop();
+}
+
+TEST_CASE("Handle move-assign swallows exception from old future")
+{
+	multi::Context context;
+	context.start(2);
+
+	// Exception from the dropped handle must not propagate out of operator=
+	// (matching ~Handle). It is simply discarded.
+	auto h = context.async([]() { throw std::runtime_error("old"); });
+	CHECK_NOTHROW(h = context.async([]() {}));
+	h.wait();
+
+	context.stop();
+}
+
 TEST_CASE("async handle::wait steals to avoid self-deadlock with 1 worker")
 {
 	// With threadCount==1 the sole worker is the one running the outer task.

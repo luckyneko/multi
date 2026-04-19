@@ -51,6 +51,21 @@ namespace multi
 
 	Handle& Handle::operator=(Handle&& a)
 	{
+		if (this == &a)
+			return *this;
+
+		// Preserve the RAII-wait invariant: the current handle's task must
+		// complete before we drop it, otherwise `h = async(a); h = async(b);`
+		// would silently discard a's wait. Swallow exceptions to match ~Handle;
+		// callers that need to observe failures must wait() explicitly first.
+		try
+		{
+			wait();
+		}
+		catch (...)
+		{
+		}
+
 		m_handle = std::move(a.m_handle);
 		m_context = a.m_context;
 		a.reset();
