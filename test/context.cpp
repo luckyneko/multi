@@ -210,6 +210,41 @@ void testRangeTaskCount(multi::Context& context, size_t taskCount)
 	}
 }
 
+TEST_CASE("range step-less overload defaults step to 1")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> sum(0);
+	context.range(0, 10, [&](int i)
+				  { sum += i; });
+	CHECK(sum == 45);
+
+	context.stop();
+}
+
+TEST_CASE("Handle::detach drops the wait without cancelling the task")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto done = std::make_shared<std::atomic<int>>(0);
+	{
+		multi::Handle h = context.async([done]()
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			(*done)++;
+		});
+		h.detach();
+		CHECK(h.valid() == false);
+		// Dropping a detached handle must not wait; the scope exits immediately.
+	}
+
+	// stop() joins workers, so the detached task will have run by then.
+	context.stop();
+	CHECK(*done == 1);
+}
+
 TEST_CASE("Handle move-assign waits on old future before overwriting")
 {
 	multi::Context context;
@@ -217,10 +252,9 @@ TEST_CASE("Handle move-assign waits on old future before overwriting")
 
 	std::atomic<int> firstRan(0);
 	auto h = context.async([&]()
-	{
+						   {
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
-		firstRan = 1;
-	});
+		firstRan = 1; });
 
 	// Overwriting must not drop first task's wait: RAII-wait invariant.
 	h = context.async([&]() {});
@@ -237,7 +271,8 @@ TEST_CASE("Handle move-assign swallows exception from old future")
 
 	// Exception from the dropped handle must not propagate out of operator=
 	// (matching ~Handle). It is simply discarded.
-	auto h = context.async([]() { throw std::runtime_error("old"); });
+	auto h = context.async([]()
+						   { throw std::runtime_error("old"); });
 	CHECK_NOTHROW(h = context.async([]() {}));
 	h.wait();
 
@@ -254,13 +289,12 @@ TEST_CASE("async handle::wait steals to avoid self-deadlock with 1 worker")
 
 	std::atomic<int> counter(0);
 	auto outer = context.async([&]()
-	{
+							   {
 		context.async([&]()
 		{
 			counter++;
 		});
-		counter++;
-	});
+		counter++; });
 	outer.wait();
 
 	CHECK(counter == 2);
@@ -273,14 +307,14 @@ TEST_CASE("async rethrows task exception and pool survives")
 	context.start(2);
 
 	auto thrower = context.async([]()
-	{
-		throw std::runtime_error("boom");
-	});
+								 { throw std::runtime_error("boom"); });
 	CHECK_THROWS_AS(thrower.wait(), std::runtime_error);
 
 	// Pool still accepts new work after a throwing task.
 	std::atomic<int> x(0);
-	context.async([&]() { x = 42; }).wait();
+	context.async([&]()
+				  { x = 42; })
+		.wait();
 	CHECK(x == 42);
 
 	context.stop();
@@ -303,8 +337,15 @@ TEST_CASE("parallel accepts lvalue functors without extra top-level copies")
 			return n;
 		}
 		std::atomic<int>* counter;
-		CopyCounter(std::atomic<int>* c) : counter(c) {}
-		CopyCounter(const CopyCounter& o) : counter(o.counter) { copies()++; }
+		CopyCounter(std::atomic<int>* c)
+			: counter(c)
+		{
+		}
+		CopyCounter(const CopyCounter& o)
+			: counter(o.counter)
+		{
+			copies()++;
+		}
 		CopyCounter(CopyCounter&&) = default;
 		CopyCounter& operator=(const CopyCounter&) = default;
 		CopyCounter& operator=(CopyCounter&&) = default;
@@ -333,8 +374,10 @@ TEST_CASE("parallel rethrows first exception and still runs siblings")
 	std::atomic<int> otherRan(0);
 	CHECK_THROWS_AS(
 		context.parallel(
-			multi::Task([]() { throw std::runtime_error("boom"); }),
-			multi::Task([&]() { otherRan++; })),
+			multi::Task([]()
+						{ throw std::runtime_error("boom"); }),
+			multi::Task([&]()
+						{ otherRan++; })),
 		std::runtime_error);
 	CHECK(otherRan == 1);
 

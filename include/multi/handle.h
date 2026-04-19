@@ -50,6 +50,11 @@ namespace multi
 		// Idempotent: repeated calls re-throw the same exception.
 		void wait();
 
+		// Release the handle without waiting. The task still runs to completion
+		// on its worker, but its result/exception becomes unobservable. Useful
+		// for true fire-and-forget when you want to avoid ~Handle's auto-wait.
+		inline void detach() { reset(); }
+
 		Handle& operator=(Handle&& a);
 
 	private:
