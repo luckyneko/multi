@@ -54,6 +54,9 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
 
+		// Try run a stolen task
+		bool tryRunSteal();
+
 	private:
 		template <typename... TASKS>
 		void appendTasks(std::vector<Task>& taskList, Task&& task, TASKS... tasks) const;

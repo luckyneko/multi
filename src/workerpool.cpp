@@ -137,10 +137,18 @@ namespace multi
 							  { return tryGetTask(workerIndex, &task) || !m_active.load(std::memory_order_relaxed); });
 			}
 
-			// Run all tasks
+			// Run all tasks. A throwing task must not kill the worker —
+			// async/batch wrappers installed by the submitter capture the
+			// exception; raw submits that throw are swallowed here.
 			while (task)
 			{
-				task();
+				try
+				{
+					task();
+				}
+				catch (...)
+				{
+				}
 				task = nullptr;
 				tryGetTask(workerIndex, &task);
 			}

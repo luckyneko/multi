@@ -11,7 +11,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <map>
+#include <stdexcept>
 
 static const std::array<size_t, 4> THREAD_COUNT_SET = {0, 1, 2, 4};
 static const std::array<size_t, 4> TASK_COUNT_SET = {0, 1, 2, 4};
@@ -206,6 +208,64 @@ void testRangeTaskCount(multi::Context& context, size_t taskCount)
 			}
 		}
 	}
+}
+
+TEST_CASE("async handle::wait steals to avoid self-deadlock with 1 worker")
+{
+	// With threadCount==1 the sole worker is the one running the outer task.
+	// The inner async drops its Handle; without stealing in Handle::wait
+	// the outer task would block forever waiting for a worker that is itself.
+	multi::Context context;
+	context.start(1);
+
+	std::atomic<int> counter(0);
+	auto outer = context.async([&]()
+	{
+		context.async([&]()
+		{
+			counter++;
+		});
+		counter++;
+	});
+	outer.wait();
+
+	CHECK(counter == 2);
+	context.stop();
+}
+
+TEST_CASE("async rethrows task exception and pool survives")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto thrower = context.async([]()
+	{
+		throw std::runtime_error("boom");
+	});
+	CHECK_THROWS_AS(thrower.wait(), std::runtime_error);
+
+	// Pool still accepts new work after a throwing task.
+	std::atomic<int> x(0);
+	context.async([&]() { x = 42; }).wait();
+	CHECK(x == 42);
+
+	context.stop();
+}
+
+TEST_CASE("parallel rethrows first exception and still runs siblings")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> otherRan(0);
+	CHECK_THROWS_AS(
+		context.parallel(
+			multi::Task([]() { throw std::runtime_error("boom"); }),
+			multi::Task([&]() { otherRan++; })),
+		std::runtime_error);
+	CHECK(otherRan == 1);
+
+	context.stop();
 }
 
 TEST_CASE("multi::Context")

@@ -37,6 +37,7 @@ add_library(${PROJECT_NAME} STATIC
 
     # Source
     src/context.cpp
+    src/handle.cpp
     src/multi.cpp
     src/workstealdeque.cpp
     src/workerpool.cpp
