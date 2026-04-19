@@ -27,6 +27,7 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/multi/details/constants.h
     include/multi/details/context.inl
     include/multi/details/workstealdeque.h
     include/multi/details/workerpool.h

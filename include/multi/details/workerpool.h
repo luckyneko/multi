@@ -6,6 +6,7 @@
 #ifndef _MULTI_WORKERPOOL_H_
 #define _MULTI_WORKERPOOL_H_
 
+#include "multi/details/constants.h"
 #include "multi/details/workstealdeque.h"
 
 #include <atomic>
@@ -47,13 +48,12 @@ namespace multi
 		inline size_t threadCount() const { return m_threads.size(); }
 
 	private:
-		struct Worker
+		// Each Worker sits on its own cache line
+		struct alignas(CACHE_LINE_SIZE) Worker
 		{
 			WorkStealDeque deque;
 			std::mutex mutex;
 			std::condition_variable cv;
-			// Pad to avoid false sharing between adjacent workers
-			char padding[64];
 		};
 
 		void workerMain(size_t workerIndex);
