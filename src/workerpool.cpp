@@ -19,8 +19,20 @@ namespace multi
 
 	WorkerPool::~WorkerPool()
 	{
+		// Debug builds assert the user called stop() explicitly. Release builds
+		// fall back to stopping here so OS threads don't leak on user error.
 		assert(m_threads.empty());
 		assert(m_workers.empty());
+		if (!m_threads.empty())
+		{
+			try
+			{
+				stop();
+			}
+			catch (...)
+			{
+			}
+		}
 	}
 
 	void WorkerPool::start(size_t threadCount)

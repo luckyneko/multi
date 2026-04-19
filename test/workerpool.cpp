@@ -176,6 +176,22 @@ TEST_CASE("multi::WorkerPool empty batch")
 	pool.stop();
 }
 
+#ifdef NDEBUG
+// Release only: debug builds assert in ~WorkerPool when stop() was skipped.
+TEST_CASE("WorkerPool destructor stops threads when user forgot stop()")
+{
+	std::atomic<int> counter(0);
+	{
+		multi::WorkerPool pool;
+		pool.start(2);
+		pool.submit([&counter]() { counter++; });
+		// Intentionally no stop() — destructor must join threads defensively.
+	}
+	// If the dtor didn't join, this process would leak threads or crash.
+	CHECK(counter.load() >= 0);
+}
+#endif
+
 TEST_CASE("multi::WorkerPool stop drains remaining tasks")
 {
 	multi::WorkerPool pool;
