@@ -25,7 +25,7 @@
 namespace
 {
 	const int WARMUP_RUNS = 2;
-	const int MEASURED_RUNS = 5;
+	const int MEASURED_RUNS = 15;
 
 	// Skip std::async / std::thread when a workload submits more than this
 	// many tasks. A per-task-thread-spawn method with 100k tasks is useful
@@ -92,6 +92,7 @@ int main()
 	auto methods = buildMethods(simplePool);
 
 	std::vector<Workload> workloads;
+	workloads.push_back(makeEmptyWorkload(1000));
 	workloads.push_back(makeMandelbrotWorkload(512, 512, 256, 10));
 	workloads.push_back(makeTinyWorkload(5000, 500));
 	workloads.push_back(makeImbalancedWorkload(200, 8000));

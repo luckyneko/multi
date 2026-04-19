@@ -165,4 +165,22 @@ inline Workload makeNestedWorkload(int depth, int threshold, int leafWork)
 	return w;
 }
 
+// --- Empty tasks (pure scheduling overhead) ---
+// Tasks do no computation; measures raw dispatch + synchronisation cost per method.
+// Task count is kept under PER_TASK_THREAD_CAP so all methods participate.
+inline Workload makeEmptyWorkload(int numTasks)
+{
+	Workload w;
+	w.name = "empty_tasks";
+	char descBuf[128];
+	std::snprintf(descBuf, sizeof(descBuf), "%d no-op tasks (raw scheduling overhead)", numTasks);
+	w.description = descBuf;
+	w.totalTaskCount = numTasks;
+	w.run = [numTasks](Method& m)
+	{
+		m.parallel_for(0, numTasks, [](int) {});
+	};
+	return w;
+}
+
 #endif // _BENCH_WORKLOADS_H_
