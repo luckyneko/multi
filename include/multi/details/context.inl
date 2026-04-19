@@ -42,9 +42,14 @@ namespace multi
 			return;
 		}
 
-		// Handle less tasks than requested taskCount case
-		auto totalTaskCount = std::distance(begin, end);
-		if (totalTaskCount <= taskCount)
+		// Handle less tasks than requested taskCount case.
+		// std::distance returns a signed difference_type; normalize to size_t
+		// up-front so later comparisons don't trip -Wsign-compare in user code.
+		auto rawDistance = std::distance(begin, end);
+		if (rawDistance <= 0)
+			return;
+		const size_t total = static_cast<size_t>(rawDistance);
+		if (total <= taskCount)
 		{
 			each(begin, end, std::move(func));
 			return;
@@ -53,7 +58,6 @@ namespace multi
 		// Spread items as evenly as possible: first 'extra' chunks get (base+1)
 		// items and the rest get 'base'. Avoids iterator overflow that a simple
 		// outerStep-advance approach causes on non-final chunks.
-		const size_t total = static_cast<size_t>(totalTaskCount);
 		const size_t base = total / taskCount;
 		const size_t extra = total % taskCount;
 

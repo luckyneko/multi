@@ -38,11 +38,12 @@ For extra examples please see `tests/context.cpp`
 ``` C++
 #include <multi/multi.h>
 #include <atomic>
+#include <thread>
 
 int main()
 {
     // Start with hardware thread count
-    multi::start();
+    multi::start(std::thread::hardware_concurrency());
 
     // Run job
     std::atomic<int> i(0);
@@ -93,13 +94,13 @@ void function()
     multi::each(items.begin(), items.end(), [](Item& item)
     {
         item.setValue();
-    };
+    });
 
     // Run over all items, using 32 tasks
-    multi::each(32, items.end(), [](Item& item)
+    multi::each(32, items.begin(), items.end(), [](Item& item)
     {
         item.setValue();
-    };
+    });
 }
 ```
 
@@ -107,17 +108,25 @@ void function()
 ``` C++
 void function()
 {
+    std::atomic<int> out(0);
 
     // Run task per step
-    multi::range(0, 100, 2, [](int idx)
+    multi::range(0, 100, 2, [&](int idx)
     {
         out += idx;
-    };
+    });
 
     // Run task per step, using 32 tasks
-    multi::each(32, 0, 100, 2, [](int idx)
+    multi::range(32, 0, 100, 2, [&](int idx)
     {
         out += idx;
-    };
+    });
 }
 ```
+
+### Exception handling
+Tasks that throw propagate the exception to the caller:
+- `multi::async`: the first exception is stored on the returned `Handle`; calling `Handle::wait()` rethrows it.
+- `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled.
+
+`Handle`'s destructor swallows exceptions so dropping a Handle cannot call `std::terminate`; call `wait()` explicitly if you need to observe failures.
