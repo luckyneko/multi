@@ -1,5 +1,5 @@
 # multi [![Build Status](https://travis-ci.org/luckyneko/multi.svg?branch=master)](https://travis-ci.org/luckyneko/multi)&nbsp; ![Release](https://img.shields.io/github/v/release/luckyneko/multi?include_prereleases)
-C++11 real-time threading framework
+C++17 real-time threading framework
 
 ## Build / Integrate
 
@@ -109,6 +109,12 @@ void function()
 void function()
 {
     std::atomic<int> out(0);
+
+    // Run task per index (step defaults to 1)
+    multi::range(0, 100, [&](int idx)
+    {
+        out += idx;
+    });
 
     // Run task per step
     multi::range(0, 100, 2, [&](int idx)
