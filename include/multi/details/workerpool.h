@@ -62,8 +62,10 @@ namespace multi
 	private:
 		std::vector<std::unique_ptr<Worker>> m_workers;
 		std::vector<std::thread> m_threads;
-		std::atomic<size_t> m_nextWorker;
-		std::atomic<bool> m_active;
+
+		// Align 'Hot' Variables
+		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
+		alignas(CACHE_LINE_SIZE) std::atomic<bool> m_active;
 	};
 } // namespace multi
 
