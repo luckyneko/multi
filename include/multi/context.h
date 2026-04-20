@@ -13,6 +13,8 @@
 #include "multi/handle.h"
 #include "multi/task.h"
 
+#include <type_traits>
+
 namespace multi
 {
 	/*

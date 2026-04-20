@@ -87,11 +87,12 @@ namespace multi
 	}
 
 	// Launch task for each idx with step from begin < end
-	// IDX is a POD-type
+	// IDX is a signed POD-type
 	// FUNC is void(IDX)
 	template <typename IDX, typename FUNC>
 	void Context::range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
+		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
 		if (step == 0)
 			return;
 
@@ -110,6 +111,7 @@ namespace multi
 	template <typename IDX, typename FUNC>
 	void Context::range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
+		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
 		if (step == 0)
 			return;
 

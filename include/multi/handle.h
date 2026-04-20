@@ -34,17 +34,17 @@ namespace multi
 		~Handle();
 
 		// Check if job is complete
-		inline bool complete() const { return !valid() || m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
+		bool complete() const { return !valid() || m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
 
 		// Reset handle
-		inline void reset()
+		void reset()
 		{
 			m_handle = std::shared_future<void>();
 			m_context = nullptr;
 		}
 
 		// Check if handle has assigned job
-		inline bool valid() const { return m_handle.valid(); }
+		bool valid() const { return m_handle.valid(); }
 
 		// Wait for job to complete. Rethrows any exception raised by the task.
 		// Idempotent: repeated calls re-throw the same exception.
@@ -53,7 +53,7 @@ namespace multi
 		// Release the handle without waiting. The task still runs to completion
 		// on its worker, but its result/exception becomes unobservable. Useful
 		// for true fire-and-forget when you want to avoid ~Handle's auto-wait.
-		inline void detach() { reset(); }
+		void detach() { reset(); }
 
 		Handle& operator=(Handle&& a);
 

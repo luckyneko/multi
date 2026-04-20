@@ -59,17 +59,20 @@ namespace multi
 			m_threads.emplace_back(&WorkerPool::workerMain, this, i);
 	}
 
+	void WorkerPool::fencedNotify(Worker& w)
+	{
+		w.mutex.lock();
+		w.mutex.unlock();
+		w.cv.notify_one();
+	}
+
 	void WorkerPool::stop()
 	{
-		// Set m_active false then barrier+notify each worker so none can miss the
+		// Set m_active false then fencedNotify each worker so none can miss the
 		// state change between their predicate check and entering wait().
 		m_active.store(false, std::memory_order_relaxed);
 		for (auto& worker : m_workers)
-		{
-			worker->mutex.lock();
-			worker->mutex.unlock();
-			worker->cv.notify_one();
-		}
+			fencedNotify(*worker);
 
 		for (auto& thread : m_threads)
 			thread.join();
@@ -85,15 +88,10 @@ namespace multi
 			return;
 		}
 
-		// Push task
 		size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
 		Worker* worker = m_workers[idx].get();
 		worker->deque.push(std::move(task));
-
-		// Notify Worker
-		worker->mutex.lock();
-		worker->mutex.unlock();
-		worker->cv.notify_one();
+		fencedNotify(*worker);
 	}
 
 	void WorkerPool::submitBatch(std::vector<Task>&& tasks)
@@ -121,12 +119,7 @@ namespace multi
 		// we target exactly the workers with new work rather than broadcasting.
 		size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
 		for (size_t i = 0; i < wakeCount; ++i)
-		{
-			Worker* w = m_workers[(base + i) % workerCount].get();
-			w->mutex.lock();
-			w->mutex.unlock();
-			w->cv.notify_one();
-		}
+			fencedNotify(*m_workers[(base + i) % workerCount]);
 	}
 
 	bool WorkerPool::tryStealAny(Task* task)

@@ -44,8 +44,8 @@ namespace multi
 		// Returns true if a task was obtained
 		bool tryStealAny(Task* task);
 
-		inline bool isActive() const { return m_active.load(std::memory_order_relaxed); }
-		inline size_t threadCount() const { return m_threads.size(); }
+		bool isActive() const { return m_active.load(std::memory_order_relaxed); }
+		size_t threadCount() const { return m_threads.size(); }
 
 	private:
 		// Each Worker sits on its own cache line
@@ -58,6 +58,14 @@ namespace multi
 
 		void workerMain(size_t workerIndex);
 		bool tryGetTask(size_t workerIndex, Task* task);
+
+		// Lock then immediately unlock the worker's mutex before notifying its
+		// condvar. The lock/unlock acts as a barrier: it ensures the worker has
+		// either already entered wait() (and will be woken by notify_one) or
+		// has not yet checked its predicate (and will see the new state when it
+		// does). Without this, a notify sent between the predicate check and
+		// the wait() call would be lost.
+		static void fencedNotify(Worker& w);
 
 	private:
 		std::vector<std::unique_ptr<Worker>> m_workers;
