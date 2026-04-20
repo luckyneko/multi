@@ -1,18 +1,14 @@
 /*
- *  Created by LuckyNeko on 30/04/2020.
- *  Copyright 2020 LuckyNeko
- *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MANDELBROT_H_
-#define _MANDELBROT_H_
+#ifndef _BENCH_MANDELBROT_H_
+#define _BENCH_MANDELBROT_H_
 
 #include "graph.h"
 #include "utils.h"
 
-// https://rosettacode.org/wiki/Mandelbrot_set#C
 inline int mandelbrotIterations(double x, double y, double er, int numIter)
 {
 	double Zx = 0.0;
@@ -28,7 +24,7 @@ inline int mandelbrotIterations(double x, double y, double er, int numIter)
 		Zx2 = Zx * Zx;
 		Zy2 = Zy * Zy;
 		++iter;
-	};
+	}
 
 	return iter;
 }
@@ -44,4 +40,4 @@ inline Colour mandelbrotColour(int iter, int numIter)
 	return rgb;
 }
 
-#endif // _MANDELBROT_H_
+#endif // _BENCH_MANDELBROT_H_

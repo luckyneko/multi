@@ -130,6 +130,43 @@ void function()
 }
 ```
 
+## Benchmarks
+
+Build and run:
+```sh
+cmake -B build -DMULTI_BUILD_BENCHMARK=ON
+cmake --build build
+./build/bench-multi          # all workloads
+./build/bench-multi "[fast]" # quick subset (~10s): empty_tasks, tiny_tasks, nested, async_*
+./build/bench-multi "[slow]" # longer subset: mandelbrot, imbalanced
+```
+
+Common options:
+```sh
+# Fewer samples for a quick pass (default is 100)
+./build/bench-multi --benchmark-samples=20
+
+# Save results as XML for diffing between runs
+./build/bench-multi --reporter xml --out before.xml
+
+# Adjust warmup window (default 200ms)
+./build/bench-multi --benchmark-warmup-time=500
+
+# List available test cases
+./build/bench-multi --list-tests
+```
+
+Workloads:
+| Test case | Tag | Measures |
+|---|---|---|
+| `empty_tasks` | fast | Raw dispatch overhead (no work per task) |
+| `tiny_tasks` | fast | Overhead relative to task duration; scales over 1k–50k tasks |
+| `nested` | fast | Fork-join tree via `parallel_invoke`; includes serial baseline |
+| `async_latency` | fast | `async` + `Handle::wait` round-trip cost |
+| `async_fanout` | fast | N concurrent `async` tasks vs `range`-based dispatch |
+| `mandelbrot` | slow | Uniform CPU-bound; the "well-behaved" case |
+| `imbalanced` | slow | O(i) work per task; measures steal quality |
+
 ### Exception handling
 Tasks that throw propagate the exception to the caller:
 - `multi::async`: the first exception is stored on the returned `Handle`; calling `Handle::wait()` rethrows it.

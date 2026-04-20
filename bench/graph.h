@@ -1,15 +1,15 @@
 /*
- *  Created by LuckyNeko on 30/04/2020.
- *  Copyright 2020 LuckyNeko
- *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _GRAPH_H_
-#define _GRAPH_H_
+#ifndef _BENCH_GRAPH_H_
+#define _BENCH_GRAPH_H_
 
 #include "utils.h"
+
+#include <cstdint>
+#include <cstdlib>
 
 class Graph
 {
@@ -18,7 +18,7 @@ public:
 	{
 		m_width = w;
 		m_height = h;
-		m_rgbBuffer = (uint8_t*)malloc(m_width * m_height * 3);
+		m_rgbBuffer = static_cast<uint8_t*>(std::malloc(static_cast<size_t>(m_width) * m_height * 3));
 		m_originX = originX;
 		m_originY = originY;
 
@@ -27,7 +27,7 @@ public:
 
 	~Graph()
 	{
-		free(m_rgbBuffer);
+		std::free(m_rgbBuffer);
 	}
 
 	void setScale(double s)
@@ -64,4 +64,4 @@ private:
 	double m_graphYMin;
 };
 
-#endif // _GRAPH_H_
+#endif // _BENCH_GRAPH_H_

@@ -69,6 +69,10 @@ endif()
 
 # Benchmark Target
 if(MULTI_BUILD_BENCHMARK)
-    add_executable(bench-${PROJECT_NAME} benchmark/main.cpp )
-    target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME})
+    include(addcatch2)
+    add_executable(bench-${PROJECT_NAME}
+        bench/main.cpp
+        bench/workloads.cpp
+    )
+    target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
 endif()

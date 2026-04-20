@@ -1,40 +1,25 @@
 /*
- *  Created by LuckyNeko on 30/04/2020.
- *  Copyright 2020 LuckyNeko
- *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _UTILS_H_
-#define _UTILS_H_
+#ifndef _BENCH_UTILS_H_
+#define _BENCH_UTILS_H_
 
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <string>
+#include <cstdint>
 
 using Colour = std::array<float, 3>;
 
-// Write PPM
-void writePPM(const std::string& filename, uint8_t* rgbBuffer, int width, int height)
-{
-	FILE* f = fopen(filename.c_str(), "wb");
-	fprintf(f, "P6\n%d %d\n255\n", width, height);
-	fwrite(rgbBuffer, sizeof(uint8_t), width * height * 3, f);
-	fclose(f);
-}
-
-// HSV to RGB
-void HSVtoRGB(const Colour& hsv, Colour& rgb)
+inline void HSVtoRGB(const Colour& hsv, Colour& rgb)
 {
 	const float h = hsv[0];
 	const float s = hsv[1];
 	const float v = hsv[2];
 
 	float c = s * v;
-	float x = c * (1.0f - fabs(fmod(h / 60.0f, 2) - 1.0f));
+	float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
 	float m = v - c;
 
 	if (h >= 300.0f)
@@ -51,4 +36,4 @@ void HSVtoRGB(const Colour& hsv, Colour& rgb)
 		rgb = {c + m, x + m, 0.0f + m};
 }
 
-#endif // _UTILS_H_
+#endif // _BENCH_UTILS_H_

@@ -2,9 +2,9 @@
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 set(CATCH_BUILD_TESTING OFF CACHE BOOL "Disable Catch2 SelfTests")
 set(CATCH_ENABLE_WERROR OFF CACHE BOOL "Disable Catch2 Werror")
-find_package(Catch2 CONFIG)
+find_package(Catch2 CONFIG QUIET)
 
-if (${Catch2_FOUND})       
+if (${Catch2_FOUND} OR TARGET Catch2::Catch2)       
 else ()
 	set(CATCH2_VER "2.13.1")
 	if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER}.tar.gz")

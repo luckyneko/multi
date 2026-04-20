@@ -1,0 +1,359 @@
+/*
+ *  Distributed under the MIT Software License
+ *  (See accompanying file LICENSE.md)
+ *
+ *  Benchmark workloads for bench-multi.
+ *
+ *  Tags:
+ *    [fast]     – total runtime ~seconds; safe for iterative dev
+ *    [slow]     – runtime ~minutes; run when committing perf work
+ *    [baseline] – serial reference; shows speedup but adds time
+ *
+ *  Typical invocations:
+ *    ./bench-multi "[fast]"                  # quick iteration
+ *    ./bench-multi "[bench]"                 # everything
+ *    ./bench-multi --benchmark-samples=30    # faster, fewer samples
+ *    ./bench-multi --reporter xml --out r.xml
+ */
+
+#define CATCH_CONFIG_ENABLE_BENCHMARKING
+#include <catch2/catch.hpp>
+
+#include "graph.h"
+#include "mandelbrot.h"
+
+#include <multi/multi.h>
+
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+namespace
+{
+	// ---------------------------------------------------------------------------
+	// Parallel helpers — functor objects so generic lambdas can accept them
+	// without a std::function wrapper in the bench harness.  The only
+	// std::function allocation happens inside multi::range / multi::parallel
+	// at the library boundary.
+	// ---------------------------------------------------------------------------
+
+	struct parallel_for_baseline_t
+	{
+		template <class F>
+		void operator()(int begin, int end, F&& f) const
+		{
+			for (int i = begin; i < end; ++i)
+				f(i);
+		}
+	};
+
+	struct parallel_for_items_t
+	{
+		template <class F>
+		void operator()(int begin, int end, F&& f) const
+		{
+			multi::range(begin, end, 1, std::forward<F>(f));
+		}
+	};
+
+	struct parallel_for_chunks_t
+	{
+		template <class F>
+		void operator()(int begin, int end, F&& f) const
+		{
+			int count = end - begin;
+			if (count <= 0)
+				return;
+			const size_t K = 8;
+			size_t chunks = (multi::threadCount() + 1) * K;
+			if (chunks < 2)
+				chunks = 2;
+			if (static_cast<int>(chunks) > count)
+				chunks = static_cast<size_t>(count);
+			multi::range(chunks, begin, end, 1, std::forward<F>(f));
+		}
+	};
+
+	struct parallel_invoke_t
+	{
+		template <class A, class B>
+		void operator()(A&& a, B&& b) const
+		{
+			multi::parallel(multi::Task(std::forward<A>(a)), multi::Task(std::forward<B>(b)));
+		}
+	};
+
+	constexpr parallel_for_baseline_t baseline{};
+	constexpr parallel_for_items_t    items{};
+	constexpr parallel_for_chunks_t   chunks{};
+	constexpr parallel_invoke_t       invoke_multi{};
+
+	// ---------------------------------------------------------------------------
+	// Nested tree-sum helpers
+	// ---------------------------------------------------------------------------
+
+	void treeSumSerial(int depth, int threshold, int leafWork,
+					   uint64_t seed, uint64_t& out)
+	{
+		if (depth <= threshold)
+		{
+			uint64_t acc = seed;
+			for (int k = 0; k < leafWork; ++k)
+				acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+			out = acc;
+			return;
+		}
+		uint64_t a = 0, b = 0;
+		treeSumSerial(depth - 1, threshold, leafWork, seed, a);
+		treeSumSerial(depth - 1, threshold, leafWork, seed + 1, b);
+		out = a + b;
+	}
+
+	void treeSum(int depth, int threshold, int leafWork,
+				 uint64_t seed, uint64_t& out)
+	{
+		if (depth <= threshold)
+		{
+			uint64_t acc = seed;
+			for (int k = 0; k < leafWork; ++k)
+				acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+			out = acc;
+			return;
+		}
+		uint64_t a = 0, b = 0;
+		invoke_multi(
+			[depth, threshold, leafWork, seed, &a]()
+			{ treeSum(depth - 1, threshold, leafWork, seed, a); },
+			[depth, threshold, leafWork, seed, &b]()
+			{ treeSum(depth - 1, threshold, leafWork, seed + 1, b); });
+		out = a + b;
+	}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// empty_tasks — pure dispatch overhead, no work per task.
+// No baseline BENCHMARK: an empty serial for-loop is DCE'd by the compiler
+// and would report ~0, which is not a meaningful comparison point.
+// ---------------------------------------------------------------------------
+TEST_CASE("empty_tasks", "[bench][fast]")
+{
+	SECTION("500 tasks")
+	{
+		const int n = 500;
+		BENCHMARK("multi(items)") { items(0, n, [](int) {}); };
+		BENCHMARK("multi(chunks)") { chunks(0, n, [](int) {}); };
+	}
+	SECTION("1k tasks")
+	{
+		const int n = 1000;
+		BENCHMARK("multi(items)") { items(0, n, [](int) {}); };
+		BENCHMARK("multi(chunks)") { chunks(0, n, [](int) {}); };
+	}
+	SECTION("5k tasks")
+	{
+		const int n = 5000;
+		BENCHMARK("multi(items)") { items(0, n, [](int) {}); };
+		BENCHMARK("multi(chunks)") { chunks(0, n, [](int) {}); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// mandelbrot — uniform CPU-bound work, moderate grain. "Well-behaved".
+// No baseline: serial 512×512×10 frames ≈ 500ms/sample → 50s extra. Use
+// the tiny_tasks or imbalanced serial baseline for overhead calibration.
+// ---------------------------------------------------------------------------
+TEST_CASE("mandelbrot", "[bench][slow]")
+{
+	const int width = 512, height = 512, numIter = 256, frames = 10;
+	Graph graph(width, height, 2.0,
+				-(6.01000070505 / 11.0), -(6.01000070505 / 11.0));
+
+	auto run = [&](auto pf)
+	{
+		constexpr double escapeRadius = 2.0;
+		for (int f = 1; f <= frames; ++f)
+		{
+			graph.setScale(2.0 / std::pow(1.05, f));
+			Graph* gp = &graph;
+			pf(0, gp->height(), [gp, numIter](int y)
+			   {
+				constexpr double er = 2.0;
+				double Cy = gp->getY(y);
+				for (int x = 0; x < gp->width(); ++x)
+				{
+					double Cx = gp->getX(x);
+					gp->writeColour(mandelbrotColour(mandelbrotIterations(Cx, Cy, er, numIter), numIter), x, y);
+				} });
+		}
+	};
+
+	BENCHMARK("multi(items)") { run(items); };
+	BENCHMARK("multi(chunks)") { run(chunks); };
+
+	const uint8_t* pix = graph.buffer();
+	REQUIRE((pix[0] | pix[1] | pix[2]) != 0);
+}
+
+// ---------------------------------------------------------------------------
+// tiny_tasks — many short tasks; reveals per-task scheduling overhead.
+// Parameterised to show how overhead scales with task count.
+// ---------------------------------------------------------------------------
+TEST_CASE("tiny_tasks", "[bench][fast]")
+{
+	constexpr int workPerTask = 500;
+
+	auto run = [&](auto pf, std::vector<uint64_t>& buf)
+	{
+		uint64_t* out = buf.data();
+		const int n = static_cast<int>(buf.size());
+		pf(0, n, [out](int i)
+		   {
+			uint64_t acc = static_cast<uint64_t>(i);
+			for (int k = 0; k < workPerTask; ++k)
+				acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+			out[i] = acc; });
+	};
+
+	SECTION("1k tasks")
+	{
+		std::vector<uint64_t> buf(1000, 0);
+		BENCHMARK("serial (baseline)") { run(baseline, buf); };
+		BENCHMARK("multi(items)") { run(items, buf); };
+		BENCHMARK("multi(chunks)") { run(chunks, buf); };
+		REQUIRE(buf.back() != 0);
+	}
+	SECTION("5k tasks")
+	{
+		std::vector<uint64_t> buf(5000, 0);
+		BENCHMARK("serial (baseline)") { run(baseline, buf); };
+		BENCHMARK("multi(items)") { run(items, buf); };
+		BENCHMARK("multi(chunks)") { run(chunks, buf); };
+		REQUIRE(buf.back() != 0);
+	}
+	SECTION("50k tasks")
+	{
+		std::vector<uint64_t> buf(50000, 0);
+		BENCHMARK("serial (baseline)") { run(baseline, buf); };
+		BENCHMARK("multi(items)") { run(items, buf); };
+		BENCHMARK("multi(chunks)") { run(chunks, buf); };
+		REQUIRE(buf.back() != 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// imbalanced — task i does O(i) work; static partitioning suffers, stealing
+// wins. No baseline: serial ≈ 40–160ms/sample × 100 samples = too long.
+// ---------------------------------------------------------------------------
+TEST_CASE("imbalanced", "[bench][slow]")
+{
+	constexpr int workUnitScale = 8000;
+
+	auto run = [&](auto pf, std::vector<uint64_t>& buf)
+	{
+		uint64_t* out = buf.data();
+		const int n = static_cast<int>(buf.size());
+		pf(0, n, [out](int i)
+		   {
+			uint64_t acc = static_cast<uint64_t>(i) + 1;
+			for (int k = 0; k < i * workUnitScale; ++k)
+				acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+			out[i] = acc; });
+	};
+
+	SECTION("100 tasks")
+	{
+		std::vector<uint64_t> buf(100, 0);
+		BENCHMARK("multi(items)") { run(items, buf); };
+		BENCHMARK("multi(chunks)") { run(chunks, buf); };
+		REQUIRE(buf.back() != 0);
+	}
+	SECTION("200 tasks")
+	{
+		std::vector<uint64_t> buf(200, 0);
+		BENCHMARK("multi(items)") { run(items, buf); };
+		BENCHMARK("multi(chunks)") { run(chunks, buf); };
+		REQUIRE(buf.back() != 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// nested — recursive fork-join tree via parallel_invoke. Serial baseline
+// included; adds ~1.3s but shows the fork-join speedup directly.
+// ---------------------------------------------------------------------------
+TEST_CASE("nested", "[bench][fast]")
+{
+	constexpr int depth = 12, threshold = 6, leafWork = 200000;
+
+	uint64_t sink = 0;
+
+	BENCHMARK("serial (baseline)")
+	{
+		treeSumSerial(depth, threshold, leafWork, 1, sink);
+		return sink;
+	};
+	BENCHMARK("multi")
+	{
+		treeSum(depth, threshold, leafWork, 1, sink);
+		return sink;
+	};
+
+	REQUIRE(sink != 0);
+}
+
+// ---------------------------------------------------------------------------
+// async_latency — serial async round-trips (submit one task, wait, repeat).
+// Measures Handle + AsyncState lifecycle cost per dispatch.
+// ---------------------------------------------------------------------------
+TEST_CASE("async_latency", "[bench][fast]")
+{
+	SECTION("100 rounds")
+	{
+		BENCHMARK("multi::async")
+		{
+			for (int i = 0; i < 100; ++i)
+				multi::async([]() {}).wait();
+			return 100;
+		};
+	}
+	SECTION("500 rounds")
+	{
+		BENCHMARK("multi::async")
+		{
+			for (int i = 0; i < 500; ++i)
+				multi::async([]() {}).wait();
+			return 500;
+		};
+	}
+}
+
+// ---------------------------------------------------------------------------
+// async_fanout — submit N concurrent async tasks, collect all handles, then
+// wait for each. Compare against multi(items) from empty_tasks to see the
+// per-task cost of Handle + AsyncState vs the lightweight Job counter.
+// ---------------------------------------------------------------------------
+TEST_CASE("async_fanout", "[bench][fast]")
+{
+	auto run = [](int numTasks, std::vector<multi::Handle>& handles)
+	{
+		handles.clear();
+		for (int i = 0; i < numTasks; ++i)
+			handles.push_back(multi::async([]() {}));
+		for (auto& h : handles)
+			h.wait();
+		return handles.size();
+	};
+
+	SECTION("100 tasks")
+	{
+		std::vector<multi::Handle> handles;
+		handles.reserve(100);
+		BENCHMARK("multi::async (fanout)") { return run(100, handles); };
+	}
+	SECTION("1k tasks")
+	{
+		std::vector<multi::Handle> handles;
+		handles.reserve(1000);
+		BENCHMARK("multi::async (fanout)") { return run(1000, handles); };
+	}
+}
