@@ -6,7 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <multi/context.h>
 
 #include <algorithm>

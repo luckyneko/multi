@@ -4,7 +4,7 @@
  */
 
 #include <atomic>
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <multi/details/workstealdeque.h>
 #include <thread>
 #include <vector>

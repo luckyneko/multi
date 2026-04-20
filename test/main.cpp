@@ -6,8 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#define CATCH_CONFIG_MAIN
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <multi/multi.h>
 
 TEST_CASE("multi::context()")

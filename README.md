@@ -146,8 +146,9 @@ Common options:
 # Fewer samples for a quick pass (default is 100)
 ./build/bench-multi --benchmark-samples=20
 
-# Save results as XML for diffing between runs
+# Save results as XML or JSON for diffing between runs
 ./build/bench-multi --reporter xml --out before.xml
+./build/bench-multi --reporter json --out before.json
 
 # Adjust warmup window (default 200ms)
 ./build/bench-multi --benchmark-warmup-time=500

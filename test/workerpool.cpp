@@ -4,7 +4,7 @@
  */
 
 #include <atomic>
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <future>
 #include <multi/details/workerpool.h>
 #include <vector>

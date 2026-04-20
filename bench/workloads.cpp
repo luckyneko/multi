@@ -16,8 +16,7 @@
  *    ./bench-multi --reporter xml --out r.xml
  */
 
-#define CATCH_CONFIG_ENABLE_BENCHMARKING
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include "graph.h"
 #include "mandelbrot.h"

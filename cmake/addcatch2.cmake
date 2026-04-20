@@ -4,9 +4,9 @@ set(CATCH_BUILD_TESTING OFF CACHE BOOL "Disable Catch2 SelfTests")
 set(CATCH_ENABLE_WERROR OFF CACHE BOOL "Disable Catch2 Werror")
 find_package(Catch2 CONFIG QUIET)
 
-if (${Catch2_FOUND} OR TARGET Catch2::Catch2)       
+if (${Catch2_FOUND})       
 else ()
-	set(CATCH2_VER "2.13.1")
+	set(CATCH2_VER "3.14.0")
 	if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER}.tar.gz")
 		message(STATUS "Downloading Catch2 (${CATCH2_VER})")
 		file(DOWNLOAD 
@@ -25,7 +25,7 @@ else ()
 
 	message(STATUS "Using thirdparty/Catch2 (${CATCH2_VER})")
 	add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER})
-	list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER}/contrib")
+	list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/thirdparty/Catch2-${CATCH2_VER}/extras")
 endif ()
 
 include(Catch)

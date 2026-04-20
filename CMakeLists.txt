@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15...3.28)
 
 # disable testsuite if bundled
 if(NOT DEFINED PROJECT_NAME)
@@ -22,6 +22,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 # Options
 option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
+
+# Load Catch2
+if(MULTI_BUILD_TESTING OR MULTI_BUILD_BENCHMARK)
+    include(addcatch2)
+endif()
 
 # Static Library Target
 find_package(Threads REQUIRED)
@@ -55,7 +60,6 @@ endif()
 
 # Testing Target
 if(MULTI_BUILD_TESTING)
-    include(addcatch2)
     enable_testing()
     add_executable(test-${PROJECT_NAME}
         test/main.cpp
@@ -63,13 +67,12 @@ if(MULTI_BUILD_TESTING)
         test/workstealdeque.cpp
         test/workerpool.cpp
     )
-    target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
+    target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2WithMain)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
 endif()
 
 # Benchmark Target
 if(MULTI_BUILD_BENCHMARK)
-    include(addcatch2)
     add_executable(bench-${PROJECT_NAME}
         bench/main.cpp
         bench/workloads.cpp
