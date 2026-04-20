@@ -159,8 +159,6 @@ TEST_CASE("empty_tasks", "[bench][fast]")
 
 // ---------------------------------------------------------------------------
 // mandelbrot — uniform CPU-bound work, moderate grain. "Well-behaved".
-// No baseline: serial 512×512×10 frames ≈ 500ms/sample → 50s extra. Use
-// the tiny_tasks or imbalanced serial baseline for overhead calibration.
 // ---------------------------------------------------------------------------
 TEST_CASE("mandelbrot", "[bench][slow]")
 {
@@ -187,6 +185,7 @@ TEST_CASE("mandelbrot", "[bench][slow]")
 		}
 	};
 
+	BENCHMARK("serial (baseline)") { run(baseline); };
 	BENCHMARK("multi(items)") { run(items); };
 	BENCHMARK("multi(chunks)") { run(chunks); };
 
@@ -242,7 +241,7 @@ TEST_CASE("tiny_tasks", "[bench][fast]")
 
 // ---------------------------------------------------------------------------
 // imbalanced — task i does O(i) work; static partitioning suffers, stealing
-// wins. No baseline: serial ≈ 40–160ms/sample × 100 samples = too long.
+// wins.
 // ---------------------------------------------------------------------------
 TEST_CASE("imbalanced", "[bench][slow]")
 {
@@ -263,6 +262,7 @@ TEST_CASE("imbalanced", "[bench][slow]")
 	SECTION("100 tasks")
 	{
 		std::vector<uint64_t> buf(100, 0);
+		BENCHMARK("serial (baseline)") { run(baseline, buf); };
 		BENCHMARK("multi(items)") { run(items, buf); };
 		BENCHMARK("multi(chunks)") { run(chunks, buf); };
 		REQUIRE(buf.back() != 0);
@@ -270,6 +270,7 @@ TEST_CASE("imbalanced", "[bench][slow]")
 	SECTION("200 tasks")
 	{
 		std::vector<uint64_t> buf(200, 0);
+		BENCHMARK("serial (baseline)") { run(baseline, buf); };
 		BENCHMARK("multi(items)") { run(items, buf); };
 		BENCHMARK("multi(chunks)") { run(chunks, buf); };
 		REQUIRE(buf.back() != 0);
