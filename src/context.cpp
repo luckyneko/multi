@@ -10,7 +10,6 @@
 
 #include <atomic>
 #include <exception>
-#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -19,31 +18,6 @@ namespace multi
 {
 	namespace
 	{
-		// Shared state for a single async task. One heap allocation combines
-		// promise + user task, and the worker wrapper captures only the
-		// shared_ptr — SBO-fitting in std::function so there is no separate
-		// allocation for the wrapper itself.
-		struct AsyncState
-		{
-			std::promise<void> promise;
-			Task task;
-
-			explicit AsyncState(Task&& t) : task(std::move(t)) {}
-
-			void run() noexcept
-			{
-				try
-				{
-					task();
-					promise.set_value();
-				}
-				catch (...)
-				{
-					promise.set_exception(std::current_exception());
-				}
-			}
-		};
-
 		// Shared state for a batch job. Lives on the caller's stack in
 		// runQueueJob; tasks reference it by raw pointer. Safe because the
 		// caller blocks until remaining == 0.
@@ -88,14 +62,6 @@ namespace multi
 	size_t Context::threadCount() const
 	{
 		return m_workerPool.threadCount();
-	}
-
-	Handle Context::async(Task&& task)
-	{
-		auto state = std::make_shared<AsyncState>(std::move(task));
-		auto hdl = state->promise.get_future();
-		m_workerPool.submit([state = std::move(state)]() { state->run(); });
-		return Handle(std::move(hdl), this);
 	}
 
 	// Try run a stolen task

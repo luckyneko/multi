@@ -34,7 +34,8 @@ namespace multi
 
 		// Launch task onto a thread
 		// @return Handle to wait on parallel task.
-		Handle async(Task&& task);
+		template <class F>
+		Handle async(F&& f);
 
 		// Launch parallel tasks
 		template <typename... TASKS>

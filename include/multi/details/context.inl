@@ -1,6 +1,39 @@
 
+#include <future>
+#include <memory>
+
 namespace multi
 {
+	// Launch task onto a thread. F is stored directly in AsyncState — no
+	// std::function type erasure until the wrapper lambda is submitted to
+	// WorkerPool::submit (where only a shared_ptr is captured, SBO-fitting).
+	template <class F>
+	Handle Context::async(F&& f)
+	{
+		struct AsyncState
+		{
+			std::promise<void> promise;
+			std::decay_t<F> func;
+			explicit AsyncState(F&& fn) : func(std::forward<F>(fn)) {}
+			void run() noexcept
+			{
+				try
+				{
+					func();
+					promise.set_value();
+				}
+				catch (...)
+				{
+					promise.set_exception(std::current_exception());
+				}
+			}
+		};
+		auto state = std::make_shared<AsyncState>(std::forward<F>(f));
+		auto hdl = state->promise.get_future();
+		m_workerPool.submit([state = std::move(state)]() { state->run(); });
+		return Handle(std::move(hdl), this);
+	}
+
 	// Launch parallel tasks
 	template <typename... TASKS>
 	void Context::parallel(TASKS&&... tasks)

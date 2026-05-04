@@ -35,9 +35,10 @@ namespace multi
 	}
 
 	// Work functions
-	inline Handle async(Task&& task)
+	template <class F>
+	Handle async(F&& f)
 	{
-		return context()->async(std::move(task));
+		return context()->async(std::forward<F>(f));
 	}
 
 	// Parallel
@@ -51,31 +52,31 @@ namespace multi
 	template <typename ITER, typename FUNC>
 	void each(ITER begin, ITER end, FUNC&& func)
 	{
-		context()->each(begin, end, func);
+		context()->each(begin, end, std::forward<FUNC>(func));
 	}
 	template <typename ITER, typename FUNC>
 	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
 	{
-		context()->each(taskCount, begin, end, func);
+		context()->each(taskCount, begin, end, std::forward<FUNC>(func));
 	}
 
 	// Step-less overload: default step to IDX(1) for the common case.
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, FUNC&& func)
 	{
-		context()->range(begin, end, func);
+		context()->range(begin, end, std::forward<FUNC>(func));
 	}
 
 	// Launch task for each idx with step
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		context()->range(begin, end, step, func);
+		context()->range(begin, end, step, std::forward<FUNC>(func));
 	}
 	template <typename IDX, typename FUNC>
 	void range(size_t jobCount, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		context()->range(jobCount, begin, end, step, func);
+		context()->range(jobCount, begin, end, step, std::forward<FUNC>(func));
 	}
 } // namespace multi
 
