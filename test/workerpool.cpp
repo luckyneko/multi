@@ -224,3 +224,63 @@ TEST_CASE("multi::WorkerPool stop drains remaining tasks")
 	// All tasks should have completed during or after stop()
 	CHECK(counter == numTasks);
 }
+
+// Stresses the submit-vs-stop race: external submitter threads call
+// submit/submitBatch in tight loops while the test thread calls stop().
+// Without m_inFlight, a submitter that passed isActive() could push into
+// m_workers after stop() cleared it (UAF). With the guard, every submitted
+// task must run exactly once: pushed-and-drained while active, or inline-
+// fallback once m_active flips. Repeated trials shake out timing jitter.
+TEST_CASE("WorkerPool submit and stop can race without UAF or lost tasks")
+{
+	for (int trial = 0; trial < 8; ++trial)
+	{
+		multi::WorkerPool pool;
+		pool.start(2);
+
+		std::atomic<int> totalRun(0);
+		std::atomic<int> totalSubmitted(0);
+		std::atomic<bool> shouldRun(true);
+
+		auto submitterMain = [&pool, &totalRun, &totalSubmitted, &shouldRun]()
+		{
+			while (shouldRun.load(std::memory_order_relaxed))
+			{
+				pool.submit([&totalRun]()
+							{ totalRun.fetch_add(1, std::memory_order_relaxed); });
+				totalSubmitted.fetch_add(1, std::memory_order_relaxed);
+			}
+		};
+
+		auto batchSubmitterMain = [&pool, &totalRun, &totalSubmitted, &shouldRun]()
+		{
+			while (shouldRun.load(std::memory_order_relaxed))
+			{
+				std::vector<multi::Task> batch;
+				for (int i = 0; i < 8; ++i)
+					batch.emplace_back([&totalRun]()
+									   { totalRun.fetch_add(1, std::memory_order_relaxed); });
+				pool.submitBatch(std::move(batch));
+				totalSubmitted.fetch_add(8, std::memory_order_relaxed);
+			}
+		};
+
+		std::vector<std::thread> submitters;
+		submitters.emplace_back(submitterMain);
+		submitters.emplace_back(submitterMain);
+		submitters.emplace_back(batchSubmitterMain);
+
+		// Let submitters pump for a moment so stop() races a busy push region.
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		pool.stop();
+		// Submitters now hit !isActive() and inline-fallback; let that run too.
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		shouldRun.store(false);
+		for (auto& t : submitters)
+			t.join();
+
+		// Every task that was returned from submit/submitBatch must have run
+		// exactly once. Drift here would indicate a lost task in the race.
+		CHECK(totalRun.load() == totalSubmitted.load());
+	}
+}

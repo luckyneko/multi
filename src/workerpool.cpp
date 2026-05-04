@@ -16,6 +16,7 @@ namespace multi
 		, m_active(false)
 		, m_nextWorker(0)
 		, m_nextVictim(0)
+		, m_inFlight(0)
 	{
 	}
 
@@ -70,22 +71,71 @@ namespace multi
 
 	void WorkerPool::stop()
 	{
-		// Set m_active false then fencedNotify each worker so none can miss the
-		// state change between their predicate check and entering wait().
-		m_active.store(false, std::memory_order_relaxed);
+		// Flip m_active then wait for any concurrent submitter that's already
+		// past its isActive() check to leave the push region. Pair: submit
+		// fetch_adds m_inFlight before re-checking m_active; the seq_cst on
+		// both sides gives a Dekker-style total order, so either the submitter
+		// observes !m_active and bails, or we observe its increment and spin.
+		m_active.store(false, std::memory_order_seq_cst);
+		while (m_inFlight.load(std::memory_order_seq_cst) > 0)
+			std::this_thread::yield();
+
+		// Now safe: no submitter can touch m_workers. Wake workers (do-while
+		// drain in workerMain runs anything pushed before m_active flipped)
+		// and tear down.
 		for (auto& worker : m_workers)
 			fencedNotify(*worker);
 
 		for (auto& thread : m_threads)
 			thread.join();
+
+		// A worker can exit its predicate via !m_active with an empty-deque
+		// snapshot (predicate's tryGetTask short-circuits), then a late
+		// submitter inside the push region pushes a task into that worker's
+		// deque before its own fetch_sub. The in-flight counter keeps stop()
+		// waiting until that submitter is done, but the worker is already
+		// gone — so the task is still in the deque. Drain it on the
+		// stopping thread before clearing m_workers; m_inFlight == 0
+		// guarantees the deques are stable.
+		Task leftover;
+		for (auto& worker : m_workers)
+		{
+			while (worker->deque.pop(&leftover))
+			{
+				try
+				{
+					leftover();
+				}
+				catch (...)
+				{
+				}
+				leftover = nullptr;
+			}
+		}
+
 		m_threads.clear();
 		m_workers.clear();
 	}
 
 	void WorkerPool::submit(Task&& task)
 	{
+		// Fast path: never-started or already-stopped pool runs inline on
+		// the caller, no push-region claim needed.
 		if (!isActive())
 		{
+			task();
+			return;
+		}
+
+		// Claim a slot in the push region. After this, stop() will spin on
+		// m_inFlight before clearing m_workers, so the m_workers access below
+		// is safe even if stop() runs concurrently.
+		m_inFlight.fetch_add(1, std::memory_order_seq_cst);
+		if (!isActive())
+		{
+			// Lost the race: stop() flipped m_active between our first check
+			// and our fetch_add. Release the slot and fall back to inline.
+			m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 			task();
 			return;
 		}
@@ -94,6 +144,8 @@ namespace multi
 		Worker* worker = m_workers[idx].get();
 		worker->deque.push(std::move(task));
 		fencedNotify(*worker);
+
+		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
 
 	void WorkerPool::submitBatch(std::vector<Task>&& tasks)
@@ -103,6 +155,16 @@ namespace multi
 
 		if (!isActive())
 		{
+			for (auto& task : tasks)
+				task();
+			return;
+		}
+
+		// Same push-region claim pattern as submit(). See submit() for rationale.
+		m_inFlight.fetch_add(1, std::memory_order_seq_cst);
+		if (!isActive())
+		{
+			m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 			for (auto& task : tasks)
 				task();
 			return;
@@ -122,6 +184,8 @@ namespace multi
 		size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
 		for (size_t i = 0; i < wakeCount; ++i)
 			fencedNotify(*m_workers[(base + i) % workerCount]);
+
+		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
 
 	bool WorkerPool::tryStealAny(Task* task)

@@ -75,6 +75,12 @@ namespace multi
 		alignas(CACHE_LINE_SIZE) std::atomic<bool> m_active;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextVictim;
+		// Count of submitters currently inside the push region (between the
+		// post-increment isActive() check and the matching fetch_sub). stop()
+		// flips m_active and then spins on this counter reaching zero before
+		// joining/clearing m_workers, so a concurrent submit can't UAF the
+		// worker storage.
+		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_inFlight;
 	};
 } // namespace multi
 
