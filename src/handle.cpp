@@ -14,7 +14,7 @@ namespace multi
 	{
 		m_handle = std::move(a.m_handle);
 		m_context = a.m_context;
-		a.reset();
+		a.clear();
 	}
 
 	Handle::~Handle()
@@ -68,7 +68,7 @@ namespace multi
 
 		m_handle = std::move(a.m_handle);
 		m_context = a.m_context;
-		a.reset();
+		a.clear();
 		return *this;
 	}
 } // namespace multi

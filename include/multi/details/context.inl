@@ -72,7 +72,7 @@ namespace multi
 		if (taskCount <= 1)
 		{
 			for (ITER it = begin; it != end; ++it)
-				func(std::ref(*it));
+				func(*it);
 			return;
 		}
 
@@ -109,7 +109,7 @@ namespace multi
 			auto task = [innerBegin, innerEnd, &func]()
 			{
 				for (ITER it = innerBegin; it != innerEnd; ++it)
-					func(std::ref(*it));
+					func(*it);
 			};
 			taskList.emplace_back(std::move(task));
 			innerBegin = innerEnd;

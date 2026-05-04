@@ -36,13 +36,6 @@ namespace multi
 		// Check if job is complete
 		bool complete() const { return !valid() || m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
 
-		// Reset handle
-		void reset()
-		{
-			m_handle = std::shared_future<void>();
-			m_context = nullptr;
-		}
-
 		// Check if handle has assigned job
 		bool valid() const { return m_handle.valid(); }
 
@@ -53,11 +46,19 @@ namespace multi
 		// Release the handle without waiting. The task still runs to completion
 		// on its worker, but its result/exception becomes unobservable. Useful
 		// for true fire-and-forget when you want to avoid ~Handle's auto-wait.
-		void detach() { reset(); }
+		void detach() { clear(); }
 
 		Handle& operator=(Handle&& a);
 
 	private:
+		// Drop our reference to the shared state without waiting. Used by
+		// detach() and by move ops to vacate the source after stealing.
+		void clear()
+		{
+			m_handle = std::shared_future<void>();
+			m_context = nullptr;
+		}
+
 		std::shared_future<void> m_handle;
 		Context* m_context = nullptr;
 	};

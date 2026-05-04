@@ -109,7 +109,7 @@ namespace multi
 				catch (...)
 				{
 				}
-				leftover = nullptr;
+				leftover = {};
 			}
 		}
 
@@ -238,7 +238,7 @@ namespace multi
 				catch (...)
 				{
 				}
-				task = nullptr;
+				task = {};
 				tryGetTask(workerIndex, &task);
 			}
 		} while (m_active.load(std::memory_order_acquire));
