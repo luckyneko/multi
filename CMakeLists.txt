@@ -62,7 +62,7 @@ endif()
 if(MULTI_BUILD_TESTING)
     enable_testing()
     add_executable(test-${PROJECT_NAME}
-        test/main.cpp
+        test/multi.cpp
         test/context.cpp
         test/workstealdeque.cpp
         test/workerpool.cpp
