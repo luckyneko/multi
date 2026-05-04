@@ -102,7 +102,11 @@ namespace multi
 		{
 			ITER innerEnd = innerBegin;
 			std::advance(innerEnd, i < extra ? base + 1 : base);
-			auto task = [innerBegin, innerEnd, func]()
+			// Capture func by reference (matches the non-chunked overload):
+			// runQueueJob blocks until every chunk finishes, so func outlives
+			// the tasks. Capturing by value would copy func once per chunk
+			// before std::function ingests it.
+			auto task = [innerBegin, innerEnd, &func]()
 			{
 				for (ITER it = innerBegin; it != innerEnd; ++it)
 					func(std::ref(*it));
@@ -179,7 +183,11 @@ namespace multi
 		for (size_t i = 0; i < taskCount; ++i)
 		{
 			IDX innerEnd = innerBegin + static_cast<IDX>(i < extra ? base + 1 : base) * step;
-			auto task = [innerBegin, innerEnd, step, func]()
+			// Capture func by reference (matches the non-chunked overload):
+			// runQueueJob blocks until every chunk finishes, so func outlives
+			// the tasks. Capturing by value would copy func once per chunk
+			// before std::function ingests it.
+			auto task = [innerBegin, innerEnd, step, &func]()
 			{
 				for (IDX j = innerBegin; j < innerEnd; j += step)
 					func(j);
