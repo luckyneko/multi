@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+
+jobs:
+  linux:
+    name: linux ${{ matrix.compiler.name }} ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: gcc-13,    cc: gcc-13,    cxx: g++-13,     pkgs: g++-13 }
+          - { name: gcc-14,    cc: gcc-14,    cxx: g++-14,     pkgs: g++-14 }
+          - { name: clang-17,  cc: clang-17,  cxx: clang++-17, pkgs: clang-17 }
+          - { name: clang-18,  cc: clang-18,  cxx: clang++-18, pkgs: clang-18 }
+        build_type: [Debug, Release]
+    env:
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.compiler.pkgs }}
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build -j2 --output-on-failure
+
+  macos:
+    name: ${{ matrix.os }} ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-latest]
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build -j2 --output-on-failure
+
+  windows:
+    name: windows-latest ${{ matrix.build_type }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j
+      - name: Test
+        run: ctest --test-dir build -j2 --output-on-failure -C ${{ matrix.build_type }}
