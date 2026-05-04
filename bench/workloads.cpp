@@ -205,7 +205,7 @@ TEST_CASE("tiny_tasks", "[bench][fast]")
 	{
 		uint64_t* out = buf.data();
 		const int n = static_cast<int>(buf.size());
-		pf(0, n, [out](int i)
+		pf(0, n, [out, workPerTask](int i)
 		   {
 			uint64_t acc = static_cast<uint64_t>(i);
 			for (int k = 0; k < workPerTask; ++k)
@@ -251,7 +251,7 @@ TEST_CASE("imbalanced", "[bench][slow]")
 	{
 		uint64_t* out = buf.data();
 		const int n = static_cast<int>(buf.size());
-		pf(0, n, [out](int i)
+		pf(0, n, [out, workUnitScale](int i)
 		   {
 			uint64_t acc = static_cast<uint64_t>(i) + 1;
 			for (int k = 0; k < i * workUnitScale; ++k)

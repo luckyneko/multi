@@ -141,7 +141,12 @@ namespace multi
 	{
 		Worker* self = m_workers[workerIndex].get();
 		Task task;
-		while (m_active.load(std::memory_order_acquire))
+		// do-while, not while: if start() returns and stop() is called before
+		// this thread is scheduled, m_active is already false on first entry.
+		// We must still run the wait/drain block once so the worker pops any
+		// tasks that were submitted before stop() — that's the contract
+		// stop() relies on to drain pending work.
+		do
 		{
 			// Sleep
 			{
@@ -165,7 +170,7 @@ namespace multi
 				task = nullptr;
 				tryGetTask(workerIndex, &task);
 			}
-		}
+		} while (m_active.load(std::memory_order_acquire));
 	}
 
 	bool WorkerPool::tryGetTask(size_t workerIndex, Task* task)

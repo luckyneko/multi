@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13, macos-latest]
+        os: [macos-15]
         build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@v4
@@ -53,11 +53,12 @@ jobs:
         run: ctest --test-dir build -j2 --output-on-failure
 
   windows:
-    name: windows-latest ${{ matrix.build_type }}
-    runs-on: windows-latest
+    name: ${{ matrix.os }} ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-2022, windows-2025]
         build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@v4
