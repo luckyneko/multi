@@ -407,3 +407,78 @@ TEST_CASE("heavy_capture", "[bench][fast]")
 		REQUIRE(buf.back() != 0);
 	}
 }
+
+// ---------------------------------------------------------------------------
+// steal_contention — multiple external driver threads issue parallel work
+// simultaneously. While each driver waits for its own batch it spins on
+// tryStealAny. Without victim-index rotation, every driver hits worker 0's
+// deque mutex first on each scan, concentrating contention on a single
+// cache line. The async variant pushes the contention harder: each
+// Handle::wait re-enters the steal loop on every round-trip with no chunked
+// work for the driver to actually steal — pure scan overhead.
+// ---------------------------------------------------------------------------
+TEST_CASE("steal_contention", "[bench][fast]")
+{
+	auto driveRange = [](int numDrivers, int callsPerDriver, int chunksPerCall, int itemsPerCall)
+	{
+		std::atomic<uint64_t> sink(0);
+		std::vector<std::thread> drivers;
+		drivers.reserve(static_cast<size_t>(numDrivers));
+		for (int d = 0; d < numDrivers; ++d)
+		{
+			drivers.emplace_back([&, callsPerDriver, chunksPerCall, itemsPerCall]()
+			{
+				for (int c = 0; c < callsPerDriver; ++c)
+				{
+					multi::range(chunksPerCall, 0, itemsPerCall, 1, [&](int)
+					{
+						sink.fetch_add(1, std::memory_order_relaxed);
+					});
+				}
+			});
+		}
+		for (auto& t : drivers)
+			t.join();
+		return sink.load();
+	};
+
+	auto driveAsync = [](int numDrivers, int callsPerDriver)
+	{
+		std::atomic<uint64_t> sink(0);
+		std::vector<std::thread> drivers;
+		drivers.reserve(static_cast<size_t>(numDrivers));
+		for (int d = 0; d < numDrivers; ++d)
+		{
+			drivers.emplace_back([&, callsPerDriver]()
+			{
+				for (int c = 0; c < callsPerDriver; ++c)
+				{
+					multi::async([&]()
+					{
+						sink.fetch_add(1, std::memory_order_relaxed);
+					}).wait();
+				}
+			});
+		}
+		for (auto& t : drivers)
+			t.join();
+		return sink.load();
+	};
+
+	SECTION("4 drivers x range")
+	{
+		BENCHMARK("range 4x200x32") { return driveRange(4, 200, 32, 1000); };
+	}
+	SECTION("8 drivers x range")
+	{
+		BENCHMARK("range 8x200x32") { return driveRange(8, 200, 32, 1000); };
+	}
+	SECTION("4 drivers x async.wait")
+	{
+		BENCHMARK("async 4x500") { return driveAsync(4, 500); };
+	}
+	SECTION("8 drivers x async.wait")
+	{
+		BENCHMARK("async 8x500") { return driveAsync(8, 500); };
+	}
+}

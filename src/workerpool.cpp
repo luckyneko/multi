@@ -126,12 +126,19 @@ namespace multi
 
 	bool WorkerPool::tryStealAny(Task* task)
 	{
-		// size_t workerCount = m_workers.size();
-		// size_t base = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
-		for (size_t i = 0; i < m_workers.size(); ++i)
+		const size_t workerCount = m_workers.size();
+		if (workerCount == 0)
+			return false;
+
+		// Rotate the scan start across calls so multiple concurrent stealers
+		// (e.g. several threads inside Handle::wait or runQueueJob) don't all
+		// hammer worker 0's deque mutex first. Per-worker steal-from-victim
+		// scans in tryGetTask are already self-rotating; this aligns the
+		// caller-side scan with that strategy.
+		const size_t base = m_nextVictim.fetch_add(1, std::memory_order_relaxed) % workerCount;
+		for (size_t i = 0; i < workerCount; ++i)
 		{
-			// size_t idx = (base + i) % workerCount;
-			if (m_workers[i]->deque.steal(task))
+			if (m_workers[(base + i) % workerCount]->deque.steal(task))
 				return true;
 		}
 		return false;
