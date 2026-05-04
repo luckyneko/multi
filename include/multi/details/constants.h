@@ -12,10 +12,7 @@
 namespace multi
 {
 #ifdef __cpp_lib_hardware_interference_size
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winterference-size"
 	static constexpr std::size_t CACHE_LINE_SIZE = std::hardware_destructive_interference_size;
-#pragma GCC diagnostic pop
 #else
 	static constexpr std::size_t CACHE_LINE_SIZE = 64;
 #endif
