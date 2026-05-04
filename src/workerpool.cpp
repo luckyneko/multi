@@ -13,8 +13,9 @@ namespace multi
 	WorkerPool::WorkerPool()
 		: m_workers()
 		, m_threads()
-		, m_nextWorker(0)
 		, m_active(false)
+		, m_nextWorker(0)
+		, m_nextVictim(0)
 	{
 	}
 
@@ -49,6 +50,7 @@ namespace multi
 
 		m_active.store(true, std::memory_order_relaxed);
 		m_nextWorker.store(0, std::memory_order_relaxed);
+		m_nextVictim.store(0, std::memory_order_relaxed);
 
 		m_workers.reserve(threadCount);
 		for (size_t i = 0; i < threadCount; ++i)
@@ -124,8 +126,11 @@ namespace multi
 
 	bool WorkerPool::tryStealAny(Task* task)
 	{
+		// size_t workerCount = m_workers.size();
+		// size_t base = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
 		for (size_t i = 0; i < m_workers.size(); ++i)
 		{
+			// size_t idx = (base + i) % workerCount;
 			if (m_workers[i]->deque.steal(task))
 				return true;
 		}

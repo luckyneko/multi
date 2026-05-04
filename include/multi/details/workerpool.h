@@ -72,8 +72,9 @@ namespace multi
 		std::vector<std::thread> m_threads;
 
 		// Align 'Hot' Variables
-		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
 		alignas(CACHE_LINE_SIZE) std::atomic<bool> m_active;
+		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
+		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextVictim;
 	};
 } // namespace multi
 
