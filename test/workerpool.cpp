@@ -122,7 +122,7 @@ TEST_CASE("multi::WorkerPool")
 				while (pool.tryStealAny(&stolen))
 				{
 					stolen();
-					stolen = nullptr;
+					stolen = {};
 				}
 
 				// Wait for workers to finish remaining

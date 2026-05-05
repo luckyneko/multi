@@ -87,9 +87,8 @@ namespace multi
 		if (tasks.empty())
 			return;
 
-		// Job lives on our stack; wrappers capture [&job, i] which SBO-fits
-		// in std::function and removes the second heap allocation that the
-		// previous per-task wrapping cost.
+		// Job lives on our stack; wrappers capture [&job, i] (16 B) which fits
+		// in Task's 24-byte SBO buffer, so no heap allocation per wrapper.
 		Job job(std::move(tasks));
 		const size_t count = job.tasks.size();
 
