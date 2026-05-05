@@ -63,7 +63,12 @@ namespace
 			int count = end - begin;
 			if (count <= 0)
 				return;
-			const size_t K = 8;
+			// K is the oversubscription factor: chunks = (workers+caller) * K.
+			// Picked from chunk_factor_scan: K=4 is within ~6% of best on
+			// every shape we measured (uniform, imbalanced, heavy capture).
+			// K=1 wins on uniform (no extra dispatch) but loses ~75% on
+			// imbalanced (no steal granularity); K=8+ is the reverse.
+			const size_t K = 4;
 			size_t chunks = (multi::threadCount() + 1) * K;
 			if (chunks < 2)
 				chunks = 2;
@@ -480,5 +485,106 @@ TEST_CASE("steal_contention", "[bench][fast]")
 	SECTION("8 drivers x async.wait")
 	{
 		BENCHMARK("async 8x500") { return driveAsync(8, 500); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// chunk_factor_scan — one-off study of the K oversubscription factor used by
+// parallel_for_chunks_t (chunks = (threadCount+1)*K). Sweeps K across {1, 2,
+// 4, 8, 16, 32, 64} on three workload shapes:
+//   * uniform   — same work per task, dispatch overhead dominates
+//   * imbalanced — task i does O(i) work, exercises stealing
+//   * heavy_cap — large user functor capture, exercises chunk lambda size
+// Each row labels itself with the K value so the picker is direct.
+// ---------------------------------------------------------------------------
+TEST_CASE("chunk_factor_scan", "[bench][fast]")
+{
+	auto run_chunks = [](int K, int begin, int end, auto&& f)
+	{
+		int count = end - begin;
+		if (count <= 0)
+			return;
+		size_t k = static_cast<size_t>(K);
+		size_t c = (multi::threadCount() + 1) * k;
+		if (c < 2)
+			c = 2;
+		if (static_cast<int>(c) > count)
+			c = static_cast<size_t>(count);
+		multi::range(c, begin, end, 1, std::forward<decltype(f)>(f));
+	};
+
+	struct HeavyState
+	{
+		uint64_t data[32];
+	}; // 256 bytes
+	HeavyState state{};
+	for (int i = 0; i < 32; ++i)
+		state.data[i] = 0xDEADBEEFCAFEBABEULL ^ static_cast<uint64_t>(i);
+
+	SECTION("uniform 5k")
+	{
+		std::vector<uint64_t> buf(5000, 0);
+		auto run = [&](int K)
+		{
+			uint64_t* out = buf.data();
+			run_chunks(K, 0, static_cast<int>(buf.size()), [out](int i)
+					   {
+				uint64_t acc = static_cast<uint64_t>(i);
+				for (int k = 0; k < 200; ++k)
+					acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+				out[i] = acc; });
+		};
+		BENCHMARK("K=1") { run(1); };
+		BENCHMARK("K=2") { run(2); };
+		BENCHMARK("K=4") { run(4); };
+		BENCHMARK("K=8") { run(8); };
+		BENCHMARK("K=16") { run(16); };
+		BENCHMARK("K=32") { run(32); };
+		BENCHMARK("K=64") { run(64); };
+		REQUIRE(buf.back() != 0);
+	}
+	SECTION("imbalanced 200")
+	{
+		std::vector<uint64_t> buf(200, 0);
+		auto run = [&](int K)
+		{
+			uint64_t* out = buf.data();
+			run_chunks(K, 0, static_cast<int>(buf.size()), [out](int i)
+					   {
+				uint64_t acc = static_cast<uint64_t>(i) + 1;
+				for (int k = 0; k < i * 4000; ++k)
+					acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+				out[i] = acc; });
+		};
+		BENCHMARK("K=1") { run(1); };
+		BENCHMARK("K=2") { run(2); };
+		BENCHMARK("K=4") { run(4); };
+		BENCHMARK("K=8") { run(8); };
+		BENCHMARK("K=16") { run(16); };
+		BENCHMARK("K=32") { run(32); };
+		BENCHMARK("K=64") { run(64); };
+		REQUIRE(buf.back() != 0);
+	}
+	SECTION("heavy_cap 5k")
+	{
+		std::vector<uint64_t> buf(5000, 0);
+		auto run = [&](int K)
+		{
+			uint64_t* out = buf.data();
+			run_chunks(K, 0, static_cast<int>(buf.size()), [out, state](int i)
+					   {
+				uint64_t acc = static_cast<uint64_t>(i);
+				for (int k = 0; k < 100; ++k)
+					acc = acc * 6364136223846793005ULL + state.data[k & 31];
+				out[i] = acc; });
+		};
+		BENCHMARK("K=1") { run(1); };
+		BENCHMARK("K=2") { run(2); };
+		BENCHMARK("K=4") { run(4); };
+		BENCHMARK("K=8") { run(8); };
+		BENCHMARK("K=16") { run(16); };
+		BENCHMARK("K=32") { run(32); };
+		BENCHMARK("K=64") { run(64); };
+		REQUIRE(buf.back() != 0);
 	}
 }
