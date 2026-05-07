@@ -32,8 +32,10 @@ endif()
 find_package(Threads REQUIRED)
 add_library(${PROJECT_NAME} STATIC 
     # Headers
+    include/multi/details/chaselevdeque.h
     include/multi/details/constants.h
     include/multi/details/context.inl
+    include/multi/details/mpmcqueue.h
     include/multi/details/workstealdeque.h
     include/multi/details/workerpool.h
     include/multi/context.h
@@ -64,7 +66,9 @@ if(MULTI_BUILD_TESTING)
     enable_testing()
     add_executable(test-${PROJECT_NAME}
         test/multi.cpp
+        test/chaselevdeque.cpp
         test/context.cpp
+        test/mpmcqueue.cpp
         test/workstealdeque.cpp
         test/workerpool.cpp
     )
