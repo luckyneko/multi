@@ -27,11 +27,11 @@ TEST_CASE("multi::WorkStealDeque")
 		multi::WorkStealDeque deque;
 		int order = 0;
 
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 1; });
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 2; });
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 3; });
 		CHECK(deque.sizeHint() == 3);
 
@@ -59,11 +59,11 @@ TEST_CASE("multi::WorkStealDeque")
 		multi::WorkStealDeque deque;
 		int order = 0;
 
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 1; });
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 2; });
-		deque.push([&order]()
+		deque.tryPushRemote([&order]()
 				   { order = 3; });
 
 		multi::Task task;
@@ -89,9 +89,9 @@ TEST_CASE("multi::WorkStealDeque")
 	{
 		multi::WorkStealDeque deque;
 
-		deque.push([&]() {});
-		deque.push([&]() {});
-		deque.push([&]() {});
+		deque.tryPushRemote([&]() {});
+		deque.tryPushRemote([&]() {});
+		deque.tryPushRemote([&]() {});
 
 		multi::Task task;
 
@@ -114,7 +114,7 @@ TEST_CASE("multi::WorkStealDeque")
 		std::thread producer([&]()
 							 {
 			for (int i = 0; i < numTasks; ++i)
-				deque.push([&counter]() { counter++; }); });
+				deque.tryPushRemote([&counter]() { counter++; }); });
 
 		// Thieves steal tasks
 		std::atomic<int> totalStolen(0);
@@ -161,7 +161,7 @@ TEST_CASE("multi::WorkStealDeque")
 		std::atomic<int> counter(0);
 
 		for (int i = 0; i < numTasks; ++i)
-			deque.push([&counter]()
+			deque.tryPushRemote([&counter]()
 					   { counter++; });
 
 		// Owner pops from back

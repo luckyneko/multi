@@ -6,10 +6,26 @@
 #include "multi/details/workerpool.h"
 
 #include <cassert>
+#include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace multi
 {
+	namespace
+	{
+		// Set at the top of workerMain; readable by any thread to identify
+		// itself as worker N (or as "not a worker" via SIZE_MAX). Used by
+		// submit/submitBatch to route nested-spawn pushes through the local
+		// Chase-Lev fast path instead of the MPMC overflow ring.
+		thread_local std::size_t g_workerIndex = std::numeric_limits<std::size_t>::max();
+
+		std::size_t currentWorkerIndex()
+		{
+			return g_workerIndex;
+		}
+	} // namespace
+
 	WorkerPool::WorkerPool()
 		: m_workers()
 		, m_threads()
@@ -117,6 +133,35 @@ namespace multi
 		m_workers.clear();
 	}
 
+	bool WorkerPool::pushWithRetry(size_t idx, Task& task)
+	{
+		// Caller must hold a slot in m_inFlight before getting here. That slot
+		// is what keeps m_workers[idx] alive against a concurrent stop() —
+		// stop() spins on m_inFlight reaching zero before clearing m_workers.
+		// Without it, the lock-free deque internals don't help: the Worker
+		// storage itself could vanish under us.
+		Worker* worker = m_workers[idx].get();
+		const bool isSelf = (idx == currentWorkerIndex());
+		for (;;)
+		{
+			const bool pushed = isSelf
+				? worker->deque.tryPushLocal(std::move(task))
+				: worker->deque.tryPushRemote(std::move(task));
+			if (pushed)
+				return true;
+			// Overflow ring is full. If shutdown started while we were spinning,
+			// stop() is waiting on m_inFlight — bail to inline so the post-stop
+			// drain doesn't deadlock on us. Tasks ending up here run on the
+			// submitter rather than a worker.
+			if (!isActive())
+			{
+				task();
+				return false;
+			}
+			std::this_thread::yield();
+		}
+	}
+
 	void WorkerPool::submit(Task&& task)
 	{
 		// Fast path: never-started or already-stopped pool runs inline on
@@ -140,10 +185,9 @@ namespace multi
 			return;
 		}
 
-		size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
-		Worker* worker = m_workers[idx].get();
-		worker->deque.push(std::move(task));
-		fencedNotify(*worker);
+		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
+		if (pushWithRetry(idx, task) && idx != currentWorkerIndex())
+			fencedNotify(*m_workers[idx]);
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
@@ -170,20 +214,24 @@ namespace multi
 			return;
 		}
 
-		// Push work
-		size_t workerCount = m_workers.size();
-		size_t base = m_nextWorker.fetch_add(tasks.size(), std::memory_order_relaxed);
+		const size_t workerCount = m_workers.size();
+		const size_t base = m_nextWorker.fetch_add(tasks.size(), std::memory_order_relaxed);
+		const size_t self = currentWorkerIndex();
+
+		// Track which non-self workers actually received a pushed task; only
+		// those need a wakeup notify. Tasks that ran inline (shutdown bail) or
+		// that landed on self's deque don't need to wake anyone.
+		std::vector<bool> notifyMask(workerCount, false);
 		for (size_t i = 0; i < tasks.size(); ++i)
 		{
-			size_t idx = (base + i) % workerCount;
-			m_workers[idx]->deque.push(std::move(tasks[i]));
+			const size_t idx = (base + i) % workerCount;
+			if (pushWithRetry(idx, tasks[i]) && idx != self)
+				notifyMask[idx] = true;
 		}
 
-		// Barrier+notify each worker that received tasks. With per-worker condvars
-		// we target exactly the workers with new work rather than broadcasting.
-		size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
-		for (size_t i = 0; i < wakeCount; ++i)
-			fencedNotify(*m_workers[(base + i) % workerCount]);
+		for (size_t i = 0; i < workerCount; ++i)
+			if (notifyMask[i])
+				fencedNotify(*m_workers[i]);
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
@@ -210,6 +258,7 @@ namespace multi
 
 	void WorkerPool::workerMain(size_t workerIndex)
 	{
+		g_workerIndex = workerIndex;
 		Worker* self = m_workers[workerIndex].get();
 		Task task;
 		// do-while, not while: if start() returns and stop() is called before

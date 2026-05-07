@@ -178,6 +178,30 @@ TEST_CASE("WorkerPool::start throws when called while already active")
 	pool.stop();
 }
 
+// Inline fallback covers two states where !isActive() is true: never-started
+// (covered above) and after stop(). Calls in either state must run synchronously
+// on the submitter rather than be silently dropped.
+TEST_CASE("WorkerPool runs inline after stop")
+{
+	multi::WorkerPool pool;
+	pool.start(2);
+	pool.stop();
+	REQUIRE(!pool.isActive());
+
+	int value = 0;
+	pool.submit([&value]()
+				{ value = 42; });
+	CHECK(value == 42);
+
+	std::vector<multi::Task> batch;
+	batch.emplace_back([&value]()
+					   { value += 1; });
+	batch.emplace_back([&value]()
+					   { value += 2; });
+	pool.submitBatch(std::move(batch));
+	CHECK(value == 45);
+}
+
 TEST_CASE("multi::WorkerPool empty batch")
 {
 	multi::WorkerPool pool;
@@ -222,6 +246,75 @@ TEST_CASE("multi::WorkerPool stop drains remaining tasks")
 	pool.stop();
 
 	// All tasks should have completed during or after stop()
+	CHECK(counter == numTasks);
+}
+
+// A task spawning a child via submit() from inside its own worker should
+// route through the local Chase-Lev (SPSC fast path), not the MPMC overflow
+// ring. Probe via dequeOf() on the worker that's hosting the outer task.
+TEST_CASE("WorkerPool nested submit lands on local Chase-Lev")
+{
+	multi::WorkerPool pool;
+	// 1 worker so round-robin always lands on self for nested submits.
+	pool.start(1);
+
+	auto outerStarted  = std::make_shared<std::promise<void>>();
+	auto childReleased = std::make_shared<std::promise<void>>();
+	auto childRan      = std::make_shared<std::promise<void>>();
+
+	auto outerStartedFut  = outerStarted->get_future();
+	auto childReleasedFut = childReleased->get_future();
+	auto childRanFut      = childRan->get_future();
+
+	pool.submit([&pool, outerStarted, childReleased = std::move(childReleasedFut), childRan]()
+	{
+		// Snapshot deque sizes before nested submit. Local should be empty
+		// (we're the only task running), overflow likewise.
+		const auto& deque = pool.dequeOf(0);
+		REQUIRE(deque.localSizeHint() == 0);
+		REQUIRE(deque.overflowSizeHint() == 0);
+
+		pool.submit([childRan]() { childRan->set_value(); });
+
+		// After nested submit and before we yield control, the child must
+		// be sitting on the local Chase-Lev — overflow must remain at 0.
+		CHECK(deque.localSizeHint() == 1);
+		CHECK(deque.overflowSizeHint() == 0);
+
+		outerStarted->set_value();
+		// Wait until the test releases us; only then can the worker pop
+		// the child task and run it.
+		childReleased.wait();
+	});
+
+	outerStartedFut.wait();
+	childReleased->set_value();
+	childRanFut.wait();
+
+	pool.stop();
+}
+
+// stop() drain must reach tasks that ended up in the per-worker overflow
+// ring, not just the local Chase-Lev. With LOCAL_CAP=256 per worker, a
+// single batch of 100 fits entirely in local; this test submits enough
+// to push spillover into the MPMC ring and asserts drain still finds it.
+TEST_CASE("multi::WorkerPool stop drains overflow ring")
+{
+	multi::WorkerPool pool;
+	pool.start(2);
+
+	std::atomic<int> counter(0);
+	const int numTasks = 2000;
+
+	std::vector<multi::Task> tasks;
+	tasks.reserve(numTasks);
+	for (int i = 0; i < numTasks; ++i)
+		tasks.emplace_back([&counter]()
+						   { counter.fetch_add(1, std::memory_order_relaxed); });
+	pool.submitBatch(std::move(tasks));
+
+	pool.stop();
+
 	CHECK(counter == numTasks);
 }
 

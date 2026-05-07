@@ -47,6 +47,10 @@ namespace multi
 		bool isActive() const { return m_active.load(std::memory_order_relaxed); }
 		size_t threadCount() const { return m_threads.size(); }
 
+		// Observability: read-only access to a worker's deque. Used by tests
+		// and benchmarks to probe local-vs-overflow routing decisions.
+		const WorkStealDeque& dequeOf(size_t idx) const { return m_workers[idx]->deque; }
+
 	private:
 		// Each Worker sits on its own cache line
 		struct alignas(CACHE_LINE_SIZE) Worker
@@ -58,6 +62,11 @@ namespace multi
 
 		void workerMain(size_t workerIndex);
 		bool tryGetTask(size_t workerIndex, Task* task);
+
+		// Spin-yield until the task is pushed onto worker idx's deque, or until
+		// shutdown is observed — in which case the task is run inline. Returns
+		// true if pushed (caller should notify), false if ran inline.
+		bool pushWithRetry(size_t idx, Task& task);
 
 		// Lock then immediately unlock the worker's mutex before notifying its
 		// condvar. The lock/unlock acts as a barrier: it ensures the worker has

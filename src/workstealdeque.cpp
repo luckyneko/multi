@@ -5,45 +5,62 @@
 
 #include "multi/details/workstealdeque.h"
 
-#include <algorithm>
-
 namespace multi
 {
-	void WorkStealDeque::push(Task&& task)
+	bool WorkStealDeque::tryPushLocal(Task&& task)
 	{
-		std::lock_guard<std::mutex> lk(m_mutex);
-		m_deque.push_back(std::move(task));
+		if (m_local.tryPushBottom(std::move(task)))
+			return true;
+		return m_overflow.tryPush(std::move(task));
+	}
+
+	bool WorkStealDeque::tryPushRemote(Task&& task)
+	{
+		return m_overflow.tryPush(std::move(task));
 	}
 
 	bool WorkStealDeque::pop(Task* task)
 	{
-		std::lock_guard<std::mutex> lk(m_mutex);
-		if (m_deque.empty())
-			return false;
-		*task = std::move(m_deque.back());
-		m_deque.pop_back();
-		return true;
+		if (m_local.sizeHint() < REFILL_LOW)
+			refillFromOverflow();
+
+		if (m_local.tryPopBottom(task))
+			return true;
+
+		return m_overflow.tryPop(task);
 	}
 
 	bool WorkStealDeque::steal(Task* task)
 	{
-		std::lock_guard<std::mutex> lk(m_mutex);
-		if (m_deque.empty())
-			return false;
-		*task = std::move(m_deque.front());
-		m_deque.pop_front();
-		return true;
+		if (m_local.trySteal(task))
+			return true;
+		return m_overflow.tryPop(task);
 	}
 
-	size_t WorkStealDeque::sizeHint() const
+	std::size_t WorkStealDeque::sizeHint() const
 	{
-		std::lock_guard<std::mutex> lk(m_mutex);
-		return m_deque.size();
+		return m_local.sizeHint() + m_overflow.sizeHint();
 	}
 
 	bool WorkStealDeque::empty() const
 	{
-		std::lock_guard<std::mutex> lk(m_mutex);
-		return m_deque.empty();
+		return m_local.sizeHint() == 0 && m_overflow.sizeHint() == 0;
+	}
+
+	void WorkStealDeque::refillFromOverflow()
+	{
+		Task t;
+		for (std::size_t i = 0; i < REFILL_BATCH; ++i)
+		{
+			// Owner is the sole writer to local's bottom and stealers only
+			// shrink local. If we observe space here, the subsequent
+			// tryPushBottom is guaranteed to succeed — no risk of popping a
+			// task we then can't place.
+			if (m_local.sizeHint() >= LOCAL_CAP)
+				return;
+			if (!m_overflow.tryPop(&t))
+				return;
+			m_local.tryPushBottom(std::move(t));
+		}
 	}
 } // namespace multi

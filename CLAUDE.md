@@ -47,13 +47,25 @@ Three layers, public → private:
 
 3. **`WorkerPool`** ([include/multi/details/workerpool.h](include/multi/details/workerpool.h), [src/workerpool.cpp](src/workerpool.cpp)) owns N `Worker`s, each with its own [`WorkStealDeque`](include/multi/details/workstealdeque.h) + mutex + condvar, all cache-line aligned.
 
+### WorkStealDeque composition
+
+`WorkStealDeque` is two lock-free primitives stitched together, no mutex:
+- A fixed-capacity Chase-Lev SPMC deque ([`ChaseLevDeque<Task, 256>`](include/multi/details/chaselevdeque.h)) — owner pushes/pops at the bottom, any thread steals from the top. Per-slot sequence atomics gate slot reuse: the owner's `tryPushBottom` waits for the previous occupant to release the slot before overwriting, which is what makes claim-first stealing safe for move-only `Task`. Released to position `b` after a pop, position `t + Capacity` after a steal — pop reuses the same slot, steals don't.
+- A bounded MPMC ring ([`MpmcQueue<Task, 4096>`](include/multi/details/mpmcqueue.h)) — Vyukov sequence-numbered ring used for spillover and external submits. Visible to stealers as a fallback so externally-submitted work isn't trapped behind a busy owner.
+
+`pop()` refills local from overflow when local size drops below `REFILL_LOW=16` (up to `REFILL_BATCH=32` items), then pops local LIFO; falls through to draining one from overflow when local is empty. `steal()` tries local Chase-Lev first, then overflow.
+
 ### Scheduling model
 
-- **Submit**: round-robin onto worker deques via an atomic counter (`m_nextWorker.fetch_add`).
-- **Local pop**: LIFO from the back of the owner's deque (temporal locality).
-- **Steal**: FIFO from the front of another worker's deque, scanning `(self+1) % N … (self-1) % N` to spread contention.
+- **Submit routing**: a `thread_local` worker index tells `submit`/`submitBatch` whether the caller is a worker. If round-robin lands on the calling worker's own index, the task goes via `WorkStealDeque::tryPushLocal` (Chase-Lev SPSC fast path, no MPMC contention, no notify). Otherwise it goes via `tryPushRemote` (overflow ring) and the target worker is notified. Round-robin via `m_nextWorker.fetch_add` is unchanged; only the path through the deque differs.
+- **Push-region claim**: `submit` increments `m_inFlight` after the first `isActive()` check and before touching `m_workers[idx]`. `stop()` flips `m_active` then spins on `m_inFlight` reaching zero before clearing `m_workers`. The `m_inFlight` slot is what keeps the `Worker` storage alive against concurrent shutdown — the lock-free deque internals don't substitute for this.
+- **Overflow-full spin**: `pushWithRetry` spin-yields if `tryPushLocal`/`tryPushRemote` returns false (the bounded ring is full). The spin also checks `isActive()` and bails to inline execution on shutdown — without this, `stop()` would deadlock waiting on `m_inFlight`.
+- **Local pop**: LIFO from the back of the owner's local Chase-Lev (temporal locality preserved).
+- **Steal**: FIFO from the front of another worker's local Chase-Lev (then its overflow ring as a fallback), scanning `(self+1) % N … (self-1) % N` to spread contention.
 - **Caller participation**: `Context::runQueueJob` (used by `parallel`/`each`/`range`) and `Handle::wait` both call `Context::tryRunSteal` while waiting, so the calling thread is an active participant — `bench/main.cpp` deliberately starts `hw-1` workers to leave room for the caller.
 - **Single-threaded mode**: `WorkerPool::submit` / `submitBatch` run tasks inline on the caller when `!isActive()` — code written for the multi-threaded API works unchanged with no pool started. `each(taskCount, …)` and `range(taskCount, …)` also short-circuit to a serial loop when `taskCount <= 1`.
+
+`WorkerPool::dequeOf(idx)` returns a `const WorkStealDeque&` for tests/benchmarks; `WorkStealDeque::localSizeHint()` and `overflowSizeHint()` expose the two halves separately for routing diagnostics.
 
 ### Wakeup correctness
 
@@ -78,3 +90,5 @@ Three layers, public → private:
 - New wake sites must use `fencedNotify`.
 - Don't drop the `bool isActive()` inline-fallback path on `WorkerPool::submit*` — it's the single-threaded story.
 - `WorkerPool::~WorkerPool` asserts `stop()` was called explicitly; release builds clean up defensively but the assert is the contract.
+- New owner-side push sites must use `tryPushLocal`; cross-thread pushes use `tryPushRemote`. Don't bypass `pushWithRetry` — its shutdown-aware spin is what prevents `stop()` deadlock when the overflow ring is saturated.
+- New `T` types stored in `ChaseLevDeque` / `MpmcQueue` must be nothrow-move-assignable, nothrow-move-constructible, and default-constructible (`static_assert`s in the headers will catch this). The Chase-Lev claim-first steal relies on the per-slot sequence release ordering — don't switch back to a read-then-CAS algorithm without first switching `T` to a copy-supporting representation.
