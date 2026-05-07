@@ -8,7 +8,7 @@
 
 #include "multi/details/chaselevdeque.h"
 #include "multi/details/mpmcqueue.h"
-#include "multi/task.h"
+#include "multi/details/task.h"
 
 #include <cstddef>
 

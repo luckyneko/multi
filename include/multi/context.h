@@ -11,7 +11,7 @@
 
 #include "multi/details/workerpool.h"
 #include "multi/handle.h"
-#include "multi/task.h"
+#include "multi/details/task.h"
 
 #include <type_traits>
 

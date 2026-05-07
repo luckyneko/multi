@@ -36,12 +36,12 @@ add_library(${PROJECT_NAME} STATIC
     include/multi/details/constants.h
     include/multi/details/context.inl
     include/multi/details/mpmcqueue.h
+    include/multi/details/task.h
     include/multi/details/workstealdeque.h
     include/multi/details/workerpool.h
     include/multi/context.h
     include/multi/handle.h
     include/multi/multi.h
-    include/multi/task.h
 
     # Source
     src/context.cpp
