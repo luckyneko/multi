@@ -17,14 +17,16 @@ namespace multi
 		// Set at the top of workerMain; readable by any thread to identify
 		// itself as worker N (or as "not a worker" via SIZE_MAX). Used by
 		// submit/submitBatch to route nested-spawn pushes through the local
-		// Chase-Lev fast path instead of the MPMC overflow ring.
+		// Chase-Lev fast path instead of the MPMC overflow ring. Exposed via
+		// WorkerPool::currentWorkerIndex() so the templated submitBatch
+		// overload (defined in the header) can read it too.
 		thread_local std::size_t g_workerIndex = std::numeric_limits<std::size_t>::max();
-
-		std::size_t currentWorkerIndex()
-		{
-			return g_workerIndex;
-		}
 	} // namespace
+
+	std::size_t WorkerPool::currentWorkerIndex()
+	{
+		return g_workerIndex;
+	}
 
 	WorkerPool::WorkerPool()
 		: m_workers()

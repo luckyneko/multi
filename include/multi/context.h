@@ -9,9 +9,10 @@
 #ifndef _MULTI_CONTEXT_H_
 #define _MULTI_CONTEXT_H_
 
+#include "multi/details/job.h"
+#include "multi/details/task.h"
 #include "multi/details/workerpool.h"
 #include "multi/handle.h"
-#include "multi/details/task.h"
 
 #include <type_traits>
 
@@ -63,11 +64,17 @@ namespace multi
 		bool tryRunSteal();
 
 	private:
-		template <typename T, typename... TASKS>
-		void appendTasks(std::vector<Task>& taskList, T&& task, TASKS&&... tasks) const;
-		inline void appendTasks(std::vector<Task>& taskList) const;
-
-		void runQueueJob(std::vector<Task>&& tasks);
+		// Dispatch a Job. Three paths:
+		//   - taskCount() == 0: no-op (invalid inputs or empty range).
+		//   - taskCount() == 1: run inline on the caller, no submission.
+		//   - taskCount() >  1: submit a batch of count wrappers and spin on
+		//     remaining() while participating via tryRunSteal().
+		// Rethrows the first captured exception on completion. Templated on
+		// the concrete subclass so `job.run(i)` resolves directly without a
+		// vtable hop. AsyncJob doesn't go through this entry — it's
+		// heap-allocated and dispatched fire-and-forget via WorkerPool::submit.
+		template <class JobT>
+		void runQueueJob(JobT& job);
 
 	private:
 		WorkerPool m_workerPool;

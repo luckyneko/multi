@@ -35,6 +35,7 @@ add_library(${PROJECT_NAME} STATIC
     include/multi/details/chaselevdeque.h
     include/multi/details/constants.h
     include/multi/details/context.inl
+    include/multi/details/job.h
     include/multi/details/mpmcqueue.h
     include/multi/details/task.h
     include/multi/details/workstealdeque.h

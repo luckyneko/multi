@@ -73,22 +73,42 @@ Three layers, public → private:
 
 `m_active` is the shutdown flag; the wait predicate checks both "got a task" and `!m_active`, so `stop()` flipping `m_active` and notifying every worker reliably drains them. Workers swallow exceptions from raw `submit`d tasks so a throw can't kill the worker thread.
 
-### Job batching and exceptions
+### Job dispatch
 
-`parallel/each/range` build a `Job` on the caller's stack ([src/context.cpp](src/context.cpp)) holding `remaining` (atomic countdown), `firstException` (guarded by `std::call_once`), and the task vector. Wrappers capture `[&job, i]` — small enough for `std::function` SBO, no second heap allocation per task. The caller spins on `tryRunSteal` until `remaining == 0`, then rethrows the first captured exception. Sibling tasks are **not** cancelled on exception.
+`parallel`/`each`/`range`/`async` each construct a typed `Job` subclass that owns the dispatch state for one call. Subclasses live in [include/multi/details/job.h](include/multi/details/job.h):
+- `RangeJob<IDX,FUNC>` / `ChunkedRangeJob<IDX,FUNC>` — index-only dispatch, no per-task storage. Chunk slice bounds are computed inside `run(i)` from `(begin, step, base, extra)`.
+- `EachJob<ITER,FUNC>` / `ChunkedEachJob<ITER,FUNC>` — own a `std::vector<T*>` pointer table materialised at construction. Indexes into it via `m_items[i]`. Smaller-than-`vector<Task>` storage (8 B per item vs 32 B), supports any iterator category.
+- `ParallelJob<Fs...>` — `std::tuple<Fs...>` plus an index-pack fold-expression dispatcher.
+- `AsyncJob<F>` — heap-allocated via `shared_ptr` (lifetime extends past the calling stack frame). Holds `std::promise<void>` + the user functor; doesn't use `runOne`, exception path goes through the promise.
 
-`async` ([context.inl](include/multi/details/context.inl)) builds a `shared_ptr<AsyncState>` holding the user functor + a `std::promise<void>`; the wrapper lambda only captures the shared_ptr (SBO-fits). `Handle` wraps a `shared_future` so `wait()` is idempotent and rethrows. **`Handle`'s destructor auto-waits and swallows** — to observe failures, call `wait()` explicitly. `Handle::operator=` also waits on the LHS before overwriting (preserves RAII even when reassigning); `detach()` releases without waiting.
+The base [`Job`](include/multi/details/job.h) is non-polymorphic — no virtual `run`, protected non-virtual destructor. It only holds the shared state: `m_taskCount` (immutable), `m_remaining` (atomic countdown), `m_excOnce`/`m_firstException` (exception capture), plus the `runOne(F&&)` template helper that wraps user code with try/catch + release-`fetch_sub`.
+
+`Context::runQueueJob<JobT>(JobT&)` is templated on the concrete subclass so `job.run(i)` is a direct call resolved at compile time, not a vtable hop. Three paths:
+- `taskCount() == 0`: no-op.
+- `taskCount() == 1`: run inline on caller (covers historical `taskCount<=1` serial fallback for chunked jobs, and any single-task dispatch).
+- `taskCount() >  1`: submit a batch via `WorkerPool::submitBatch(count, gen)` (the generator-based overload — no intermediate `vector<Task>`), spin on `remaining()` while participating via `tryRunSteal`, then `rethrowIfFailed()`.
+
+Wrapper Tasks pushed into worker deques are `[&job, i]() { job.run(i); }` (16 B SBO fit) for sync jobs; AsyncJob's wrapper is `[job]() { job->run(0); }` capturing the `shared_ptr` by value (also SBO). Sibling tasks are **not** cancelled on exception — the surviving `runOne` calls still decrement `m_remaining`.
+
+`async` ([context.inl](include/multi/details/context.inl)) creates the `shared_ptr<AsyncJob<F>>`, grabs a `future<void>` from its promise, submits the wrapper, and returns a `Handle`. `Handle` wraps a `shared_future` so `wait()` is idempotent and rethrows. **`Handle`'s destructor auto-waits and swallows** — to observe failures, call `wait()` explicitly. `Handle::operator=` also waits on the LHS before overwriting (preserves RAII even when reassigning); `detach()` releases without waiting.
+
+**Inlining trade-off, documented:** templating `runQueueJob` lets the compiler see through every layer, which is great for `tiny_tasks/items`-shape workloads (~5–15% improvement vs the original mutex deque) but produces large per-instantiation wrapper functions for chunked jobs whose user lambdas have heavy captures. `chunk_factor_scan/heavy_cap` at K=16+ shows ~14% regression vs the mutex baseline; the wrapper Task `invoke()` ends up at 4–11 KB after the user's body inlines through `ChunkedRangeJob::run` → `runOne` → chunk loop. `[[gnu::noinline]]` doesn't recover it (the user lambda still inlines into `run` itself). Real CPU-bound workloads (mandelbrot, imbalanced) sit at noise. The trade is intentional — don't try to "fix" it by re-virtualising `Job::run` without re-checking the items rows.
 
 ### Type-system invariants
 
-- `multi::range` `static_assert`s that `IDX` is signed — unsigned subtraction in the chunking math silently underflows.
-- `each(taskCount, …)` and `range(taskCount, …)` use balanced distribution: first `extra = total % taskCount` chunks get `base+1`, the rest get `base`. Don't replace with simple ceiling-division — the comment in `range` documents the case (`total=15, N=14`) where ceiling collapses to fewer chunks than requested.
+- `RangeJob`/`ChunkedRangeJob` `static_assert` that `IDX` is signed — unsigned subtraction in the chunking math silently underflows.
+- `RangeJob`/`ChunkedRangeJob` count is computed via the `is_integral_v<IDX>` branch: integer types use `(end - begin + step - 1) / step` (O(1)); floating-point uses an additive loop so the count matches what an equivalent serial loop would produce. The dispatched values use the multiplied form `begin + i*step` regardless — for floats the last value may differ by fp rounding, but the iteration count matches.
+- `each(taskCount, …)` and `range(taskCount, …)` use balanced distribution: first `extra = total % taskCount` chunks get `base+1`, the rest get `base`. Don't replace with simple ceiling-division — the case `total=15, N=14` where ceiling collapses to fewer chunks than requested is what motivated the formula.
+- `ChunkedRangeJob`/`ChunkedEachJob` normalise `taskCount=0` to `1` (single chunk over the whole range); together with the `count==1` inline path in `runQueueJob`, that's the historical "serial fallback" semantics.
+- `task.h` lives at [include/multi/details/task.h](include/multi/details/task.h) — internal-only. Users go through `multi::async`/`parallel`/`each`/`range`; they should never include `Task` directly.
 
 ### When extending
 
-- New synchronous primitives belong on `Context` (templated in `.inl`) with a thin forwarder in `multi.h`.
+- New synchronous primitives belong as new `Job` subclasses in [details/job.h](include/multi/details/job.h) plus a thin 2-line dispatcher in [context.inl](include/multi/details/context.inl) (`construct Job, call runQueueJob(job)`) and a forwarder in `multi.h`. Don't add new dispatch shapes by building task vectors in `Context` — the architecture is "Context is thin, Jobs own their setup".
+- New `Job` subclasses must override `run(std::size_t i) noexcept` non-virtually, and use the inherited `runOne(...)` for the try/catch + decrement pattern. Don't reinvent it. The `m_remaining` release in `runOne` is what publishes `m_firstException` to waiters via `remaining()` — preserve that pairing.
+- AsyncJob is the exception that proves the rule: it doesn't use `runOne` (its exception path is the promise) and doesn't go through `runQueueJob` (lifetime extends past the caller's stack frame, so it's heap-allocated via `shared_ptr`).
 - New wake sites must use `fencedNotify`.
-- Don't drop the `bool isActive()` inline-fallback path on `WorkerPool::submit*` — it's the single-threaded story.
+- Don't drop the `bool isActive()` inline-fallback path on `WorkerPool::submit*` — it's the single-threaded story. Don't drop the `count==1` inline-fallback path in `runQueueJob` either — it's the chunked `taskCount<=1` serial story.
 - `WorkerPool::~WorkerPool` asserts `stop()` was called explicitly; release builds clean up defensively but the assert is the contract.
 - New owner-side push sites must use `tryPushLocal`; cross-thread pushes use `tryPushRemote`. Don't bypass `pushWithRetry` — its shutdown-aware spin is what prevents `stop()` deadlock when the overflow ring is saturated.
 - New `T` types stored in `ChaseLevDeque` / `MpmcQueue` must be nothrow-move-assignable, nothrow-move-constructible, and default-constructible (`static_assert`s in the headers will catch this). The Chase-Lev claim-first steal relies on the per-slot sequence release ordering — don't switch back to a read-then-CAS algorithm without first switching `T` to a copy-supporting representation.
