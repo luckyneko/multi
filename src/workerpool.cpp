@@ -220,20 +220,26 @@ namespace multi
 		const size_t base = m_nextWorker.fetch_add(tasks.size(), std::memory_order_relaxed);
 		const size_t self = currentWorkerIndex();
 
-		// Track which non-self workers actually received a pushed task; only
-		// those need a wakeup notify. Tasks that ran inline (shutdown bail) or
-		// that landed on self's deque don't need to wake anyone.
-		std::vector<bool> notifyMask(workerCount, false);
 		for (size_t i = 0; i < tasks.size(); ++i)
 		{
 			const size_t idx = (base + i) % workerCount;
-			if (pushWithRetry(idx, tasks[i]) && idx != self)
-				notifyMask[idx] = true;
+			pushWithRetry(idx, tasks[i]);
 		}
 
-		for (size_t i = 0; i < workerCount; ++i)
-			if (notifyMask[i])
-				fencedNotify(*m_workers[i]);
+		// With round-robin starting at `base`, the first min(count, workerCount)
+		// slots cover each distinct worker that received at least one task.
+		// Anything beyond that just repeats workers already in the wake set, so
+		// notifying those first slots covers every pushed task without a mask.
+		// A spurious notify for a worker that took a shutdown-inline bail in
+		// pushWithRetry is harmless (worker wakes, sees empty deque and
+		// !m_active, exits; or has already exited and notify_one is a no-op).
+		const size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
+		for (size_t i = 0; i < wakeCount; ++i)
+		{
+			const size_t idx = (base + i) % workerCount;
+			if (idx != self)
+				fencedNotify(*m_workers[idx]);
+		}
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
