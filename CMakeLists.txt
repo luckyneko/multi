@@ -40,6 +40,7 @@ add_library(${PROJECT_NAME} STATIC
     include/multi/details/task.h
     include/multi/details/workstealdeque.h
     include/multi/details/workerpool.h
+    include/multi/details/workerpool.inl
     include/multi/context.h
     include/multi/handle.h
     include/multi/multi.h
