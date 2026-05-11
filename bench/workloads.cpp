@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 namespace
@@ -586,5 +587,77 @@ TEST_CASE("chunk_factor_scan", "[bench][fast]")
 		BENCHMARK("K=32") { run(32); };
 		BENCHMARK("K=64") { run(64); };
 		REQUIRE(buf.back() != 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// each_iter — exercises multi::each over std::vector (random-access iterator)
+// and std::map (bidirectional iterator). These hit two different code paths
+// in EachJob / ChunkedEachJob: random-access stores the iterator directly,
+// bidirectional materialises a std::vector<T*> pointer table at construction.
+// Per-item work matches tiny_tasks's workPerTask so per-task dispatch cost
+// is visible against the actual work.
+// ---------------------------------------------------------------------------
+TEST_CASE("each_iter", "[bench][fast]")
+{
+	constexpr int workPerItem = 500;
+
+	auto bodyVec = [](uint64_t& slot)
+	{
+		uint64_t acc = slot;
+		for (int k = 0; k < workPerItem; ++k)
+			acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+		slot = acc;
+	};
+	auto bodyMap = [](std::pair<const int, uint64_t>& kv)
+	{
+		uint64_t acc = kv.second;
+		for (int k = 0; k < workPerItem; ++k)
+			acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
+		kv.second = acc;
+	};
+
+	SECTION("vector 1k items")
+	{
+		std::vector<uint64_t> v(1000);
+		for (size_t i = 0; i < v.size(); ++i)
+			v[i] = i + 1;
+		BENCHMARK("multi::each (random-access)") { multi::each(v.begin(), v.end(), bodyVec); };
+		const size_t chunks = (multi::threadCount() + 1) * 4;
+		BENCHMARK("multi::each chunks K=4") { multi::each(chunks, v.begin(), v.end(), bodyVec); };
+		REQUIRE(v.back() != 0);
+	}
+
+	SECTION("vector 10k items")
+	{
+		std::vector<uint64_t> v(10000);
+		for (size_t i = 0; i < v.size(); ++i)
+			v[i] = i + 1;
+		BENCHMARK("multi::each (random-access)") { multi::each(v.begin(), v.end(), bodyVec); };
+		const size_t chunks = (multi::threadCount() + 1) * 4;
+		BENCHMARK("multi::each chunks K=4") { multi::each(chunks, v.begin(), v.end(), bodyVec); };
+		REQUIRE(v.back() != 0);
+	}
+
+	SECTION("map 1k items")
+	{
+		std::map<int, uint64_t> m;
+		for (int i = 0; i < 1000; ++i)
+			m.emplace(i, static_cast<uint64_t>(i + 1));
+		BENCHMARK("multi::each (bidirectional)") { multi::each(m.begin(), m.end(), bodyMap); };
+		const size_t chunks = (multi::threadCount() + 1) * 4;
+		BENCHMARK("multi::each chunks K=4") { multi::each(chunks, m.begin(), m.end(), bodyMap); };
+		REQUIRE(m.rbegin()->second != 0);
+	}
+
+	SECTION("map 10k items")
+	{
+		std::map<int, uint64_t> m;
+		for (int i = 0; i < 10000; ++i)
+			m.emplace(i, static_cast<uint64_t>(i + 1));
+		BENCHMARK("multi::each (bidirectional)") { multi::each(m.begin(), m.end(), bodyMap); };
+		const size_t chunks = (multi::threadCount() + 1) * 4;
+		BENCHMARK("multi::each chunks K=4") { multi::each(chunks, m.begin(), m.end(), bodyMap); };
+		REQUIRE(m.rbegin()->second != 0);
 	}
 }

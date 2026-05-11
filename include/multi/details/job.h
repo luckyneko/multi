@@ -248,60 +248,88 @@ namespace multi
 
 	/*
 	 * EachJob — one task per item in [begin, end). Mirrors
-	 * Context::each(begin, end, func). Materialises a std::vector<T*>
-	 * (T inferred from the iterator's reference type) so dispatch is O(1)
-	 * per task regardless of iterator category. Job owns the vector — the
-	 * pointer table outlives every wrapper because runQueueJob blocks
-	 * until completion.
+	 * Context::each(begin, end, func).
+	 *
+	 * Storage depends on iterator category. For random-access iterators we
+	 * store the begin iterator directly and index with m_storage[i] — no
+	 * allocation. For other iterator categories (e.g. std::map's
+	 * bidirectional) we materialise a std::vector<T*> at construction so
+	 * dispatch stays O(1) per task. Job owns whichever storage; lifetime
+	 * is guaranteed by runQueueJob blocking until completion.
 	 */
 	template <class ITER, class FUNC>
 	class EachJob : public Job
 	{
 		using ItemT = std::remove_reference_t<decltype(*std::declval<ITER>())>;
+		static constexpr bool isRandomAccess = std::is_base_of_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<ITER>::iterator_category>;
+		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
 
 	public:
 		EachJob(ITER begin, ITER end, FUNC& func)
-			: EachJob(materialize(begin, end), func)
+			: EachJob(makeStorage(begin, end), countOf(begin, end), func)
 		{
 		}
 
 		void run(std::size_t i) noexcept
 		{
-			runOne([&]() { (*m_func)(*m_items[i]); });
+			runOne([&]() {
+				if constexpr (isRandomAccess)
+					(*m_func)(m_storage[static_cast<typename std::iterator_traits<ITER>::difference_type>(i)]);
+				else
+					(*m_func)(*m_storage[i]);
+			});
 		}
 
 	private:
-		static std::vector<ItemT*> materialize(ITER begin, ITER end)
+		static Storage makeStorage(ITER begin, ITER end)
 		{
-			std::vector<ItemT*> v;
-			if constexpr (std::is_base_of_v<std::random_access_iterator_tag,
-			                                typename std::iterator_traits<ITER>::iterator_category>)
+			if constexpr (isRandomAccess)
 			{
-				v.reserve(static_cast<std::size_t>(std::distance(begin, end)));
+				(void)end;
+				return begin;
 			}
-			for (ITER it = begin; it != end; ++it)
-				v.push_back(&(*it));
-			return v;
+			else
+			{
+				std::vector<ItemT*> v;
+				for (ITER it = begin; it != end; ++it)
+					v.push_back(&(*it));
+				return v;
+			}
 		}
 
-		EachJob(std::vector<ItemT*>&& items, FUNC& func)
-			: Job(items.size()), m_items(std::move(items)), m_func(&func)
+		static std::size_t countOf(ITER begin, ITER end)
+		{
+			const auto d = std::distance(begin, end);
+			return d > 0 ? static_cast<std::size_t>(d) : 0;
+		}
+
+		EachJob(Storage&& s, std::size_t count, FUNC& func)
+			: Job(count), m_storage(std::move(s)), m_func(&func)
 		{
 		}
 
-		std::vector<ItemT*> m_items;
+		Storage m_storage;
 		FUNC* m_func;
 	};
 
 	/*
 	 * ChunkedEachJob — taskCount tasks each iterating a slice of the items.
 	 * Mirrors Context::each(taskCount, begin, end, func). Same chunk
-	 * distribution and taskCount normalisation as ChunkedRangeJob.
+	 * distribution and taskCount normalisation as ChunkedRangeJob, and the
+	 * same iterator-category split as EachJob: random-access iterators are
+	 * stored directly (no allocation), other categories materialise a
+	 * std::vector<T*>.
 	 */
 	template <class ITER, class FUNC>
 	class ChunkedEachJob : public Job
 	{
 		using ItemT = std::remove_reference_t<decltype(*std::declval<ITER>())>;
+		static constexpr bool isRandomAccess = std::is_base_of_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<ITER>::iterator_category>;
+		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
 
 	public:
 		ChunkedEachJob(std::size_t taskCount, ITER begin, ITER end, FUNC& func)
@@ -317,47 +345,59 @@ namespace multi
 			const std::size_t len = (i < m_extra) ? m_base + 1 : m_base;
 			runOne([&]() {
 				for (std::size_t k = 0; k < len; ++k)
-					(*m_func)(*m_items[startIdx + k]);
+				{
+					if constexpr (isRandomAccess)
+						(*m_func)(m_storage[static_cast<typename std::iterator_traits<ITER>::difference_type>(startIdx + k)]);
+					else
+						(*m_func)(*m_storage[startIdx + k]);
+				}
 			});
 		}
 
 	private:
 		struct Setup
 		{
-			std::vector<ItemT*> items;
+			Storage storage;
+			std::size_t total;
 			std::size_t effective;
 		};
 
 		static Setup makeSetup(std::size_t taskCount, ITER begin, ITER end)
 		{
 			Setup s;
-			if constexpr (std::is_base_of_v<std::random_access_iterator_tag,
-			                                typename std::iterator_traits<ITER>::iterator_category>)
+			std::size_t total;
+			if constexpr (isRandomAccess)
 			{
-				s.items.reserve(static_cast<std::size_t>(std::distance(begin, end)));
+				s.storage = begin;
+				const auto d = std::distance(begin, end);
+				total = d > 0 ? static_cast<std::size_t>(d) : 0;
 			}
-			for (ITER it = begin; it != end; ++it)
-				s.items.push_back(&(*it));
-			const std::size_t total = s.items.size();
+			else
+			{
+				for (ITER it = begin; it != end; ++it)
+					s.storage.push_back(&(*it));
+				total = s.storage.size();
+			}
+			s.total = total;
 			s.effective = (total == 0)
 				? 0
 				: std::min(std::max<std::size_t>(taskCount, 1), total);
 			return s;
 		}
 
-		// Delegating ctor: Setup is consumed here. m_items moves before
-		// m_base/m_extra are initialised, but they read m_items.size() which
-		// is the post-move (i.e. final) size.
+		// Delegating ctor: Setup is consumed here. Storage moves first, but
+		// m_base/m_extra read from the Setup struct (not m_storage), so the
+		// post-move state of Setup is irrelevant.
 		ChunkedEachJob(Setup&& s, FUNC& func)
 			: Job(s.effective)
-			, m_items(std::move(s.items))
-			, m_base(s.effective == 0 ? 0 : m_items.size() / s.effective)
-			, m_extra(s.effective == 0 ? 0 : m_items.size() % s.effective)
+			, m_storage(std::move(s.storage))
+			, m_base(s.effective == 0 ? 0 : s.total / s.effective)
+			, m_extra(s.effective == 0 ? 0 : s.total % s.effective)
 			, m_func(&func)
 		{
 		}
 
-		std::vector<ItemT*> m_items;
+		Storage m_storage;
 		std::size_t m_base;
 		std::size_t m_extra;
 		FUNC* m_func;
