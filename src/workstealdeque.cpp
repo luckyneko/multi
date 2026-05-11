@@ -32,7 +32,7 @@ namespace multi
 
 	bool WorkStealDeque::steal(Task* task)
 	{
-		if (m_local.trySteal(task))
+		if (m_local.tryStealTop(task))
 			return true;
 		return m_overflow.tryPop(task);
 	}

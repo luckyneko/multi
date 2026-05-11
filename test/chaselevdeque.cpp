@@ -17,7 +17,7 @@ TEST_CASE("multi::ChaseLevDeque single-threaded")
 		CHECK(d.sizeHint() == 0);
 		int v = -1;
 		CHECK_FALSE(d.tryPopBottom(&v));
-		CHECK_FALSE(d.trySteal(&v));
+		CHECK_FALSE(d.tryStealTop(&v));
 	}
 
 	SECTION("LIFO pop")
@@ -46,10 +46,10 @@ TEST_CASE("multi::ChaseLevDeque single-threaded")
 		int v = 0;
 		for (int i = 0; i < 5; ++i)
 		{
-			REQUIRE(d.trySteal(&v));
+			REQUIRE(d.tryStealTop(&v));
 			CHECK(v == i);
 		}
-		CHECK_FALSE(d.trySteal(&v));
+		CHECK_FALSE(d.tryStealTop(&v));
 	}
 
 	SECTION("full at capacity")
@@ -115,7 +115,7 @@ TEST_CASE("multi::ChaseLevDeque concurrent steal", "[stress]")
 			int v;
 			while (!producerDone.load(std::memory_order_acquire) || consumed.load() < totalItems)
 			{
-				if (d.trySteal(&v))
+				if (d.tryStealTop(&v))
 				{
 					seenCounts[v].fetch_add(1, std::memory_order_relaxed);
 					consumed.fetch_add(1, std::memory_order_relaxed);

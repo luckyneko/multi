@@ -120,7 +120,7 @@ namespace multi
 			return true;
 		}
 
-		bool trySteal(T* out)
+		bool tryStealTop(T* out)
 		{
 			int64_t t = m_top.load(std::memory_order_acquire);
 			std::atomic_thread_fence(std::memory_order_seq_cst);
