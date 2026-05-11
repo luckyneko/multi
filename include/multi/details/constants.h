@@ -12,7 +12,7 @@
 namespace multi
 {
 	// GCC throws errors on std::hardware_destructive_interference_size
-#if !defined(__GNUC__) && defined(__cpp_lib_hardware_interference_size)
+#if defined(__cpp_lib_hardware_interference_size) && (!defined(__GNUC__) || defined(__clang__))
 	static constexpr std::size_t CACHE_LINE_SIZE = std::hardware_destructive_interference_size;
 #else
 	static constexpr std::size_t CACHE_LINE_SIZE = 64;
