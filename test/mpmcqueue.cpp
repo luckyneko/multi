@@ -9,60 +9,57 @@
 #include <thread>
 #include <vector>
 
-TEST_CASE("multi::MpmcQueue single-threaded")
+TEST_CASE("MpmcQueue: empty")
 {
-	SECTION("empty")
+	multi::MpmcQueue<int, 8> q;
+	CHECK(q.sizeHint() == 0);
+	int v = -1;
+	CHECK_FALSE(q.tryPop(&v));
+}
+
+TEST_CASE("MpmcQueue: FIFO order")
+{
+	multi::MpmcQueue<int, 8> q;
+	for (int i = 0; i < 5; ++i)
+		REQUIRE(q.tryPush(int(i)));
+	CHECK(q.sizeHint() == 5);
+
+	int v = 0;
+	for (int i = 0; i < 5; ++i)
 	{
-		multi::MpmcQueue<int, 8> q;
-		CHECK(q.sizeHint() == 0);
-		int v = -1;
-		CHECK_FALSE(q.tryPop(&v));
-	}
-
-	SECTION("FIFO order")
-	{
-		multi::MpmcQueue<int, 8> q;
-		for (int i = 0; i < 5; ++i)
-			REQUIRE(q.tryPush(int(i)));
-		CHECK(q.sizeHint() == 5);
-
-		int v = 0;
-		for (int i = 0; i < 5; ++i)
-		{
-			REQUIRE(q.tryPop(&v));
-			CHECK(v == i);
-		}
-		CHECK_FALSE(q.tryPop(&v));
-	}
-
-	SECTION("full at capacity")
-	{
-		multi::MpmcQueue<int, 4> q;
-		for (int i = 0; i < 4; ++i)
-			REQUIRE(q.tryPush(int(i)));
-		CHECK_FALSE(q.tryPush(99));
-
-		int v = 0;
 		REQUIRE(q.tryPop(&v));
-		CHECK(v == 0);
-		REQUIRE(q.tryPush(99));
-		CHECK_FALSE(q.tryPush(100));
+		CHECK(v == i);
 	}
+	CHECK_FALSE(q.tryPop(&v));
+}
 
-	SECTION("wraparound past capacity")
+TEST_CASE("MpmcQueue: full at capacity")
+{
+	multi::MpmcQueue<int, 4> q;
+	for (int i = 0; i < 4; ++i)
+		REQUIRE(q.tryPush(int(i)));
+	CHECK_FALSE(q.tryPush(99));
+
+	int v = 0;
+	REQUIRE(q.tryPop(&v));
+	CHECK(v == 0);
+	REQUIRE(q.tryPush(99));
+	CHECK_FALSE(q.tryPush(100));
+}
+
+TEST_CASE("MpmcQueue: wraparound past capacity")
+{
+	multi::MpmcQueue<int, 4> q;
+	int v = 0;
+	for (int round = 0; round < 20; ++round)
 	{
-		multi::MpmcQueue<int, 4> q;
-		int v = 0;
-		for (int round = 0; round < 20; ++round)
-		{
-			REQUIRE(q.tryPush(int(round)));
-			REQUIRE(q.tryPop(&v));
-			CHECK(v == round);
-		}
+		REQUIRE(q.tryPush(int(round)));
+		REQUIRE(q.tryPop(&v));
+		CHECK(v == round);
 	}
 }
 
-TEST_CASE("multi::MpmcQueue concurrent producers and consumers", "[stress]")
+TEST_CASE("MpmcQueue: concurrent producers and consumers stress", "[stress]")
 {
 	constexpr std::size_t CAP = 1024;
 	multi::MpmcQueue<int, CAP> q;

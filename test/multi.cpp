@@ -6,10 +6,22 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <atomic>
 #include <catch2/catch_all.hpp>
+#include <chrono>
 #include <multi/multi.h>
+#include <stdexcept>
+#include <thread>
+#include <vector>
 
-TEST_CASE("multi::context()")
+// ---------------------------------------------------------------------------
+// Smoke tests for the multi.h free-function API. These forwarders delegate
+// to the globally-installed Context; here we verify each one routes through
+// correctly without re-testing the underlying dispatch shapes (Context tests
+// cover those exhaustively).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("multi: context() accessor is swappable")
 {
 	CHECK(multi::context() != nullptr);
 	auto defaultContext = multi::context();
@@ -21,7 +33,7 @@ TEST_CASE("multi::context()")
 	multi::context() = defaultContext;
 }
 
-TEST_CASE("multi::start()")
+TEST_CASE("multi: start/stop track threadCount")
 {
 	REQUIRE(multi::threadCount() == 0);
 	multi::start(4);
@@ -30,27 +42,82 @@ TEST_CASE("multi::start()")
 	REQUIRE(multi::threadCount() == 0);
 }
 
-TEST_CASE("multi::async()")
+TEST_CASE("multi: async returns handle that waits")
 {
 	REQUIRE(multi::threadCount() == 0);
 	multi::start(4);
-	REQUIRE(multi::threadCount() == 4);
 
 	std::atomic<int> a(0);
 	auto hdl = multi::async([&]()
 							{
-								std::this_thread::sleep_for(std::chrono::milliseconds(1));
-								++a; });
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		++a; });
 	CHECK(a == 0);
 	hdl.wait();
 	CHECK(a == 1);
 
+	// Dropped Handle still completes its task before scope exit.
 	multi::async([&]()
 				 {
-					 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-					 ++a; });
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		++a; });
 	CHECK(a == 2);
 
 	multi::stop();
 	REQUIRE(multi::threadCount() == 0);
+}
+
+TEST_CASE("multi: parallel runs siblings")
+{
+	multi::start(2);
+	std::atomic<int> a(0);
+	multi::parallel([&]() { a += 1; }, [&]() { a += 2; }, [&]() { a += 4; });
+	CHECK(a == 7);
+	multi::stop();
+}
+
+TEST_CASE("multi: each over vector")
+{
+	multi::start(2);
+
+	std::vector<int> v(10);
+	for (int i = 0; i < 10; ++i)
+		v[static_cast<std::size_t>(i)] = i;
+
+	multi::each(v.begin(), v.end(), [](int& x) { x *= 2; });
+
+	std::atomic<int> sum(0);
+	multi::each(v.begin(), v.end(), [&](int x) { sum += x; });
+	CHECK(sum == 90);  // 2*(0+1+...+9)
+
+	multi::stop();
+}
+
+TEST_CASE("multi: range over integers")
+{
+	multi::start(2);
+
+	std::atomic<int> sum(0);
+	multi::range(0, 10, [&](int i) { sum += i; });
+	CHECK(sum == 45);
+
+	std::atomic<int> stepSum(0);
+	multi::range(0, 10, 2, [&](int i) { stepSum += i; });
+	CHECK(stepSum == 20);  // 0+2+4+6+8
+
+	std::atomic<int> chunkedSum(0);
+	multi::range(std::size_t(3), 0, 10, 1, [&](int i) { chunkedSum += i; });
+	CHECK(chunkedSum == 45);
+
+	multi::stop();
+}
+
+TEST_CASE("multi: async rethrows task exception")
+{
+	multi::start(2);
+
+	auto h = multi::async([]() { throw std::runtime_error("boom"); });
+	CHECK_THROWS_AS(h.wait(), std::runtime_error);
+
+	multi::stop();
 }

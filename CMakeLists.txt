@@ -70,6 +70,7 @@ if(MULTI_BUILD_TESTING)
         test/multi.cpp
         test/chaselevdeque.cpp
         test/context.cpp
+        test/handle.cpp
         test/mpmcqueue.cpp
         test/workstealdeque.cpp
         test/workerpool.cpp
