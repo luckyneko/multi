@@ -35,6 +35,38 @@ jobs:
       - name: Test
         run: ctest --test-dir build -j2 --output-on-failure
 
+  linux-tsan:
+    name: linux clang-18 tsan
+    runs-on: ubuntu-latest
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      # halt_on_error: surface the first race immediately (default would let
+      # the run continue and bury the report in noise).
+      # second_deadlock_stack: capture both stacks of a lock-order inversion
+      # so we can see which call site flipped the order.
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18
+      - name: Configure
+        # Debug + -O1: -O1 is the TSan-recommended opt level — fast enough
+        # to actually exercise concurrency, slow enough to keep stack frames.
+        # Higher optimisation can collapse the per-task wrapper lambdas that
+        # the lock-free deque tests rely on for race coverage.
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build -j2 --output-on-failure
+
   macos:
     name: ${{ matrix.os }} ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
