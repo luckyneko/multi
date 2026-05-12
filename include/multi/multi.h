@@ -34,8 +34,11 @@ namespace multi
 	}
 
 	// Work functions
+	// Return type deduces to Handle<R> where R = invoke_result_t<F>: void
+	// for value-less lambdas (back-compat with the old `Handle` typedef
+	// behaviour), the functor's return type otherwise.
 	template <class F>
-	Handle async(F&& f)
+	auto async(F&& f)
 	{
 		return context()->async(std::forward<F>(f));
 	}

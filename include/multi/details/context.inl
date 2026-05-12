@@ -52,14 +52,20 @@ namespace multi
 	// this call's stack frame (the wrapper Task captures the shared_ptr by
 	// value, 16 B SBO fit). Doesn't go through runQueueJob — the caller
 	// observes completion via the future on Handle, not by blocking here.
+	//
+	// Return type is deduced as Handle<R> where R = invoke_result_t<F>; the
+	// `auto` lets the caller see `Handle<int>` from
+	// `async([]{ return 42; })` and `Handle<void>` (a.k.a. `Handle<>`) from
+	// `async([]{ ... })`.
 	template <class F>
-	Handle Context::async(F&& f)
+	auto Context::async(F&& f)
 	{
 		using DecayedF = std::decay_t<F>;
-		auto job = std::make_shared<AsyncJob<DecayedF>>(std::forward<F>(f));
+		using R = std::invoke_result_t<DecayedF>;
+		auto job = std::make_shared<AsyncJob<DecayedF, R>>(std::forward<F>(f));
 		auto fut = job->getFuture();
 		m_workerPool.submit([job]() { job->run(0); });
-		return Handle(std::move(fut), this);
+		return Handle<R>(std::move(fut), this);
 	}
 
 	template <typename... TASKS>

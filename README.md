@@ -67,6 +67,22 @@ int main()
         ++i;
     });
 
+    // Tasks that return a value: the Handle's template parameter is
+    // deduced from the functor's return type. get() blocks (rethrowing
+    // on failure) and returns the value.
+    multi::Handle<int> answer = multi::async([]() { return 42; });
+    int result = answer.get();
+
+    // Bounded wait — useful for "check, then keep doing something else"
+    // loops. Returns std::future_status::ready or ::timeout. Unlike
+    // wait()/get() the timed waits do NOT participate in stealing, so
+    // the deadline is honoured even if the pool is otherwise idle.
+    auto slow = multi::async([]() { /* …long… */ });
+    if (slow.wait_for(std::chrono::milliseconds(5)) == std::future_status::timeout)
+    {
+        // come back later
+    }
+
     // Wait for all jobs, and close threads.
     multi::stop();
 }

@@ -410,8 +410,12 @@ namespace multi
 	 * through Job::m_firstException, so this subclass deliberately does
 	 * not call runOne(). The inherited m_remaining is unused — the future
 	 * is the synchronization point.
+	 *
+	 * R is the functor's return type; defaults to whatever invoke_result_t<F>
+	 * yields. For void R the promise is std::promise<void> as before; for
+	 * non-void R the promise carries the value through to Handle<R>::get().
 	 */
-	template <class F>
+	template <class F, class R = std::invoke_result_t<F>>
 	class AsyncJob : public Job
 	{
 	public:
@@ -420,14 +424,21 @@ namespace multi
 		{
 		}
 
-		std::future<void> getFuture() { return m_promise.get_future(); }
+		std::future<R> getFuture() { return m_promise.get_future(); }
 
 		void run(std::size_t /*i*/) noexcept
 		{
 			try
 			{
-				m_func();
-				m_promise.set_value();
+				if constexpr (std::is_void_v<R>)
+				{
+					m_func();
+					m_promise.set_value();
+				}
+				else
+				{
+					m_promise.set_value(m_func());
+				}
 			}
 			catch (...)
 			{
@@ -436,7 +447,7 @@ namespace multi
 		}
 
 	private:
-		std::promise<void> m_promise;
+		std::promise<R> m_promise;
 		F m_func;
 	};
 

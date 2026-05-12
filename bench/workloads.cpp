@@ -340,7 +340,7 @@ TEST_CASE("async_latency", "[bench][fast]")
 // ---------------------------------------------------------------------------
 TEST_CASE("async_fanout", "[bench][fast]")
 {
-	auto run = [](int numTasks, std::vector<multi::Handle>& handles)
+	auto run = [](int numTasks, std::vector<multi::Handle<>>& handles)
 	{
 		handles.clear();
 		for (int i = 0; i < numTasks; ++i)
@@ -352,13 +352,13 @@ TEST_CASE("async_fanout", "[bench][fast]")
 
 	SECTION("100 tasks")
 	{
-		std::vector<multi::Handle> handles;
+		std::vector<multi::Handle<>> handles;
 		handles.reserve(100);
 		BENCHMARK("multi::async (fanout)") { return run(100, handles); };
 	}
 	SECTION("1k tasks")
 	{
-		std::vector<multi::Handle> handles;
+		std::vector<multi::Handle<>> handles;
 		handles.reserve(1000);
 		BENCHMARK("multi::async (fanout)") { return run(1000, handles); };
 	}

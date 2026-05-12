@@ -44,13 +44,13 @@ add_library(${PROJECT_NAME} STATIC
     include/multi/details/workstealdeque.h
     include/multi/details/workerpool.h
     include/multi/details/workerpool.inl
+    include/multi/details/handle.inl
     include/multi/context.h
     include/multi/handle.h
     include/multi/multi.h
 
     # Source
     src/context.cpp
-    src/handle.cpp
     src/multi.cpp
     src/workstealdeque.cpp
     src/workerpool.cpp

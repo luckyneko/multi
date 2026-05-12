@@ -11,12 +11,17 @@
 #include "multi/details/job.h"
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
-#include "multi/handle.h"
 
 #include <type_traits>
 
 namespace multi
 {
+	// Forward declaration so Context::async can name Handle<R> in its
+	// signature. Full definition (and the template method bodies that call
+	// Context::tryRunSteal) lives in multi/handle.h, included after the
+	// Context class is fully defined below.
+	template <class T> class Handle;
+
 	/*
 	 * Context
 	 * Holds multi-wide state.
@@ -32,10 +37,11 @@ namespace multi
 		void stop();
 		size_t threadCount() const;
 
-		// Launch task onto a thread
-		// @return Handle to wait on parallel task.
+		// Launch task onto a thread.
+		// @return Handle<R> to wait on; R is the functor's return type (void
+		// for value-less tasks).
 		template <class F>
-		Handle async(F&& f);
+		auto async(F&& f);
 
 		// Launch parallel tasks
 		template <typename... TASKS>
@@ -80,4 +86,9 @@ namespace multi
 	};
 } // namespace multi
 
+// Full definition of Handle<T> + its template method bodies. Included here,
+// after Context is defined, so handle.inl's calls to Context::tryRunSteal
+// resolve. context.inl below depends on Handle being complete to build the
+// async() return value.
+#include "multi/handle.h"
 #include "multi/details/context.inl"
