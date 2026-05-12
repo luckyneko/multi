@@ -6,8 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_HANDLE_H_
-#define _MULTI_HANDLE_H_
+#pragma once
 
 #include <future>
 
@@ -64,5 +63,3 @@ namespace multi
 	};
 
 } // namespace multi
-
-#endif // _MULTI_HANDLE_H_

@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_JOB_H_
-#define _MULTI_JOB_H_
+#pragma once
 
 #include <algorithm>
 #include <atomic>
@@ -472,5 +471,3 @@ namespace multi
 		std::tuple<Fs...> m_funcs;
 	};
 } // namespace multi
-
-#endif // _MULTI_JOB_H_

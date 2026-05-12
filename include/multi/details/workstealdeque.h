@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_WORKSTEALDEQUE_H_
-#define _MULTI_WORKSTEALDEQUE_H_
+#pragma once
 
 #include "multi/details/chaselevdeque.h"
 #include "multi/details/mpmcqueue.h"
@@ -69,5 +68,3 @@ namespace multi
 		MpmcQueue<Task, OVERFLOW_CAP>  m_overflow;
 	};
 } // namespace multi
-
-#endif // _MULTI_WORKSTEALDEQUE_H_

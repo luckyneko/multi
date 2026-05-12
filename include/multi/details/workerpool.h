@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_WORKERPOOL_H_
-#define _MULTI_WORKERPOOL_H_
+#pragma once
 
 #include "multi/details/constants.h"
 #include "multi/details/workstealdeque.h"
@@ -105,5 +104,3 @@ namespace multi
 } // namespace multi
 
 #include "multi/details/workerpool.inl"
-
-#endif // _MULTI_WORKERPOOL_H_

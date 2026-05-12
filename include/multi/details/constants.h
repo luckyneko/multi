@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_CONSTANTS_H_
-#define _MULTI_CONSTANTS_H_
+#pragma once
 
 #include <cstddef>
 #include <new>
@@ -19,5 +18,3 @@ namespace multi
 #endif
 
 } // namespace multi
-
-#endif // _MULTI_CONSTANTS_H_

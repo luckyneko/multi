@@ -6,8 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_CONTEXT_H_
-#define _MULTI_CONTEXT_H_
+#pragma once
 
 #include "multi/details/job.h"
 #include "multi/details/task.h"
@@ -82,5 +81,3 @@ namespace multi
 } // namespace multi
 
 #include "multi/details/context.inl"
-
-#endif // _MULTI_CONTEXT_H_

@@ -6,8 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_TASK_H_
-#define _MULTI_TASK_H_
+#pragma once
 
 #include <cstddef>
 #include <cstring>
@@ -146,5 +145,3 @@ namespace multi
 	};
 
 } // namespace multi
-
-#endif // _MULTI_TASK_H_

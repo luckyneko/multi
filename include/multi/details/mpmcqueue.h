@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_MPMCQUEUE_H_
-#define _MULTI_MPMCQUEUE_H_
+#pragma once
 
 #include "multi/details/constants.h"
 
@@ -129,5 +128,3 @@ namespace multi
 		alignas(CACHE_LINE_SIZE) std::array<Cell, Capacity> m_cells;
 	};
 } // namespace multi
-
-#endif // _MULTI_MPMCQUEUE_H_

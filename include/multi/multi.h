@@ -6,8 +6,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_H_
-#define _MULTI_H_
+#pragma once
 
 #include "multi/context.h"
 
@@ -79,5 +78,3 @@ namespace multi
 		context()->range(jobCount, begin, end, step, std::forward<FUNC>(func));
 	}
 } // namespace multi
-
-#endif // _MULTI_H_

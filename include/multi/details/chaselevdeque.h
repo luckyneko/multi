@@ -3,8 +3,7 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#ifndef _MULTI_CHASELEVDEQUE_H_
-#define _MULTI_CHASELEVDEQUE_H_
+#pragma once
 
 #include "multi/details/constants.h"
 
@@ -167,5 +166,3 @@ namespace multi
 		alignas(CACHE_LINE_SIZE) std::array<Slot, Capacity> m_buffer;
 	};
 } // namespace multi
-
-#endif // _MULTI_CHASELEVDEQUE_H_
