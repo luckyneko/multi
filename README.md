@@ -20,10 +20,16 @@ target_link_libraries(${PROJECT_NAME} multi)
 ```
 
 ## Tested Platforms
-- Linux (GCC 4.8 & 7, Clang 3.5 & 10)
-- Windows (MSVC 2017)
-- MacOS (clang 11)
-- NB: In theory works on iOS & Android
+
+Continuously built and tested on:
+- Linux (GCC 13 & 14, Clang 17 & 18; Debug + Release)
+- macOS 15 (AppleClang; Debug + Release)
+- Windows (MSVC 2022 & 2025; Debug + Release)
+- Linux ThreadSanitizer (Clang 18, `-fsanitize=thread`)
+
+Continuously cross-compiled on (build only — runtime not exercised in CI):
+- Android NDK (arm64-v8a, API 21+)
+- iOS (arm64, SDK 15+)
 
 ## Features
 - Simple in-line API
@@ -131,6 +137,24 @@ void function()
 ```
 
 ## Benchmarks
+
+Headline numbers — Apple M4 Pro (14 cores), macOS, Release, 20 samples. Times are mean per iteration; `chunks` uses `(threadCount+1)*8` chunks unless noted.
+
+| Workload                  | serial   | items     | chunks   | chunks speedup |
+|---------------------------|---------:|----------:|---------:|---------------:|
+| `tiny_tasks` / 1k         |   403 µs |    144 µs |    79 µs |  **5.1×**      |
+| `tiny_tasks` / 5k         |  2016 µs |    588 µs |   266 µs |  **7.6×**      |
+| `tiny_tasks` / 50k        | 20157 µs |   5163 µs |  2084 µs |  **9.7×**      |
+| `nested` (fork-join tree) | 11472 µs |     —     |  1111 µs |  **10.3×**     |
+| `empty_tasks` / 1k        |    —     |    113 µs |    32 µs |    3.5× *      |
+| `empty_tasks` / 5k        |    —     |    402 µs |    39 µs |   10.3× *      |
+| `each` / 10k random-access|    —     |   1009 µs |   445 µs |    2.3×        |
+| `each` / 10k map (bidi)   |    —     |   1020 µs |   518 µs |    2.0×        |
+| `async_latency`           |    —     |     ~2 µs/round (single-task round-trip) |       —     |
+
+\* `empty_tasks` measures raw dispatch overhead — the "chunks speedup" is overhead-vs-overhead, not work-throughput.
+
+`tiny_tasks` is the most representative CPU-bound microbench: items-mode hits per-task wrapper + push/steal cost; chunks-mode amortises that to ~`(N_workers+1)·K` dispatches and approaches the serial limit / N_cores. Numbers shift across hardware (especially core count and memory subsystem) — re-run locally before drawing conclusions for your target.
 
 Build and run:
 ```sh

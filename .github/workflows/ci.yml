@@ -84,6 +84,56 @@ jobs:
       - name: Test
         run: ctest --test-dir build -j2 --output-on-failure
 
+  android:
+    # Build-only cross-compile: catches header/toolchain breakage on the NDK.
+    # Runtime tests would require an emulator (see WORK.md stretch goal); the
+    # value here is "does it still compile against the Android STL/libc++".
+    name: android ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        # ANDROID_NDK_LATEST_HOME is set on GitHub-hosted ubuntu runners.
+        # Tests/bench off: cross-compiled binaries can't be discovered/run on
+        # the host, and Catch2's catch_discover_tests would try.
+        run: >
+          cmake -B build
+          -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_LATEST_HOME}/build/cmake/android.toolchain.cmake
+          -DANDROID_ABI=${{ matrix.abi }}
+          -DANDROID_PLATFORM=android-21
+          -DCMAKE_BUILD_TYPE=Release
+          -DMULTI_BUILD_TESTING=OFF
+          -DMULTI_BUILD_BENCHMARK=OFF
+          -DMULTI_INSTALL=OFF
+      - name: Build
+        run: cmake --build build -j
+
+  ios:
+    # Build-only cross-compile for arm64 device. Same rationale as android:
+    # catches toolchain/SDK breakage without the simulator-launch flakiness
+    # that a real test run would bring.
+    name: ios arm64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_SYSROOT=iphoneos
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+          -DCMAKE_BUILD_TYPE=Release
+          -DMULTI_BUILD_TESTING=OFF
+          -DMULTI_BUILD_BENCHMARK=OFF
+          -DMULTI_INSTALL=OFF
+      - name: Build
+        run: cmake --build build -j
+
   windows:
     name: ${{ matrix.os }} ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
