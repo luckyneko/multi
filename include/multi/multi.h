@@ -13,7 +13,21 @@
 
 namespace multi
 {
-	// Set Context
+	// Access (or replace) the global Context pointer used by every free
+	// function in this header. Default points to a static Context instance
+	// in src/multi.cpp; tests swap it to exercise multiple Context
+	// instances side-by-side.
+	//
+	// THREAD-SAFETY CONTRACT: the returned reference is to an
+	// unsynchronised pointer. Reads from the free-function wrappers
+	// (start/async/parallel/each/range/reduce/...) and writes via
+	// `multi::context() = otherCtx` race if they happen concurrently.
+	// The contract is "set once at startup, before any worker thread or
+	// concurrent caller can observe it"; swapping while workers are
+	// running, or while other threads are calling free functions, is
+	// undefined behaviour. Code that needs hot-swappable pools should
+	// hold an explicit `Context*` of its own rather than reaching through
+	// this accessor.
 	Context*& context();
 
 	// Start threads

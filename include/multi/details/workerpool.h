@@ -9,6 +9,7 @@
 #include "multi/details/workstealdeque.h"
 
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -55,7 +56,13 @@ namespace multi
 
 		// Observability: read-only access to a worker's deque. Used by tests
 		// and benchmarks to probe local-vs-overflow routing decisions.
-		const WorkStealDeque& dequeOf(size_t idx) const { return m_workers[idx]->deque; }
+		// Internal/diagnostics-only — the assert catches a stray test passing
+		// an out-of-range index, which would otherwise UB silently in release.
+		const WorkStealDeque& dequeOf(size_t idx) const
+		{
+			assert(idx < m_workers.size() && "WorkerPool::dequeOf: idx out of range");
+			return m_workers[idx]->deque;
+		}
 
 		// Returns the calling thread's worker index, or SIZE_MAX if the caller
 		// is not a worker. Backed by a thread_local set in workerMain.

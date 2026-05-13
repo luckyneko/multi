@@ -35,6 +35,63 @@ jobs:
       - name: Test
         run: ctest --test-dir build -j2 --output-on-failure
 
+  install-smoke:
+    # Catches install/export regressions: configure with MULTI_INSTALL=ON,
+    # `cmake --install` to a staging prefix, then build the fixture under
+    # test/install against the staged package via `find_package(multi CONFIG)`.
+    # The fixture (consumer.cpp) probes the generated version header and
+    # touches each major dispatch shape, so a broken install graph
+    # (missing INTERFACE_INCLUDE_DIRECTORIES, missing alias, missing
+    # version.h, etc.) fails the build or the smoke check.
+    name: install + downstream find_package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DMULTI_BUILD_TESTING=OFF -DMULTI_BUILD_BENCHMARK=OFF -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/_stage
+      - name: Build
+        run: cmake --build build -j
+      - name: Install
+        run: cmake --install build
+      - name: Configure downstream consumer
+        run: cmake -S test/install -B test/install/build -DCMAKE_PREFIX_PATH=${{ github.workspace }}/_stage
+      - name: Build consumer
+        run: cmake --build test/install/build -j
+      - name: Run consumer
+        run: ./test/install/build/consumer
+
+  linux-asan:
+    name: linux clang-18 asan+ubsan
+    runs-on: ubuntu-latest
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      # halt_on_error: surface the first violation immediately instead of
+      # letting later tests run against a corrupted state.
+      # print_stacktrace: UBSan reports include the offending call site.
+      ASAN_OPTIONS: halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18
+      - name: Configure
+        # Catches a different class of bug than the TSan job below: lifetime
+        # bugs / use-after-move / OOB in the Task SBO memcpy / signed
+        # overflow in chunking math / alignment violations. ASan and TSan
+        # are mutually exclusive at link time, so they live in separate jobs.
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build -j2 --output-on-failure
+
   linux-tsan:
     name: linux clang-18 tsan
     runs-on: ubuntu-latest
