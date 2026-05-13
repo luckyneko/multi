@@ -45,7 +45,7 @@ Compile flags are strict: `/WX /W4` on MSVC, `-Werror -Wall -Wextra` elsewhere �
 
 Three layers, public → private:
 
-1. **Free functions** in [include/multi/multi.h](include/multi/multi.h) — `multi::start/stop/async/parallel/each/range/reduce/transform_reduce/stealWhile` — all forward to a globally-installed `Context*` returned by `multi::context()` (settable; default points to a static instance in [src/multi.cpp](src/multi.cpp)). Tests swap the context pointer to exercise multiple `Context` instances; preserve that capability. The setter is unsynchronised — its implicit contract is "set once before any concurrent use".
+1. **Free functions** in [include/multi/multi.h](include/multi/multi.h) — `multi::start/stop/async/parallel/parallel_async/each/range/reduce/transform_reduce/stealWhile` — all forward to a globally-installed `Context*` returned by `multi::context()` (settable; default points to a static instance in [src/multi.cpp](src/multi.cpp)). Tests swap the context pointer to exercise multiple `Context` instances; preserve that capability. The setter is unsynchronised — its implicit contract is "set once before any concurrent use".
 
 2. **`Context`** ([include/multi/context.h](include/multi/context.h), [include/multi/details/context.inl](include/multi/details/context.inl), [src/context.cpp](src/context.cpp)) owns one `WorkerPool` and implements the dispatch primitives. Templates live in the `.inl`.
 

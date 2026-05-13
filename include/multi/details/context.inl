@@ -85,6 +85,21 @@ namespace multi
 		runQueueJob(job);
 	}
 
+	template <typename... Fs>
+	auto Context::parallel_async(Fs&&... fs)
+	{
+		// Each async() returns a prvalue Handle<R> which the tuple stores
+		// via move-construction (Handle is move-only, but std::make_tuple
+		// move-binds prvalues into its elements). Tuple positions follow
+		// source order; the *evaluation* order of the async() calls is
+		// unspecified per C++17 [expr.call], so the submission order may
+		// interleave — but that's already true of any sequence of async()
+		// calls on the same pool and not observable via the returned
+		// tuple (positions are bound to their corresponding `fs` slot,
+		// not to whichever submit completed first).
+		return std::make_tuple(async(std::forward<Fs>(fs))...);
+	}
+
 	template <typename ITER, typename FUNC>
 	void Context::each(ITER begin, ITER end, FUNC&& func)
 	{

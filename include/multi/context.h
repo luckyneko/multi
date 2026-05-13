@@ -47,6 +47,21 @@ namespace multi
 		template <typename... TASKS>
 		void parallel(TASKS&&... tasks);
 
+		// Fan out a heterogeneous pack of functors, each dispatched via
+		// async(), and return their Handles as a tuple. Element i holds
+		// the Handle for fs[i], typed on its individual invoke_result.
+		//
+		// Use this when you need per-task observation (different return
+		// types, fail-fast on one branch, per-handle wait_for, ...). For
+		// fire-and-block siblings with no result observation, prefer the
+		// existing void-returning `parallel(...)`.
+		//
+		// Each task lives in its own AsyncJob — sibling exceptions are
+		// isolated per handle, not aggregated. Pair with `stealWhile(h)`
+		// per element if you want the caller to participate while waiting.
+		template <typename... Fs>
+		auto parallel_async(Fs&&... fs);
+
 		// Launch task for each item
 		// ITER is an iterator
 		// FUNC is function void(T) or void(T&)

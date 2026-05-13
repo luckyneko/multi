@@ -43,6 +43,20 @@ TEST_CASE("multi: version header agrees with itself")
 	CHECK(MULTI_VERSION == encoded);
 }
 
+TEST_CASE("multi: parallel_async free function routes through global context")
+{
+	multi::start(2);
+
+	auto handles = multi::parallel_async(
+		[]() { return 1; },
+		[]() { return 2; });
+	auto& [h1, h2] = handles;
+	CHECK(h1.get() == 1);
+	CHECK(h2.get() == 2);
+
+	multi::stop();
+}
+
 TEST_CASE("multi: reduce / transform_reduce free functions route through global context")
 {
 	multi::start(4);

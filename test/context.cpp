@@ -531,3 +531,113 @@ TEST_CASE("Context: reduce supports non-arithmetic T (string concat)")
 
 	context.stop();
 }
+
+// ---------------------------------------------------------------------------
+// Context: parallel_async
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: parallel_async returns tuple of typed Handles")
+{
+	multi::Context context;
+	context.start(4);
+
+	// Heterogeneous return types — the tuple carries each precisely typed.
+	auto handles = context.parallel_async(
+		[]() { return 42; },
+		[]() { return std::string("hello"); },
+		[]() { return 3.14; });
+
+	static_assert(std::tuple_size_v<decltype(handles)> == 3,
+	              "parallel_async should produce one tuple element per functor");
+	static_assert(std::is_same_v<std::tuple_element_t<0, decltype(handles)>, multi::Handle<int>>,
+	              "element 0 should be Handle<int>");
+	static_assert(std::is_same_v<std::tuple_element_t<1, decltype(handles)>, multi::Handle<std::string>>,
+	              "element 1 should be Handle<std::string>");
+	static_assert(std::is_same_v<std::tuple_element_t<2, decltype(handles)>, multi::Handle<double>>,
+	              "element 2 should be Handle<double>");
+
+	auto& [hInt, hStr, hDbl] = handles;
+	CHECK(hInt.get() == 42);
+	CHECK(hStr.get() == "hello");
+	CHECK(hDbl.get() == Catch::Approx(3.14));
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel_async accepts void-returning functors")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> counter(0);
+	auto handles = context.parallel_async(
+		[&]() { counter.fetch_add(1, std::memory_order_relaxed); },
+		[&]() { counter.fetch_add(10, std::memory_order_relaxed); });
+
+	static_assert(std::is_same_v<std::tuple_element_t<0, decltype(handles)>, multi::Handle<void>>,
+	              "void-returning functor should yield Handle<void>");
+
+	auto& [h1, h2] = handles;
+	h1.wait();
+	h2.wait();
+	CHECK(counter.load() == 11);
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel_async exceptions surface per-handle, siblings unaffected")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto handles = context.parallel_async(
+		[]() -> int { throw std::runtime_error("first"); },
+		[]() { return 7; });
+
+	auto& [hThrow, hOk] = handles;
+	// Each Handle carries its own AsyncJob — sibling exceptions don't
+	// cross-contaminate (contrast with `parallel(a, b)` which captures
+	// only the first exception across the shared ParallelJob).
+	CHECK_THROWS_AS(hThrow.get(), std::runtime_error);
+	CHECK(hOk.get() == 7);
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel_async with empty pack returns empty tuple")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto handles = context.parallel_async();
+	static_assert(std::tuple_size_v<decltype(handles)> == 0,
+	              "no functors should give an empty tuple");
+	(void)handles;  // silence unused-variable on stricter compilers
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel_async handles can be observed via stealWhile")
+{
+	// Single-worker context: the caller must participate to drain pending
+	// async tasks; demonstrates that stealWhile works against an
+	// individual element of the parallel_async tuple.
+	multi::Context context;
+	context.start(1);
+
+	std::atomic<int> counter(0);
+	auto outer = context.async([&]() {
+		auto handles = context.parallel_async(
+			[&]() { counter.fetch_add(1, std::memory_order_relaxed); return 1; },
+			[&]() { counter.fetch_add(2, std::memory_order_relaxed); return 2; });
+		auto& [h1, h2] = handles;
+		context.stealWhile(h1);
+		context.stealWhile(h2);
+		CHECK(h1.get() == 1);
+		CHECK(h2.get() == 2);
+	});
+	outer.wait();
+	CHECK(counter.load() == 3);
+
+	context.stop();
+}

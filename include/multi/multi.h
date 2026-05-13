@@ -74,6 +74,14 @@ namespace multi
 		context()->parallel(std::forward<TASKS>(tasks)...);
 	}
 
+	// Fan-out variant: returns a std::tuple<Handle<R>...> for per-task
+	// observation. See Context::parallel_async for the contract.
+	template <typename... Fs>
+	auto parallel_async(Fs&&... fs)
+	{
+		return context()->parallel_async(std::forward<Fs>(fs)...);
+	}
+
 	// Launch task for each item
 	template <typename ITER, typename FUNC>
 	void each(ITER begin, ITER end, FUNC&& func)

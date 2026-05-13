@@ -112,6 +112,29 @@ void function()
 }
 ```
 
+### Parallel fan-out with per-task results
+``` C++
+void function()
+{
+    // Fan out heterogeneous siblings — each functor gets its own
+    // Handle<R>, packaged in a tuple. Use when you need per-task
+    // results, different return types, or per-handle wait_for.
+    // Contrast with `parallel(a, b, ...)` which is fire-and-block.
+    auto handles = multi::parallel_async(
+        []() { return 42; },
+        []() { return std::string("hello"); },
+        []() { return 3.14; });
+
+    auto& [hInt, hStr, hDbl] = handles;
+    int i = hInt.get();          // blocks, rethrows on failure
+    std::string s = hStr.get();
+    double d = hDbl.get();
+
+    // Sibling exceptions are isolated per-handle (unlike `parallel`
+    // which captures only the first across all siblings).
+}
+```
+
 ### Run function on Each item
 ``` C++
 void function()
