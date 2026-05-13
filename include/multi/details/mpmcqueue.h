@@ -46,7 +46,16 @@ namespace multi
 		MpmcQueue(const MpmcQueue&) = delete;
 		MpmcQueue& operator=(const MpmcQueue&) = delete;
 
-		bool tryPush(T v)
+		// Convenience overload for rvalue callers (literals, temporaries).
+		// Named rvalue-ref is an lvalue inside, so it routes through the
+		// primary overload below.
+		bool tryPush(T&& v) { return tryPush(v); }
+
+		// Pass by lvalue reference: the move into the cell only happens on
+		// the success path, so callers that cascade from a sibling deque
+		// (see WorkStealDeque::tryPushLocal) can safely fall through with
+		// `std::move(task)` after a previous attempt returned false.
+		bool tryPush(T& v)
 		{
 			Cell* cell;
 			std::size_t pos = m_enqueuePos.load(std::memory_order_relaxed);

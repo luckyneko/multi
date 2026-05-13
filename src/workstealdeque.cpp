@@ -9,14 +9,19 @@ namespace multi
 {
 	bool WorkStealDeque::tryPushLocal(Task&& task)
 	{
-		if (m_local.tryPushBottom(std::move(task)))
+		// Both push entry points take Task by lvalue reference and move
+		// only on success — see the comments on ChaseLevDeque::tryPushBottom
+		// and MpmcQueue::tryPush. That's what lets this cascade work: if
+		// the local ring is full, `task` is still intact and the overflow
+		// fallback can move it.
+		if (m_local.tryPushBottom(task))
 			return true;
-		return m_overflow.tryPush(std::move(task));
+		return m_overflow.tryPush(task);
 	}
 
 	bool WorkStealDeque::tryPushRemote(Task&& task)
 	{
-		return m_overflow.tryPush(std::move(task));
+		return m_overflow.tryPush(task);
 	}
 
 	bool WorkStealDeque::pop(Task* task)
@@ -60,7 +65,7 @@ namespace multi
 				return;
 			if (!m_overflow.tryPop(&t))
 				return;
-			m_local.tryPushBottom(std::move(t));
+			m_local.tryPushBottom(t);
 		}
 	}
 } // namespace multi

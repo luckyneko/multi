@@ -186,3 +186,41 @@ TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 
 	CHECK(counter == numTasks);
 }
+
+// ---------------------------------------------------------------------------
+// Local-full cascade — pushing more than LOCAL_CAP items via tryPushLocal
+// must NOT drop tasks. Regression test for the by-value parameter signature
+// on ChaseLevDeque::tryPushBottom / MpmcQueue::tryPush, which moved the
+// caller's Task into the parameter *unconditionally* and left an empty
+// moved-from Task for the overflow fallback to push. Symptom under the
+// bug: tasks 257..N surface as empty Tasks on pop (m_vtable == nullptr),
+// silently dropped by the worker loop's `while (task)` predicate, and
+// `Job::m_remaining` never reaches zero.
+// ---------------------------------------------------------------------------
+TEST_CASE("WorkStealDeque: tryPushLocal cascade preserves Task contents")
+{
+	multi::WorkStealDeque deque;
+
+	constexpr std::size_t N = 1000;  // > LOCAL_CAP=256, forces cascade to overflow
+	std::atomic<int> counter(0);
+
+	for (std::size_t i = 0; i < N; ++i)
+	{
+		multi::Task t([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
+		REQUIRE(deque.tryPushLocal(std::move(t)));
+	}
+
+	// Drain everything. Each popped Task must be invocable (m_vtable != nullptr).
+	multi::Task popped;
+	std::size_t popCount = 0;
+	while (deque.pop(&popped))
+	{
+		REQUIRE(static_cast<bool>(popped));
+		popped();
+		popped = {};
+		++popCount;
+	}
+
+	CHECK(popCount == N);
+	CHECK(counter.load() == static_cast<int>(N));
+}

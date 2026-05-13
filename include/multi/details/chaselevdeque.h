@@ -59,7 +59,20 @@ namespace multi
 		ChaseLevDeque(const ChaseLevDeque&) = delete;
 		ChaseLevDeque& operator=(const ChaseLevDeque&) = delete;
 
-		bool tryPushBottom(T v)
+		// Convenience overload for rvalue callers (`tryPushBottom(99)`,
+		// `tryPushBottom(int(i))`). Named rvalue-ref is an lvalue inside, so
+		// it routes through the primary overload below — identical
+		// move-on-success semantics either way.
+		bool tryPushBottom(T&& v) { return tryPushBottom(v); }
+
+		// Pass by lvalue reference, not by value or rvalue-reference, so the
+		// caller's storage is left intact on the early-return (full) path.
+		// WorkStealDeque::tryPushLocal relies on this: it cascades to the
+		// overflow ring with `std::move(task)` after this returns false, and
+		// that fallback would push an empty (moved-from) Task if the param
+		// signature consumed `v` regardless of outcome. The move only
+		// happens on the success path below.
+		bool tryPushBottom(T& v)
 		{
 			const int64_t b = m_bottom.load(std::memory_order_relaxed);
 			const int64_t t = m_top.load(std::memory_order_acquire);
