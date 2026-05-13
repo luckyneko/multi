@@ -307,3 +307,55 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 		CHECK(totalRun.load() == totalSubmitted.load());
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Worker thread naming — best-effort cross-platform. We can verify the name
+// landed on the platforms where pthread_getname_np exists (Linux + Android +
+// macOS). Windows has GetThreadDescription but verifying it from a worker
+// task requires CoTaskMemFree dance; the build-coverage CI catches the
+// Windows path compiling, so skip the runtime verification there.
+// ---------------------------------------------------------------------------
+#if defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
+#include <pthread.h>
+#include <string>
+
+TEST_CASE("WorkerPool: worker thread name matches multi-N convention")
+{
+	multi::WorkerPool pool;
+	pool.start(3);
+
+	// Capture names from each worker via async-style submit. Each task reads
+	// its own pthread name, formats it into a per-index slot, and signals.
+	std::array<std::string, 3> names;
+	auto done = std::make_shared<std::atomic<int>>(0);
+	for (std::size_t i = 0; i < 3; ++i)
+	{
+		pool.submit(multi::Task([&, i, done]() {
+			char buf[32] = {0};
+			pthread_getname_np(pthread_self(), buf, sizeof(buf));
+			names[i] = buf;
+			done->fetch_add(1, std::memory_order_release);
+		}));
+	}
+
+	// Spin until all three tasks have run. Round-robin distribution lands
+	// one per worker; even if two land on the same worker they execute
+	// sequentially and we still get three observations.
+	while (done->load(std::memory_order_acquire) < 3)
+		std::this_thread::yield();
+
+	for (const auto& n : names)
+	{
+		CAPTURE(n);
+		// Worker index is whichever the round-robin assigned; just check
+		// the prefix and that the suffix is a small integer.
+		REQUIRE(n.rfind("multi-", 0) == 0);
+		const std::string idx = n.substr(6);
+		REQUIRE(!idx.empty());
+		for (char c : idx)
+			CHECK((c >= '0' && c <= '9'));
+	}
+
+	pool.stop();
+}
+#endif

@@ -6,9 +6,17 @@
 #include "multi/details/workerpool.h"
 
 #include <cassert>
+#include <cstdio>
 #include <limits>
 #include <stdexcept>
 #include <utility>
+
+#if defined(_WIN32)
+#	define WIN32_LEAN_AND_MEAN
+#	include <windows.h>
+#elif defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
+#	include <pthread.h>
+#endif
 
 namespace multi
 {
@@ -21,6 +29,48 @@ namespace multi
 		// WorkerPool::currentWorkerIndex() so the templated submitBatch
 		// overload (defined in the header) can read it too.
 		thread_local std::size_t g_workerIndex = std::numeric_limits<std::size_t>::max();
+
+		// Set the calling thread's name so debuggers/profilers can identify
+		// it. Best-effort: failures (unsupported platform, security policy,
+		// over-long name) are silently ignored — the name is purely for
+		// developer ergonomics, never load-bearing.
+		//
+		// Each backend either takes a thread handle or operates on the
+		// caller — the macOS variant only sets the *current* thread. To
+		// keep behaviour uniform we always call from inside workerMain.
+		//
+		// Name length: Linux/glibc caps at 16 bytes including nul (15 chars
+		// usable). macOS allows ~64 chars. Windows has no formal limit but
+		// most tools display ~32. The "multi-N" format fits 16 bytes for any
+		// plausible worker count (up to "multi-1234567890" = 16 bytes incl.
+		// nul); callers are responsible for keeping it short.
+		void setCurrentThreadName(const char* name)
+		{
+#if defined(_WIN32)
+			// SetThreadDescription wants UTF-16. Worker names are ASCII so
+			// a byte-to-wchar copy is sufficient; no MultiByteToWideChar.
+			wchar_t wname[32];
+			std::size_t i = 0;
+			for (; i + 1 < sizeof(wname) / sizeof(wname[0]) && name[i] != '\0'; ++i)
+				wname[i] = static_cast<wchar_t>(static_cast<unsigned char>(name[i]));
+			wname[i] = L'\0';
+			// Available since Windows 10 1607. CI's windows-2022/-2025
+			// runners support it; older Windows silently fails to link if
+			// it doesn't — accept that as a non-issue for our supported
+			// matrix.
+			SetThreadDescription(GetCurrentThread(), wname);
+#elif defined(__APPLE__)
+			// macOS / iOS form has no thread argument — it sets the
+			// *current* thread only. Hence calling from workerMain.
+			pthread_setname_np(name);
+#elif defined(__linux__) || defined(__ANDROID__)
+			// glibc / bionic. Takes a handle so could be called externally,
+			// but we stay uniform with the macOS path.
+			pthread_setname_np(pthread_self(), name);
+#else
+			(void)name;
+#endif
+		}
 	} // namespace
 
 	std::size_t WorkerPool::currentWorkerIndex()
@@ -267,6 +317,14 @@ namespace multi
 	void WorkerPool::workerMain(size_t workerIndex)
 	{
 		g_workerIndex = workerIndex;
+
+		// Name the thread for debugger/profiler ergonomics. "multi-N" stays
+		// under 16 bytes (Linux pthread limit) for any plausible worker
+		// count, and is greppable in `top -H` / Activity Monitor.
+		char name[16];
+		std::snprintf(name, sizeof(name), "multi-%zu", workerIndex);
+		setCurrentThreadName(name);
+
 		Worker* self = m_workers[workerIndex].get();
 		Task task;
 		// do-while, not while: if start() returns and stop() is called before
