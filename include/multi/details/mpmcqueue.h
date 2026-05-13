@@ -46,7 +46,7 @@ namespace multi
 		MpmcQueue(const MpmcQueue&) = delete;
 		MpmcQueue& operator=(const MpmcQueue&) = delete;
 
-		bool tryPush(T&& v)
+		bool tryPush(T v)
 		{
 			Cell* cell;
 			std::size_t pos = m_enqueuePos.load(std::memory_order_relaxed);

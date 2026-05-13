@@ -59,7 +59,7 @@ namespace multi
 		ChaseLevDeque(const ChaseLevDeque&) = delete;
 		ChaseLevDeque& operator=(const ChaseLevDeque&) = delete;
 
-		bool tryPushBottom(T&& v)
+		bool tryPushBottom(T v)
 		{
 			const int64_t b = m_bottom.load(std::memory_order_relaxed);
 			const int64_t t = m_top.load(std::memory_order_acquire);
@@ -105,8 +105,8 @@ namespace multi
 
 			// t == b: exactly one element, race against stealers for it.
 			const bool won = m_top.compare_exchange_strong(t, t + 1,
-			                                               std::memory_order_seq_cst,
-			                                               std::memory_order_relaxed);
+														   std::memory_order_seq_cst,
+														   std::memory_order_relaxed);
 			m_bottom.store(b + 1, std::memory_order_relaxed);
 			if (!won)
 				return false;
@@ -128,8 +128,8 @@ namespace multi
 				return false;
 
 			if (!m_top.compare_exchange_strong(t, t + 1,
-			                                   std::memory_order_seq_cst,
-			                                   std::memory_order_relaxed))
+											   std::memory_order_seq_cst,
+											   std::memory_order_relaxed))
 				return false;
 
 			// CAS won — slot t is logically ours. The owner's push at position

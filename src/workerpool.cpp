@@ -13,6 +13,7 @@
 
 #if defined(_WIN32)
 #	define WIN32_LEAN_AND_MEAN
+#	define NOMINMAX
 #	include <windows.h>
 #elif defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
 #	include <pthread.h>

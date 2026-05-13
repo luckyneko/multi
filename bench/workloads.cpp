@@ -602,14 +602,14 @@ TEST_CASE("each_iter", "[bench][fast]")
 {
 	constexpr int workPerItem = 500;
 
-	auto bodyVec = [](uint64_t& slot)
+	auto bodyVec = [workPerItem](uint64_t& slot)
 	{
 		uint64_t acc = slot;
 		for (int k = 0; k < workPerItem; ++k)
 			acc = acc * 6364136223846793005ULL + 1442695040888963407ULL;
 		slot = acc;
 	};
-	auto bodyMap = [](std::pair<const int, uint64_t>& kv)
+	auto bodyMap = [workPerItem](std::pair<const int, uint64_t>& kv)
 	{
 		uint64_t acc = kv.second;
 		for (int k = 0; k < workPerItem; ++k)
