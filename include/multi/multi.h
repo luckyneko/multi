@@ -90,4 +90,35 @@ namespace multi
 	{
 		context()->range(jobCount, begin, end, step, std::forward<FUNC>(func));
 	}
+
+	// Parallel reduce / transform_reduce — see Context::reduce documentation
+	// for the associativity/commutativity contract on the binary op.
+	template <typename ITER, typename T, typename BinaryOp>
+	T reduce(ITER begin, ITER end, T init, BinaryOp&& op)
+	{
+		return context()->reduce(begin, end, std::move(init), std::forward<BinaryOp>(op));
+	}
+
+	template <typename ITER, typename T, typename BinaryOp>
+	T reduce(size_t taskCount, ITER begin, ITER end, T init, BinaryOp&& op)
+	{
+		return context()->reduce(taskCount, begin, end, std::move(init), std::forward<BinaryOp>(op));
+	}
+
+	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+	T transform_reduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp)
+	{
+		return context()->transform_reduce(begin, end, std::move(init),
+		                                   std::forward<BinaryOp>(reduceOp),
+		                                   std::forward<UnaryOp>(transformOp));
+	}
+
+	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+	T transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+	                   BinaryOp&& reduceOp, UnaryOp&& transformOp)
+	{
+		return context()->transform_reduce(taskCount, begin, end, std::move(init),
+		                                   std::forward<BinaryOp>(reduceOp),
+		                                   std::forward<UnaryOp>(transformOp));
+	}
 } // namespace multi

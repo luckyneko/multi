@@ -11,9 +11,13 @@
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <functional>
+#include <list>
 #include <map>
 #include <multi/context.h>
+#include <numeric>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -47,7 +51,7 @@ TEST_CASE("Context: async wait observes side effects")
 
 	CHECK(hdl.valid() == true);
 	CHECK(hdl.complete() == true);
-	hdl = multi::Handle();
+	hdl = multi::Handle<>();
 	CHECK(hdl.valid() == false);
 	CHECK(hdl.complete() == true);
 
@@ -421,6 +425,109 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 	context.range(std::size_t(4), 5, 5, 1, [&](int) { calls++; });
 	context.range(std::size_t(4), 5, 3, 1, [&](int) { calls++; });
 	CHECK(calls == 0);
+
+	context.stop();
+}
+
+
+// ---------------------------------------------------------------------------
+// Context: reduce / transform_reduce
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: reduce sums an integer vector across thread counts")
+{
+	const auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	std::vector<int> v(1000);
+	std::iota(v.begin(), v.end(), 1);  // 1..1000, expected sum 500500
+	const int expected = std::accumulate(v.begin(), v.end(), 0);
+
+	// Default chunk count (= threadCount).
+	CHECK(context.reduce(v.begin(), v.end(), 0, std::plus<>{}) == expected);
+	// Explicit oversubscription should also produce the same total.
+	CHECK(context.reduce(std::size_t(16), v.begin(), v.end(), 0, std::plus<>{}) == expected);
+	// init must contribute exactly once.
+	CHECK(context.reduce(v.begin(), v.end(), 7, std::plus<>{}) == expected + 7);
+
+	context.stop();
+}
+
+TEST_CASE("Context: reduce returns init for an empty range")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::vector<int> empty;
+	CHECK(context.reduce(empty.begin(), empty.end(), 42, std::plus<>{}) == 42);
+	// Same path with an explicit taskCount must not produce a different answer.
+	CHECK(context.reduce(std::size_t(8), empty.begin(), empty.end(), 42, std::plus<>{}) == 42);
+
+	context.stop();
+}
+
+TEST_CASE("Context: reduce works on non-random-access iterators (std::list)")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::list<int> l;
+	for (int i = 1; i <= 100; ++i)
+		l.push_back(i);
+	// Materialised pointer-table path inside TransformReduceJob.
+	CHECK(context.reduce(l.begin(), l.end(), 0, std::plus<>{}) == 5050);
+
+	context.stop();
+}
+
+TEST_CASE("Context: transform_reduce computes sum of squares")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(100);
+	std::iota(v.begin(), v.end(), 1);  // 1..100
+	const int expected = std::transform_reduce(
+		v.begin(), v.end(), 0, std::plus<>{}, [](int x) { return x * x; });
+
+	const int got = context.transform_reduce(
+		v.begin(), v.end(), 0, std::plus<>{}, [](int x) { return x * x; });
+	CHECK(got == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: reduce rethrows the first exception from a chunk")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(100, 1);
+	auto throwingOp = [](int a, int b) -> int {
+		if (b == 1)
+			throw std::runtime_error("boom");
+		return a + b;
+	};
+
+	CHECK_THROWS_AS(context.reduce(v.begin(), v.end(), 0, throwingOp), std::runtime_error);
+
+	context.stop();
+}
+
+TEST_CASE("Context: reduce supports non-arithmetic T (string concat)")
+{
+	multi::Context context;
+	context.start(2);
+
+	// String concat is associative but NOT commutative — for this test we
+	// pick a 1-chunk taskCount so the library can only fold one way. This
+	// exercises the path where T is a heavier movable type (heap-backed
+	// std::string), separate from the trivially-copyable int path.
+	std::vector<std::string> v = {"a", "b", "c", "d"};
+	const std::string got = context.reduce(
+		std::size_t(1), v.begin(), v.end(), std::string("="), std::plus<>{});
+	CHECK(got == "=abcd");
 
 	context.stop();
 }

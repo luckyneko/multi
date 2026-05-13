@@ -65,6 +65,28 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
 
+		// Parallel reduce over [begin, end). Returns the result of folding
+		// the range with `op`, seeded by `init`. `op` must be associative
+		// AND commutative — partials are combined in unspecified order.
+		// T must be default-constructible (partials are stored in a vector).
+		// Empty range returns `init`.
+		//
+		// No-taskCount overload picks threadCount() chunks (one per worker);
+		// pass an explicit count to override.
+		template <typename ITER, typename T, typename BinaryOp>
+		T reduce(ITER begin, ITER end, T init, BinaryOp&& op);
+		template <typename ITER, typename T, typename BinaryOp>
+		T reduce(size_t taskCount, ITER begin, ITER end, T init, BinaryOp&& op);
+
+		// Parallel transform_reduce: apply `transformOp` to each element,
+		// then reduce with `reduceOp`. Same associativity/commutativity
+		// requirement on reduceOp; transformOp is called once per element.
+		template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+		T transform_reduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp);
+		template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+		T transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+		                   BinaryOp&& reduceOp, UnaryOp&& transformOp);
+
 		// Try run a stolen task
 		bool tryRunSteal();
 

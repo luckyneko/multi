@@ -9,7 +9,9 @@
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <functional>
 #include <multi/multi.h>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -39,6 +41,20 @@ TEST_CASE("multi: version header agrees with itself")
 
 	const int encoded = MULTI_VERSION_MAJOR * 10000 + MULTI_VERSION_MINOR * 100 + MULTI_VERSION_PATCH;
 	CHECK(MULTI_VERSION == encoded);
+}
+
+TEST_CASE("multi: reduce / transform_reduce free functions route through global context")
+{
+	multi::start(4);
+
+	std::vector<int> v(1000);
+	std::iota(v.begin(), v.end(), 1);  // 1..1000
+	CHECK(multi::reduce(v.begin(), v.end(), 0, std::plus<>{}) == 500500);
+	CHECK(multi::transform_reduce(v.begin(), v.end(), 0, std::plus<>{},
+	                              [](int x) { return x * x; })
+	      == 333833500);
+
+	multi::stop();
 }
 
 TEST_CASE("multi: context() accessor is swappable")

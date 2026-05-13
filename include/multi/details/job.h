@@ -451,6 +451,150 @@ namespace multi
 		F m_func;
 	};
 
+	namespace details
+	{
+		// Used by Context::reduce to share TransformReduceJob with the no-
+		// transform path. Perfect-forwards its argument so it inlines to a
+		// no-op in optimised builds.
+		struct Identity
+		{
+			template <class X>
+			constexpr X&& operator()(X&& x) const noexcept { return std::forward<X>(x); }
+		};
+	} // namespace details
+
+	/*
+	 * TransformReduceJob — taskCount tasks, each folding a slice of the
+	 * input into a partial T, then a serial combine at the end with `init`.
+	 * Backs both `Context::reduce` (UnaryOp = details::Identity) and
+	 * `Context::transform_reduce` (UnaryOp = user transform).
+	 *
+	 * Storage mirrors EachJob: random-access iterators are stored directly
+	 * (no allocation), other categories materialise a std::vector<T*>.
+	 * Partial results live in std::vector<T> sized to taskCount, which is
+	 * why T must be default-constructible (static_assert below).
+	 *
+	 * Reduction semantics, matching the std::reduce contract: the user's
+	 * BinaryOp must be associative and commutative — the library is free
+	 * to combine partials in any order. Each chunk's local fold seeds from
+	 * its first element (after transform), so init contributes exactly
+	 * once, during finalize().
+	 */
+	template <class ITER, class T, class BinaryOp, class UnaryOp>
+	class TransformReduceJob : public Job
+	{
+		using ItemT = std::remove_reference_t<decltype(*std::declval<ITER>())>;
+		static constexpr bool isRandomAccess = std::is_base_of_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<ITER>::iterator_category>;
+		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
+
+		static_assert(std::is_default_constructible_v<T>,
+			"multi::reduce / transform_reduce: result type T must be default-constructible "
+			"(partial results are stored in a std::vector<T>)");
+
+	public:
+		TransformReduceJob(std::size_t taskCount, ITER begin, ITER end,
+		                   T init, BinaryOp& reduceOp, UnaryOp& transformOp)
+			: TransformReduceJob(makeSetup(taskCount, begin, end),
+			                     std::move(init), reduceOp, transformOp)
+		{
+		}
+
+		void run(std::size_t i) noexcept
+		{
+			const std::size_t startIdx = (i < m_extra)
+				? i * (m_base + 1)
+				: m_extra * (m_base + 1) + (i - m_extra) * m_base;
+			const std::size_t len = (i < m_extra) ? m_base + 1 : m_base;
+			runOne([&]() {
+				if (len == 0)
+					return;
+				// Seed the chunk with its first (transformed) element, then
+				// fold the rest. Matches the std::reduce convention of init
+				// being applied once globally (in finalize) rather than per
+				// chunk.
+				T acc = (*m_transformOp)(at(startIdx));
+				for (std::size_t k = 1; k < len; ++k)
+					acc = (*m_reduceOp)(std::move(acc), (*m_transformOp)(at(startIdx + k)));
+				m_partials[i] = std::move(acc);
+			});
+		}
+
+		// Combine the per-chunk partials with init. Call only after
+		// runQueueJob has completed and not rethrown — on exception the
+		// partials are unspecified.
+		T finalize()
+		{
+			T result = std::move(m_init);
+			for (auto& p : m_partials)
+				result = (*m_reduceOp)(std::move(result), std::move(p));
+			return result;
+		}
+
+	private:
+		struct Setup
+		{
+			Storage storage;
+			std::size_t total;
+			std::size_t effective;
+		};
+
+		static Setup makeSetup(std::size_t taskCount, ITER begin, ITER end)
+		{
+			Setup s;
+			if constexpr (isRandomAccess)
+			{
+				s.storage = begin;
+				const auto d = std::distance(begin, end);
+				s.total = d > 0 ? static_cast<std::size_t>(d) : 0;
+			}
+			else
+			{
+				for (ITER it = begin; it != end; ++it)
+					s.storage.push_back(&(*it));
+				s.total = s.storage.size();
+			}
+			// Mirror Chunked{Each,Range}Job: normalise taskCount=0 to 1 and
+			// clamp to total. Empty range short-circuits to effective=0
+			// (Job::taskCount=0), and runQueueJob's `count==0` path then
+			// returns immediately — finalize() still runs and returns init
+			// unchanged.
+			s.effective = (s.total == 0)
+				? 0
+				: std::min(std::max<std::size_t>(taskCount, 1), s.total);
+			return s;
+		}
+
+		TransformReduceJob(Setup&& s, T init, BinaryOp& reduceOp, UnaryOp& transformOp)
+			: Job(s.effective)
+			, m_storage(std::move(s.storage))
+			, m_partials(s.effective)
+			, m_init(std::move(init))
+			, m_reduceOp(&reduceOp)
+			, m_transformOp(&transformOp)
+			, m_base(s.effective == 0 ? 0 : s.total / s.effective)
+			, m_extra(s.effective == 0 ? 0 : s.total % s.effective)
+		{
+		}
+
+		decltype(auto) at(std::size_t k) const
+		{
+			if constexpr (isRandomAccess)
+				return m_storage[static_cast<typename std::iterator_traits<ITER>::difference_type>(k)];
+			else
+				return *m_storage[k];
+		}
+
+		Storage m_storage;
+		std::vector<T> m_partials;
+		T m_init;
+		BinaryOp* m_reduceOp;
+		UnaryOp* m_transformOp;
+		std::size_t m_base;
+		std::size_t m_extra;
+	};
+
 	/*
 	 * ParallelJob — variadic-pack dispatch. Holds the user functors in a
 	 * tuple; run(i) dispatches to element i via a fold expression on a

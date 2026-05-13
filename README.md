@@ -132,6 +132,32 @@ void function()
 }
 ```
 
+### Parallel reduce / transform_reduce
+``` C++
+#include <functional>
+#include <multi/multi.h>
+#include <vector>
+
+void function()
+{
+    std::vector<int> v(1000);
+    // ... populate v ...
+
+    // Parallel sum. op must be associative and commutative (partials are
+    // combined in unspecified order). init contributes exactly once.
+    int total = multi::reduce(v.begin(), v.end(), 0, std::plus<>{});
+
+    // Square-then-sum in one pass — transform_op is called once per element.
+    int sumSq = multi::transform_reduce(
+        v.begin(), v.end(), 0,
+        std::plus<>{},
+        [](int x) { return x * x; });
+
+    // Explicit chunk count, e.g. for oversubscription with imbalanced work.
+    int total2 = multi::reduce(32, v.begin(), v.end(), 0, std::plus<>{});
+}
+```
+
 ### Run function on range of numbers with step
 ``` C++
 void function()

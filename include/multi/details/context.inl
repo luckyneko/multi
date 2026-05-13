@@ -118,4 +118,49 @@ namespace multi
 		ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(taskCount, begin, end, step, func);
 		runQueueJob(job);
 	}
+
+	template <typename ITER, typename T, typename BinaryOp>
+	T Context::reduce(ITER begin, ITER end, T init, BinaryOp&& op)
+	{
+		// Default chunk count: one chunk per worker, minimum 1. Caller can
+		// override via the taskCount overload. Picked by measurement: more
+		// oversubscription hurt simple sums (combine overhead) on the
+		// arithmetic benches without measurable load-balance gain.
+		const size_t n = threadCount() > 0 ? threadCount() : 1;
+		return reduce(n, begin, end, std::move(init), std::forward<BinaryOp>(op));
+	}
+
+	template <typename ITER, typename T, typename BinaryOp>
+	T Context::reduce(size_t taskCount, ITER begin, ITER end, T init, BinaryOp&& op)
+	{
+		details::Identity identity;
+		TransformReduceJob<ITER, T,
+		                   std::remove_reference_t<BinaryOp>,
+		                   details::Identity>
+			job(taskCount, begin, end, std::move(init), op, identity);
+		runQueueJob(job);
+		return job.finalize();
+	}
+
+	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+	T Context::transform_reduce(ITER begin, ITER end, T init,
+	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
+	{
+		const size_t n = threadCount() > 0 ? threadCount() : 1;
+		return transform_reduce(n, begin, end, std::move(init),
+		                        std::forward<BinaryOp>(reduceOp),
+		                        std::forward<UnaryOp>(transformOp));
+	}
+
+	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
+	T Context::transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
+	{
+		TransformReduceJob<ITER, T,
+		                   std::remove_reference_t<BinaryOp>,
+		                   std::remove_reference_t<UnaryOp>>
+			job(taskCount, begin, end, std::move(init), reduceOp, transformOp);
+		runQueueJob(job);
+		return job.finalize();
+	}
 } // namespace multi
