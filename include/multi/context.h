@@ -68,6 +68,17 @@ namespace multi
 		// Try run a stolen task
 		bool tryRunSteal();
 
+		// Block the calling thread until `h` completes, helping drain the
+		// pool in the meantime via tryRunSteal(). Use this when the calling
+		// thread would otherwise sit idle blocking on `h.wait()`. Plain
+		// Handle::wait()/get() do NOT participate in work-stealing.
+		//
+		// stealWhile returns once `h.complete()` is observed; it does not
+		// rethrow. Call `h.get()` (or `h.wait()`) afterwards if you need to
+		// observe the task's value or exception. No-op on an empty handle.
+		template <class T>
+		void stealWhile(const Handle<T>& h);
+
 	private:
 		// Dispatch a Job. Three paths:
 		//   - taskCount() == 0: no-op (invalid inputs or empty range).

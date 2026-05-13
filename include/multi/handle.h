@@ -10,29 +10,27 @@
 
 #include <chrono>
 #include <future>
-#include <thread>
 #include <type_traits>
 
 namespace multi
 {
-	class Context;
-
 	/*
 	 * Handle<T>
 	 * Tracks state of an async task. Will auto wait on destruction.
 	 *
 	 * T is the value type the task's functor returns (void by default).
-	 * `multi::Handle<>` (or just `multi::Handle<void>`) is the void case
-	 * returned by `multi::async([&]{ ... })`; `multi::Handle<int>` is what
-	 * `multi::async([&]{ return 42; })` returns.
+	 * `multi::Handle<>` (or `multi::Handle<void>`) is the void case returned
+	 * by `multi::async([&]{ ... })`; `multi::Handle<int>` is returned by
+	 * `multi::async([&]{ return 42; })`.
 	 *
 	 * wait()/get() rethrow any exception thrown by the task. The destructor
 	 * swallows exceptions so dropping a Handle cannot call std::terminate.
 	 *
-	 * All blocking waits participate in work-stealing when a Context was
-	 * supplied (async() always supplies one). For Handles with no associated
-	 * Context the waits delegate to the underlying shared_future, which
-	 * blocks the calling thread normally.
+	 * Handle is intentionally Context-agnostic: it holds no back-pointer to
+	 * the pool that produced it. wait()/get()/wait_for/wait_until all block
+	 * the calling thread plainly — there is no caller participation in
+	 * work-stealing. If you want the calling thread to help drain the pool
+	 * while waiting, use `Context::stealWhile(h)` instead.
 	 */
 	template <class T = void>
 	class Handle
@@ -41,7 +39,7 @@ namespace multi
 		Handle() = default;
 		// Internally stores a shared_future so wait()/get() can rethrow the
 		// stored exception idempotently without invalidating the handle.
-		Handle(std::future<T>&& hdl, Context* ctx = nullptr);
+		explicit Handle(std::future<T>&& hdl);
 		Handle(const Handle&) = delete;
 		Handle(Handle&& a) noexcept;
 		~Handle();
@@ -63,14 +61,8 @@ namespace multi
 		T get();
 
 		// Block up to `d` waiting for completion. Returns ready, timeout, or
-		// (rarely) deferred — same set as std::future::wait_for.
-		//
-		// Unlike wait()/get(), the timed waits deliberately do NOT
-		// participate in work-stealing: if they did, the caller could steal
-		// the very task it's waiting on and be obliged to run it to
-		// completion, blowing through the requested deadline. Callers who
-		// want bounded latency use wait_for/wait_until; callers who want to
-		// help out while waiting use wait()/get().
+		// (rarely) deferred — same set as std::future::wait_for. Like wait(),
+		// this blocks plainly — it does not participate in work-stealing.
 		template <class Rep, class Period>
 		std::future_status wait_for(const std::chrono::duration<Rep, Period>& d);
 
@@ -81,31 +73,14 @@ namespace multi
 		// Release the handle without waiting. The task still runs to completion
 		// on its worker, but its result/exception becomes unobservable. Useful
 		// for true fire-and-forget when you want to avoid ~Handle's auto-wait.
-		void detach() { clear(); }
+		void detach() { m_handle = std::shared_future<T>(); }
 
 		Handle& operator=(Handle&& a) noexcept(false);
 
 	private:
-		// Drop our reference to the shared state without waiting. Used by
-		// detach() and by move ops to vacate the source after stealing.
-		void clear()
-		{
-			m_handle = std::shared_future<T>();
-			m_context = nullptr;
-		}
-
-		// Block until ready, participating in steal if a Context is set.
-		// Does NOT call get() — leaves the shared state intact so subsequent
-		// wait()/get() calls observe the same value/exception.
-		void waitInternal();
-
 		std::shared_future<T> m_handle;
-		Context* m_context = nullptr;
 	};
 
 } // namespace multi
 
-// Method definitions need Context::tryRunSteal visible. context.h includes
-// this header AFTER class Context is fully defined, then proceeds to include
-// the .inl that supplies the templated wait/wait_for/wait_until bodies.
 #include "multi/details/handle.inl"

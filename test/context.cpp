@@ -62,22 +62,24 @@ TEST_CASE("Context: async wait observes side effects")
 	context.stop();
 }
 
-TEST_CASE("Context: async wait steals to avoid self-deadlock with 1 worker")
+TEST_CASE("Context: stealWhile avoids self-deadlock with 1 worker")
 {
 	// With threadCount==1 the sole worker is the one running the outer task.
-	// The inner async drops its Handle; without stealing in Handle::wait the
-	// outer task would block forever waiting for a worker that is itself.
+	// The inner async submits a task that only the sole worker could run —
+	// but that worker is itself the one waiting on the inner Handle. Plain
+	// Handle::wait() blocks (and would deadlock here); stealWhile lets the
+	// waiting thread drain pending work first.
 	multi::Context context;
 	context.start(1);
 
 	std::atomic<int> counter(0);
-	auto outer = context.async([&]()
-							   {
-		context.async([&]()
-		{
-			counter++;
-		});
-		counter++; });
+	auto outer = context.async([&]() {
+		auto inner = context.async([&]() { counter++; });
+		context.stealWhile(inner);  // explicit participation
+		counter++;
+	});
+	// Main thread isn't a worker — outer.wait() blocks plainly, which is
+	// fine: the sole worker will run `outer` once it unwinds inner.
 	outer.wait();
 
 	CHECK(counter == 2);

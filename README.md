@@ -74,14 +74,20 @@ int main()
     int result = answer.get();
 
     // Bounded wait — useful for "check, then keep doing something else"
-    // loops. Returns std::future_status::ready or ::timeout. Unlike
-    // wait()/get() the timed waits do NOT participate in stealing, so
-    // the deadline is honoured even if the pool is otherwise idle.
+    // loops. Returns std::future_status::ready or ::timeout.
     auto slow = multi::async([]() { /* …long… */ });
     if (slow.wait_for(std::chrono::milliseconds(5)) == std::future_status::timeout)
     {
         // come back later
     }
+
+    // Handle::wait()/get()/wait_for blocks the calling thread plainly.
+    // If you want the caller to help drain the pool while waiting on a
+    // specific Handle — useful e.g. when the caller is a worker thread
+    // that submitted nested work — use stealWhile:
+    auto child = multi::async([&]() { /* … */ });
+    multi::stealWhile(child);   // participates in work-stealing until child completes
+    child.get();                // observe value/exception
 
     // Wait for all jobs, and close threads.
     multi::stop();

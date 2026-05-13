@@ -43,6 +43,15 @@ namespace multi
 		return context()->async(std::forward<F>(f));
 	}
 
+	// Block until `h` completes, participating in work-stealing while we
+	// wait. See Context::stealWhile for the rationale. The plain
+	// Handle::wait()/get() block without helping.
+	template <class T>
+	void stealWhile(const Handle<T>& h)
+	{
+		context()->stealWhile(h);
+	}
+
 	// Parallel
 	template <typename... TASKS>
 	void parallel(TASKS&&... tasks)

@@ -65,7 +65,17 @@ namespace multi
 		auto job = std::make_shared<AsyncJob<DecayedF, R>>(std::forward<F>(f));
 		auto fut = job->getFuture();
 		m_workerPool.submit([job]() { job->run(0); });
-		return Handle<R>(std::move(fut), this);
+		return Handle<R>(std::move(fut));
+	}
+
+	template <class T>
+	void Context::stealWhile(const Handle<T>& h)
+	{
+		while (!h.complete())
+		{
+			if (!tryRunSteal())
+				std::this_thread::yield();
+		}
 	}
 
 	template <typename... TASKS>
