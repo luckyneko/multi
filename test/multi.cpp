@@ -11,6 +11,7 @@
 #include <chrono>
 #include <multi/multi.h>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -20,6 +21,25 @@
 // correctly without re-testing the underlying dispatch shapes (Context tests
 // cover those exhaustively).
 // ---------------------------------------------------------------------------
+
+TEST_CASE("multi: version header agrees with itself")
+{
+	// Round-trip sanity: macros + inline constexpr accessors must report
+	// the same numbers, the string must format as M.N.P, and the encoded
+	// MULTI_VERSION must equal the formula advertised in the header so
+	// consumers can rely on `#if MULTI_VERSION >= 10203` comparisons.
+	CHECK(multi::version_major == MULTI_VERSION_MAJOR);
+	CHECK(multi::version_minor == MULTI_VERSION_MINOR);
+	CHECK(multi::version_patch == MULTI_VERSION_PATCH);
+
+	std::string expected = std::to_string(MULTI_VERSION_MAJOR) + "." +
+	                       std::to_string(MULTI_VERSION_MINOR) + "." +
+	                       std::to_string(MULTI_VERSION_PATCH);
+	CHECK(std::string(multi::version_string) == expected);
+
+	const int encoded = MULTI_VERSION_MAJOR * 10000 + MULTI_VERSION_MINOR * 100 + MULTI_VERSION_PATCH;
+	CHECK(MULTI_VERSION == encoded);
+}
 
 TEST_CASE("multi: context() accessor is swappable")
 {

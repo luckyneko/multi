@@ -55,8 +55,18 @@ add_library(${PROJECT_NAME} STATIC
     src/workstealdeque.cpp
     src/workerpool.cpp
 )
+# Generate <multi/version.h> from the project version declared above.
+# Lives in the build tree so it's regenerated when the version changes
+# without dirtying the source tree.
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/multi/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/multi/version.h
+    @ONLY
+)
+
 target_include_directories(${PROJECT_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
@@ -111,6 +121,13 @@ if(MULTI_INSTALL)
 
     install(DIRECTORY include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "*.in" EXCLUDE
+    )
+
+    # Generated version header lives in the build tree — install it
+    # explicitly so downstream `find_package(multi)` consumers can include it.
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/multi/version.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/multi
     )
 
     install(EXPORT multiTargets

@@ -1,0 +1,29 @@
+/*
+ *  Distributed under the MIT Software License
+ *  (See accompanying file LICENSE.md)
+ *
+ *  Auto-generated from include/multi/version.h.in by CMake's configure_file.
+ *  Do NOT edit the generated copy under <build>/include/multi/version.h —
+ *  edit the .in template alongside this file and reconfigure.
+ */
+
+#pragma once
+
+#define MULTI_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define MULTI_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define MULTI_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define MULTI_VERSION_STRING "@PROJECT_VERSION@"
+
+// Encoded as MAJOR*10000 + MINOR*100 + PATCH so consumers can compare
+// versions at preprocess time:  #if MULTI_VERSION >= 10203 // 1.2.3
+#define MULTI_VERSION (MULTI_VERSION_MAJOR * 10000 + MULTI_VERSION_MINOR * 100 + MULTI_VERSION_PATCH)
+
+namespace multi
+{
+	// inline constexpr (C++17) — single definition across TUs, usable in
+	// constant expressions, no .cpp required.
+	inline constexpr int         version_major  = MULTI_VERSION_MAJOR;
+	inline constexpr int         version_minor  = MULTI_VERSION_MINOR;
+	inline constexpr int         version_patch  = MULTI_VERSION_PATCH;
+	inline constexpr const char* version_string = MULTI_VERSION_STRING;
+} // namespace multi

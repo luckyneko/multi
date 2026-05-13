@@ -9,6 +9,7 @@
 #pragma once
 
 #include "multi/context.h"
+#include "multi/version.h"
 
 namespace multi
 {
