@@ -24,6 +24,7 @@ include(GNUInstallDirs)
 # Options
 option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
+option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
 
 # Load Catch2
@@ -106,6 +107,19 @@ if(MULTI_BUILD_BENCHMARK)
         bench/workloads.cpp
     )
     target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
+endif()
+
+# Examples — one executable per file in examples/, named example-<stem>.
+# Each example is self-validating: prints what it does and exits non-zero
+# if a result check fails. Useful as documentation and as a smoke check
+# (`for f in build/example-*; do $f || break; done`).
+if(MULTI_BUILD_EXAMPLES)
+    set(MULTI_EXAMPLES hello parallel_for reduce fanout nested)
+    foreach(example IN LISTS MULTI_EXAMPLES)
+        add_executable(example-${example} examples/${example}.cpp)
+        target_link_libraries(example-${example} PRIVATE ${PROJECT_NAME})
+        target_compile_features(example-${example} PRIVATE cxx_std_17)
+    endforeach()
 endif()
 
 # Install / Export

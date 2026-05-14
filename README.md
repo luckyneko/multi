@@ -38,7 +38,23 @@ Continuously cross-compiled on (build only — runtime not exercised in CI):
 - Only write functions once for single & multi threaded
 
 ## Examples
-For extra examples please see `tests/context.cpp`
+
+Self-contained example programs live in [examples/](examples/). Each one is
+self-validating (prints what it does and exits non-zero on failure), so they
+double as a quick smoke test. Build with `-DMULTI_BUILD_EXAMPLES=ON` (default
+ON when standalone, OFF when consumed via `add_subdirectory`):
+
+```sh
+cmake -B build
+cmake --build build
+./build/example-hello          # basic start/stop + async
+./build/example-parallel_for   # each + range, with and without taskCount
+./build/example-reduce         # reduce + transformReduce (sum, sum-of-squares)
+./build/example-fanout         # parallelAsync + waitAll/waitAny
+./build/example-nested         # recursive divide-and-conquer with waitAll
+```
+
+For deeper API coverage see [test/context.cpp](test/context.cpp).
 
 ### Basic Async
 ``` C++
