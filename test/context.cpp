@@ -66,12 +66,12 @@ TEST_CASE("Context: async wait observes side effects")
 	context.stop();
 }
 
-TEST_CASE("Context: stealWhile avoids self-deadlock with 1 worker")
+TEST_CASE("Context: waitAll avoids self-deadlock with 1 worker")
 {
 	// With threadCount==1 the sole worker is the one running the outer task.
 	// The inner async submits a task that only the sole worker could run —
 	// but that worker is itself the one waiting on the inner Handle. Plain
-	// Handle::wait() blocks (and would deadlock here); stealWhile lets the
+	// Handle::wait() blocks (and would deadlock here); waitAll lets the
 	// waiting thread drain pending work first.
 	multi::Context context;
 	context.start(1);
@@ -79,7 +79,7 @@ TEST_CASE("Context: stealWhile avoids self-deadlock with 1 worker")
 	std::atomic<int> counter(0);
 	auto outer = context.async([&]() {
 		auto inner = context.async([&]() { counter++; });
-		context.stealWhile(inner);  // explicit participation
+		context.waitAll(inner);  // explicit participation
 		counter++;
 	});
 	// Main thread isn't a worker — outer.wait() blocks plainly, which is
@@ -431,7 +431,7 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 
 
 // ---------------------------------------------------------------------------
-// Context: reduce / transform_reduce
+// Context: reduce / transformReduce
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Context: reduce sums an integer vector across thread counts")
@@ -481,7 +481,7 @@ TEST_CASE("Context: reduce works on non-random-access iterators (std::list)")
 	context.stop();
 }
 
-TEST_CASE("Context: transform_reduce computes sum of squares")
+TEST_CASE("Context: transformReduce computes sum of squares")
 {
 	multi::Context context;
 	context.start(4);
@@ -491,7 +491,7 @@ TEST_CASE("Context: transform_reduce computes sum of squares")
 	const int expected = std::transform_reduce(
 		v.begin(), v.end(), 0, std::plus<>{}, [](int x) { return x * x; });
 
-	const int got = context.transform_reduce(
+	const int got = context.transformReduce(
 		v.begin(), v.end(), 0, std::plus<>{}, [](int x) { return x * x; });
 	CHECK(got == expected);
 
@@ -533,22 +533,22 @@ TEST_CASE("Context: reduce supports non-arithmetic T (string concat)")
 }
 
 // ---------------------------------------------------------------------------
-// Context: parallel_async
+// Context: parallelAsync
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Context: parallel_async returns tuple of typed Handles")
+TEST_CASE("Context: parallelAsync returns tuple of typed Handles")
 {
 	multi::Context context;
 	context.start(4);
 
 	// Heterogeneous return types — the tuple carries each precisely typed.
-	auto handles = context.parallel_async(
+	auto handles = context.parallelAsync(
 		[]() { return 42; },
 		[]() { return std::string("hello"); },
 		[]() { return 3.14; });
 
 	static_assert(std::tuple_size_v<decltype(handles)> == 3,
-	              "parallel_async should produce one tuple element per functor");
+	              "parallelAsync should produce one tuple element per functor");
 	static_assert(std::is_same_v<std::tuple_element_t<0, decltype(handles)>, multi::Handle<int>>,
 	              "element 0 should be Handle<int>");
 	static_assert(std::is_same_v<std::tuple_element_t<1, decltype(handles)>, multi::Handle<std::string>>,
@@ -564,13 +564,13 @@ TEST_CASE("Context: parallel_async returns tuple of typed Handles")
 	context.stop();
 }
 
-TEST_CASE("Context: parallel_async accepts void-returning functors")
+TEST_CASE("Context: parallelAsync accepts void-returning functors")
 {
 	multi::Context context;
 	context.start(2);
 
 	std::atomic<int> counter(0);
-	auto handles = context.parallel_async(
+	auto handles = context.parallelAsync(
 		[&]() { counter.fetch_add(1, std::memory_order_relaxed); },
 		[&]() { counter.fetch_add(10, std::memory_order_relaxed); });
 
@@ -585,12 +585,12 @@ TEST_CASE("Context: parallel_async accepts void-returning functors")
 	context.stop();
 }
 
-TEST_CASE("Context: parallel_async exceptions surface per-handle, siblings unaffected")
+TEST_CASE("Context: parallelAsync exceptions surface per-handle, siblings unaffected")
 {
 	multi::Context context;
 	context.start(2);
 
-	auto handles = context.parallel_async(
+	auto handles = context.parallelAsync(
 		[]() -> int { throw std::runtime_error("first"); },
 		[]() { return 7; });
 
@@ -604,12 +604,12 @@ TEST_CASE("Context: parallel_async exceptions surface per-handle, siblings unaff
 	context.stop();
 }
 
-TEST_CASE("Context: parallel_async with empty pack returns empty tuple")
+TEST_CASE("Context: parallelAsync with empty pack returns empty tuple")
 {
 	multi::Context context;
 	context.start(2);
 
-	auto handles = context.parallel_async();
+	auto handles = context.parallelAsync();
 	static_assert(std::tuple_size_v<decltype(handles)> == 0,
 	              "no functors should give an empty tuple");
 	(void)handles;  // silence unused-variable on stricter compilers
@@ -617,27 +617,206 @@ TEST_CASE("Context: parallel_async with empty pack returns empty tuple")
 	context.stop();
 }
 
-TEST_CASE("Context: parallel_async handles can be observed via stealWhile")
+TEST_CASE("Context: parallelAsync handles can be observed via waitAll")
 {
 	// Single-worker context: the caller must participate to drain pending
-	// async tasks; demonstrates that stealWhile works against an
-	// individual element of the parallel_async tuple.
+	// async tasks; demonstrates that waitAll works against an
+	// individual element of the parallelAsync tuple.
 	multi::Context context;
 	context.start(1);
 
 	std::atomic<int> counter(0);
 	auto outer = context.async([&]() {
-		auto handles = context.parallel_async(
+		auto handles = context.parallelAsync(
 			[&]() { counter.fetch_add(1, std::memory_order_relaxed); return 1; },
 			[&]() { counter.fetch_add(2, std::memory_order_relaxed); return 2; });
 		auto& [h1, h2] = handles;
-		context.stealWhile(h1);
-		context.stealWhile(h2);
+		context.waitAll(h1);
+		context.waitAll(h2);
 		CHECK(h1.get() == 1);
 		CHECK(h2.get() == 2);
 	});
 	outer.wait();
 	CHECK(counter.load() == 3);
 
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Context: waitUntil / waitAll / waitAny
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: waitUntil drains the pool while waiting on a custom predicate")
+{
+	// Main thread (a non-worker) calls waitUntil on an atomic flag flipped
+	// by a dispatched task — demonstrates that waitUntil works for non-
+	// Handle wait conditions (counters, external events). Named Handle
+	// captured explicitly so the temporary's dtor doesn't auto-wait
+	// before waitUntil even runs.
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<bool> flag(false);
+	std::atomic<int> counter(0);
+
+	auto h = context.async([&]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		counter.fetch_add(1, std::memory_order_relaxed);
+		flag.store(true, std::memory_order_release);
+	});
+
+	context.waitUntil([&]() { return flag.load(std::memory_order_acquire); });
+	counter.fetch_add(10, std::memory_order_relaxed);
+
+	CHECK(flag.load());
+	CHECK(counter.load() == 11);
+
+	h.wait();  // explicit, since waitUntil doesn't observe the Handle
+	context.stop();
+}
+
+TEST_CASE("Context: waitAll blocks until every handle completes")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> counter(0);
+	auto h1 = context.async([&]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		counter.fetch_add(1, std::memory_order_relaxed);
+	});
+	auto h2 = context.async([&]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		counter.fetch_add(2, std::memory_order_relaxed);
+	});
+	auto h3 = context.async([&]() {
+		counter.fetch_add(4, std::memory_order_relaxed);
+		return 7;
+	});
+
+	context.waitAll(h1, h2, h3);
+
+	// All three observed complete on return — no need to wait individually.
+	CHECK(h1.complete());
+	CHECK(h2.complete());
+	CHECK(h3.complete());
+	CHECK(counter.load() == 7);
+	CHECK(h3.get() == 7);
+
+	context.stop();
+}
+
+TEST_CASE("Context: waitAll on empty pack is an immediate no-op")
+{
+	multi::Context context;
+	context.start(2);
+
+	// Fold over && of zero arguments is the identity (true), so
+	// waitUntil's predicate is satisfied on the first check.
+	auto t0 = std::chrono::steady_clock::now();
+	context.waitAll();
+	auto elapsed = std::chrono::steady_clock::now() - t0;
+	CHECK(elapsed < std::chrono::milliseconds(5));
+
+	context.stop();
+}
+
+TEST_CASE("Context: waitAll on a tuple from parallelAsync")
+{
+	multi::Context context;
+	context.start(4);
+
+	auto handles = context.parallelAsync(
+		[]() { return 1; },
+		[]() { return std::string("two"); },
+		[]() { return 3.0; });
+
+	context.waitAll(handles);
+
+	auto& [h1, h2, h3] = handles;
+	CHECK(h1.complete());
+	CHECK(h2.complete());
+	CHECK(h3.complete());
+	CHECK(h1.get() == 1);
+	CHECK(h2.get() == "two");
+	CHECK(h3.get() == Catch::Approx(3.0));
+
+	context.stop();
+}
+
+TEST_CASE("Context: waitAny returns the index of a pre-completed handle")
+{
+	// Avoid timing flakiness: complete h2 explicitly via plain wait()
+	// before calling waitAny. waitUntil's predicate then short-circuits
+	// on the first scan (h0/h1 not complete, h2 complete) without
+	// participating in stealing. If we instead relied on h0/h1 being
+	// "slow enough" that h2 would naturally win, the test thread could
+	// steal h0's task and finish it inline first — known property of
+	// caller-participate waits.
+	multi::Context context;
+	context.start(4);
+
+	auto h0 = context.async([]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	});
+	auto h1 = context.async([]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
+	});
+	auto h2 = context.async([]() {
+		// trivial — completes almost immediately on its worker
+	});
+
+	h2.wait();  // plain blocking wait — does not steal, doesn't disturb h0/h1
+	REQUIRE(h2.complete());
+
+	const std::size_t idx = context.waitAny(h0, h1, h2);
+	CHECK(idx == 2);
+
+	h0.wait();
+	h1.wait();
+	context.stop();
+}
+
+TEST_CASE("Context: waitAny returns first-complete index when several are already done")
+{
+	// All handles complete before waitAny runs; the predicate sees them
+	// all `complete()` on the first iteration and must return index 0
+	// (the leftmost in source order short-circuits the || fold first).
+	multi::Context context;
+	context.start(2);
+
+	auto h0 = context.async([]() { return 10; });
+	auto h1 = context.async([]() { return 20; });
+	auto h2 = context.async([]() { return 30; });
+
+	// Force all three to complete first.
+	context.waitAll(h0, h1, h2);
+
+	const std::size_t idx = context.waitAny(h0, h1, h2);
+	CHECK(idx == 0);
+
+	context.stop();
+}
+
+TEST_CASE("Context: waitAny on a tuple from parallelAsync")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto handles = context.parallelAsync(
+		[]() { std::this_thread::sleep_for(std::chrono::milliseconds(100)); return 1; },
+		[]() { return 2; });
+
+	// Pre-complete h1 via plain wait() so waitAny's first scan finds it
+	// without the test thread stealing h0. See the variadic case above
+	// for the rationale.
+	auto& [h0, h1] = handles;
+	h1.wait();
+
+	const std::size_t idx = context.waitAny(handles);
+	CHECK(idx == 1);
+	CHECK(h1.get() == 2);
+
+	h0.wait();
 	context.stop();
 }

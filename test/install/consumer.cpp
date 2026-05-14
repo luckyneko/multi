@@ -28,7 +28,7 @@ int main()
 	multi::range(0, 1000, [&](int i) { sum += i; });
 
 	std::array<int, 4> values = {1, 2, 3, 4};
-	auto squareSum = multi::transform_reduce(
+	auto squareSum = multi::transformReduce(
 		values.begin(), values.end(),
 		0, std::plus<>{}, [](int x) { return x * x; });
 

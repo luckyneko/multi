@@ -30,7 +30,8 @@ namespace multi
 	 * the pool that produced it. wait()/get()/wait_for/wait_until all block
 	 * the calling thread plainly — there is no caller participation in
 	 * work-stealing. If you want the calling thread to help drain the pool
-	 * while waiting, use `Context::stealWhile(h)` instead.
+	 * while waiting, use `Context::waitAll(h)` (or another `Context::waitX`
+	 * primitive — see context.h) instead.
 	 */
 	template <class T = void>
 	class Handle

@@ -84,10 +84,27 @@ int main()
     // Handle::wait()/get()/wait_for blocks the calling thread plainly.
     // If you want the caller to help drain the pool while waiting on a
     // specific Handle — useful e.g. when the caller is a worker thread
-    // that submitted nested work — use stealWhile:
+    // that submitted nested work — use waitAll:
     auto child = multi::async([&]() { /* … */ });
-    multi::stealWhile(child);   // participates in work-stealing until child completes
+    multi::waitAll(child);   // participates in work-stealing until child completes
     child.get();                // observe value/exception
+
+    // Wait on multiple handles at once. waitAll returns after every
+    // handle completes; waitAny returns the index of the first one
+    // to complete. Both participate in stealing internally.
+    auto h1 = multi::async([]() { return 1; });
+    auto h2 = multi::async([]() { return 2.0; });
+    multi::waitAll(h1, h2);
+    // ... or fanned out from parallelAsync:
+    auto group = multi::parallelAsync([]{ return 'a'; }, []{ return 7; });
+    multi::waitAll(group);
+    std::size_t firstDone = multi::waitAny(group);
+
+    // Generalised primitive for waiting on arbitrary conditions with
+    // caller participation in the pool — `waitAll`/`waitAll`/
+    // `waitAny` are all thin wrappers over it.
+    std::atomic<int> remaining{N};
+    multi::waitUntil([&]{ return remaining.load() == 0; });
 
     // Wait for all jobs, and close threads.
     multi::stop();
@@ -120,7 +137,7 @@ void function()
     // Handle<R>, packaged in a tuple. Use when you need per-task
     // results, different return types, or per-handle wait_for.
     // Contrast with `parallel(a, b, ...)` which is fire-and-block.
-    auto handles = multi::parallel_async(
+    auto handles = multi::parallelAsync(
         []() { return 42; },
         []() { return std::string("hello"); },
         []() { return 3.14; });
@@ -155,7 +172,7 @@ void function()
 }
 ```
 
-### Parallel reduce / transform_reduce
+### Parallel reduce / transformReduce
 ``` C++
 #include <functional>
 #include <multi/multi.h>
@@ -171,7 +188,7 @@ void function()
     int total = multi::reduce(v.begin(), v.end(), 0, std::plus<>{});
 
     // Square-then-sum in one pass — transform_op is called once per element.
-    int sumSq = multi::transform_reduce(
+    int sumSq = multi::transformReduce(
         v.begin(), v.end(), 0,
         std::plus<>{},
         [](int x) { return x * x; });
@@ -260,6 +277,8 @@ Workloads:
 | `nested` | fast | Fork-join tree via `parallel_invoke`; includes serial baseline |
 | `async_latency` | fast | `async` + `Handle::wait` round-trip cost |
 | `async_fanout` | fast | N concurrent `async` tasks vs `range`-based dispatch |
+| `reduce_sum` | fast | Parallel `reduce` (sum of N doubles) vs `std::accumulate`; shows the N at which parallel overtakes serial |
+| `transformReduce_sumOfSquares` | fast | Parallel `transformReduce` (x*x + sum) vs `std::transform_reduce` |
 | `mandelbrot` | slow | Uniform CPU-bound; the "well-behaved" case |
 | `imbalanced` | slow | O(i) work per task; measures steal quality |
 

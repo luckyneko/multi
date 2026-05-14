@@ -43,11 +43,52 @@ TEST_CASE("multi: version header agrees with itself")
 	CHECK(MULTI_VERSION == encoded);
 }
 
-TEST_CASE("multi: parallel_async free function routes through global context")
+TEST_CASE("multi: waitAll / waitAny free functions route through global context")
 {
 	multi::start(2);
 
-	auto handles = multi::parallel_async(
+	auto h0 = multi::async([]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(40));
+		return 1;
+	});
+	auto h1 = multi::async([]() { return 2; });
+
+	// Pre-complete h1 via plain wait() so waitAny sees a deterministic
+	// "first complete" — otherwise the caller-side stealing could pull
+	// h0 onto this thread and finish it inline.
+	h1.wait();
+	const std::size_t idx = multi::waitAny(h0, h1);
+	CHECK(idx == 1);
+
+	// waitAll blocks until both complete.
+	multi::waitAll(h0, h1);
+	CHECK(h0.complete());
+	CHECK(h1.complete());
+
+	multi::stop();
+}
+
+TEST_CASE("multi: waitUntil free function blocks on a custom predicate")
+{
+	multi::start(2);
+
+	std::atomic<bool> ready(false);
+	auto h = multi::async([&]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		ready.store(true, std::memory_order_release);
+	});
+	multi::waitUntil([&]() { return ready.load(std::memory_order_acquire); });
+	CHECK(ready.load());
+	h.wait();
+
+	multi::stop();
+}
+
+TEST_CASE("multi: parallelAsync free function routes through global context")
+{
+	multi::start(2);
+
+	auto handles = multi::parallelAsync(
 		[]() { return 1; },
 		[]() { return 2; });
 	auto& [h1, h2] = handles;
@@ -57,14 +98,14 @@ TEST_CASE("multi: parallel_async free function routes through global context")
 	multi::stop();
 }
 
-TEST_CASE("multi: reduce / transform_reduce free functions route through global context")
+TEST_CASE("multi: reduce / transformReduce free functions route through global context")
 {
 	multi::start(4);
 
 	std::vector<int> v(1000);
 	std::iota(v.begin(), v.end(), 1);  // 1..1000
 	CHECK(multi::reduce(v.begin(), v.end(), 0, std::plus<>{}) == 500500);
-	CHECK(multi::transform_reduce(v.begin(), v.end(), 0, std::plus<>{},
+	CHECK(multi::transformReduce(v.begin(), v.end(), 0, std::plus<>{},
 	                              [](int x) { return x * x; })
 	      == 333833500);
 

@@ -467,7 +467,7 @@ namespace multi
 	 * TransformReduceJob — taskCount tasks, each folding a slice of the
 	 * input into a partial T, then a serial combine at the end with `init`.
 	 * Backs both `Context::reduce` (UnaryOp = details::Identity) and
-	 * `Context::transform_reduce` (UnaryOp = user transform).
+	 * `Context::transformReduce` (UnaryOp = user transform).
 	 *
 	 * Storage mirrors EachJob: random-access iterators are stored directly
 	 * (no allocation), other categories materialise a std::vector<T*>.
@@ -490,7 +490,7 @@ namespace multi
 		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
 
 		static_assert(std::is_default_constructible_v<T>,
-			"multi::reduce / transform_reduce: result type T must be default-constructible "
+			"multi::reduce / transformReduce: result type T must be default-constructible "
 			"(partial results are stored in a std::vector<T>)");
 
 	public:

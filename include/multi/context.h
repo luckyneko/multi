@@ -57,10 +57,10 @@ namespace multi
 		// existing void-returning `parallel(...)`.
 		//
 		// Each task lives in its own AsyncJob — sibling exceptions are
-		// isolated per handle, not aggregated. Pair with `stealWhile(h)`
+		// isolated per handle, not aggregated. Pair with `waitAll(h)`
 		// per element if you want the caller to participate while waiting.
 		template <typename... Fs>
-		auto parallel_async(Fs&&... fs);
+		auto parallelAsync(Fs&&... fs);
 
 		// Launch task for each item
 		// ITER is an iterator
@@ -93,28 +93,50 @@ namespace multi
 		template <typename ITER, typename T, typename BinaryOp>
 		T reduce(size_t taskCount, ITER begin, ITER end, T init, BinaryOp&& op);
 
-		// Parallel transform_reduce: apply `transformOp` to each element,
+		// Parallel transformReduce: apply `transformOp` to each element,
 		// then reduce with `reduceOp`. Same associativity/commutativity
 		// requirement on reduceOp; transformOp is called once per element.
 		template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-		T transform_reduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp);
+		T transformReduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp);
 		template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-		T transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+		T transformReduce(size_t taskCount, ITER begin, ITER end, T init,
 		                   BinaryOp&& reduceOp, UnaryOp&& transformOp);
 
-		// Try run a stolen task
-		bool tryRunSteal();
+		// Block the calling thread until `pred()` returns true, helping
+		// drain the pool in the meantime via tryRunSteal(). The underlying
+		// primitive for waitAll / waitAny — also useful directly when the
+		// wait condition isn't a Handle (atomic counters, external events,
+		// etc.). Matches the spirit of std::condition_variable::wait_until's
+		// predicate-form overload but participates in pool work rather
+		// than sleeping on a cv.
+		template <class Pred>
+		void waitUntil(Pred&& pred);
 
-		// Block the calling thread until `h` completes, helping drain the
-		// pool in the meantime via tryRunSteal(). Use this when the calling
-		// thread would otherwise sit idle blocking on `h.wait()`. Plain
-		// Handle::wait()/get() do NOT participate in work-stealing.
+		// Block (participating in stealing) until *every* handle in the
+		// pack completes. Each Hs must be a Handle<T> for some T (the
+		// types may differ). Does not rethrow — observe each handle's
+		// value/exception with `.get()` / `.wait()` afterwards.
 		//
-		// stealWhile returns once `h.complete()` is observed; it does not
-		// rethrow. Call `h.get()` (or `h.wait()`) afterwards if you need to
-		// observe the task's value or exception. No-op on an empty handle.
-		template <class T>
-		void stealWhile(const Handle<T>& h);
+		// Single-handle case is just `waitAll(h)`. Empty pack returns
+		// immediately (fold over && of zero terms is the identity, `true`).
+		template <class... Hs>
+		void waitAll(const Hs&... hs);
+
+		// Tuple overload — pairs with the std::tuple<Handle<R>...>
+		// returned by parallelAsync(...). Forwards to the variadic via
+		// std::apply.
+		template <class... Ts>
+		void waitAll(const std::tuple<Handle<Ts>...>& tup);
+
+		// Block until at least one handle in the pack completes. Returns
+		// the zero-based index of the first completed handle (in source
+		// order). Requires sizeof...(Hs) > 0 — surfaced via static_assert.
+		template <class... Hs>
+		std::size_t waitAny(const Hs&... hs);
+
+		// Tuple overload — see waitAll's tuple overload.
+		template <class... Ts>
+		std::size_t waitAny(const std::tuple<Handle<Ts>...>& tup);
 
 	private:
 		// Dispatch a Job. Three paths:
@@ -128,6 +150,14 @@ namespace multi
 		// heap-allocated and dispatched fire-and-forget via WorkerPool::submit.
 		template <class JobT>
 		void runQueueJob(JobT& job);
+
+		// Try to run one stolen task. Returns true if a task was popped
+		// from some worker's deque and executed (exceptions swallowed),
+		// false if no work was available. Private because the public wait
+		// primitives (waitUntil / waitAll / waitAny) cover the common
+		// use case; expose if a real consumer needs the non-blocking
+		// "run one if available" primitive directly.
+		bool tryRunSteal();
 
 	private:
 		WorkerPool m_workerPool;

@@ -4,7 +4,8 @@
  *
  *  Template method definitions for multi::Handle<T>. Handle is intentionally
  *  Context-agnostic — no steal-participate logic lives here. Callers that
- *  want to help while waiting use Context::stealWhile(handle).
+ *  want to help while waiting use the Context::waitX primitives
+ *  (waitAll, waitAny, waitUntil).
  */
 
 namespace multi

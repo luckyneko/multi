@@ -58,13 +58,40 @@ namespace multi
 		return context()->async(std::forward<F>(f));
 	}
 
-	// Block until `h` completes, participating in work-stealing while we
-	// wait. See Context::stealWhile for the rationale. The plain
-	// Handle::wait()/get() block without helping.
-	template <class T>
-	void stealWhile(const Handle<T>& h)
+	// Block until `pred()` returns true, participating in work-stealing
+	// while we wait. See Context::waitUntil for the rationale.
+	template <class Pred>
+	void waitUntil(Pred&& pred)
 	{
-		context()->stealWhile(h);
+		context()->waitUntil(std::forward<Pred>(pred));
+	}
+
+	// Block until *every* handle in the pack completes — participating in
+	// work-stealing while we wait. Variadic + tuple-from-parallelAsync
+	// overloads; the single-handle case is just `waitAll(h)`. See
+	// Context::waitAll for the rationale.
+	template <class... Hs>
+	void waitAll(const Hs&... hs)
+	{
+		context()->waitAll(hs...);
+	}
+	template <class... Ts>
+	void waitAll(const std::tuple<Handle<Ts>...>& tup)
+	{
+		context()->waitAll(tup);
+	}
+
+	// Block until at least one handle completes; return its zero-based
+	// index. See Context::waitAny.
+	template <class... Hs>
+	std::size_t waitAny(const Hs&... hs)
+	{
+		return context()->waitAny(hs...);
+	}
+	template <class... Ts>
+	std::size_t waitAny(const std::tuple<Handle<Ts>...>& tup)
+	{
+		return context()->waitAny(tup);
 	}
 
 	// Parallel
@@ -75,11 +102,11 @@ namespace multi
 	}
 
 	// Fan-out variant: returns a std::tuple<Handle<R>...> for per-task
-	// observation. See Context::parallel_async for the contract.
+	// observation. See Context::parallelAsync for the contract.
 	template <typename... Fs>
-	auto parallel_async(Fs&&... fs)
+	auto parallelAsync(Fs&&... fs)
 	{
-		return context()->parallel_async(std::forward<Fs>(fs)...);
+		return context()->parallelAsync(std::forward<Fs>(fs)...);
 	}
 
 	// Launch task for each item
@@ -113,7 +140,7 @@ namespace multi
 		context()->range(jobCount, begin, end, step, std::forward<FUNC>(func));
 	}
 
-	// Parallel reduce / transform_reduce — see Context::reduce documentation
+	// Parallel reduce / transformReduce — see Context::reduce documentation
 	// for the associativity/commutativity contract on the binary op.
 	template <typename ITER, typename T, typename BinaryOp>
 	T reduce(ITER begin, ITER end, T init, BinaryOp&& op)
@@ -128,18 +155,18 @@ namespace multi
 	}
 
 	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-	T transform_reduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp)
+	T transformReduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
-		return context()->transform_reduce(begin, end, std::move(init),
+		return context()->transformReduce(begin, end, std::move(init),
 		                                   std::forward<BinaryOp>(reduceOp),
 		                                   std::forward<UnaryOp>(transformOp));
 	}
 
 	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-	T transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+	T transformReduce(size_t taskCount, ITER begin, ITER end, T init,
 	                   BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
-		return context()->transform_reduce(taskCount, begin, end, std::move(init),
+		return context()->transformReduce(taskCount, begin, end, std::move(init),
 		                                   std::forward<BinaryOp>(reduceOp),
 		                                   std::forward<UnaryOp>(transformOp));
 	}

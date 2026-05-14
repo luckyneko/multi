@@ -68,14 +68,66 @@ namespace multi
 		return Handle<R>(std::move(fut));
 	}
 
-	template <class T>
-	void Context::stealWhile(const Handle<T>& h)
+	template <class Pred>
+	void Context::waitUntil(Pred&& pred)
 	{
-		while (!h.complete())
+		// Drain pending pool work while pred() reports "not yet". The
+		// caller-side spin matches runQueueJob's wait loop, so a worker
+		// thread sitting in waitUntil is indistinguishable from one
+		// processing its own deque — useful when waiting on conditions
+		// that aren't a single Handle (counter thresholds, batches of
+		// async results, external events).
+		while (!pred())
 		{
 			if (!tryRunSteal())
 				std::this_thread::yield();
 		}
+	}
+
+	template <class... Hs>
+	void Context::waitAll(const Hs&... hs)
+	{
+		// Fold over &&: identity element is `true`, so the no-arg case
+		// short-circuits to a no-op. Single-handle case (`waitAll(h)`) is
+		// just a one-element fold. Every iteration re-evaluates all
+		// handles' .complete() — that's cheap (each is an atomic load) and
+		// avoids tracking per-handle state.
+		waitUntil([&]() -> bool { return (hs.complete() && ...); });
+	}
+
+	template <class... Ts>
+	void Context::waitAll(const std::tuple<Handle<Ts>...>& tup)
+	{
+		std::apply([this](const auto&... hs) { this->waitAll(hs...); }, tup);
+	}
+
+	template <class... Hs>
+	std::size_t Context::waitAny(const Hs&... hs)
+	{
+		static_assert(sizeof...(Hs) > 0,
+		              "Context::waitAny requires at least one handle");
+
+		// `completed` sentinel = sizeof...(Hs) means "none observed yet".
+		// The fold over || short-circuits on the first complete handle,
+		// recording its index in `completed`. `i` is a manual counter
+		// re-initialised each predicate call — the fold expression
+		// doesn't give us pack indices directly, but each pack element
+		// evaluates left-to-right so this counter tracks the source
+		// position exactly.
+		std::size_t completed = sizeof...(Hs);
+		waitUntil([&]() -> bool {
+			std::size_t i = 0;
+			return ((hs.complete()
+			             ? (completed = i, true)
+			             : (++i, false)) || ...);
+		});
+		return completed;
+	}
+
+	template <class... Ts>
+	std::size_t Context::waitAny(const std::tuple<Handle<Ts>...>& tup)
+	{
+		return std::apply([this](const auto&... hs) { return this->waitAny(hs...); }, tup);
 	}
 
 	template <typename... TASKS>
@@ -86,7 +138,7 @@ namespace multi
 	}
 
 	template <typename... Fs>
-	auto Context::parallel_async(Fs&&... fs)
+	auto Context::parallelAsync(Fs&&... fs)
 	{
 		// Each async() returns a prvalue Handle<R> which the tuple stores
 		// via move-construction (Handle is move-only, but std::make_tuple
@@ -158,17 +210,17 @@ namespace multi
 	}
 
 	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-	T Context::transform_reduce(ITER begin, ITER end, T init,
+	T Context::transformReduce(ITER begin, ITER end, T init,
 	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
 		const size_t n = threadCount() > 0 ? threadCount() : 1;
-		return transform_reduce(n, begin, end, std::move(init),
+		return transformReduce(n, begin, end, std::move(init),
 		                        std::forward<BinaryOp>(reduceOp),
 		                        std::forward<UnaryOp>(transformOp));
 	}
 
 	template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
-	T Context::transform_reduce(size_t taskCount, ITER begin, ITER end, T init,
+	T Context::transformReduce(size_t taskCount, ITER begin, ITER end, T init,
 	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
 		TransformReduceJob<ITER, T,

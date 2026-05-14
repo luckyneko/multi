@@ -25,7 +25,9 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <map>
+#include <numeric>
 #include <vector>
 
 namespace
@@ -659,5 +661,98 @@ TEST_CASE("each_iter", "[bench][fast]")
 		const size_t chunks = (multi::threadCount() + 1) * 4;
 		BENCHMARK("multi::each chunks K=4") { multi::each(chunks, m.begin(), m.end(), bodyMap); };
 		REQUIRE(m.rbegin()->second != 0);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// reduce_sum — parallel sum of a double vector. Per-element work is trivial
+// (one floating add); compares against std::accumulate. The transition
+// point (where multi::reduce overtakes the serial baseline) sits between
+// per-element memory bandwidth and per-chunk dispatch + combine cost.
+// Vary N to see where it lands on your hardware.
+// ---------------------------------------------------------------------------
+TEST_CASE("reduce_sum", "[bench][fast]")
+{
+	auto runSerial = [](const std::vector<double>& v) {
+		return std::accumulate(v.begin(), v.end(), 0.0);
+	};
+	auto runMultiDefault = [](const std::vector<double>& v) {
+		return multi::reduce(v.begin(), v.end(), 0.0, std::plus<>{});
+	};
+	auto runMultiOversub = [](const std::vector<double>& v) {
+		const std::size_t chunks = (multi::threadCount() + 1) * 4;
+		return multi::reduce(chunks, v.begin(), v.end(), 0.0, std::plus<>{});
+	};
+
+	SECTION("10k items")
+	{
+		std::vector<double> v(10000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::accumulate") { return runSerial(v); };
+		BENCHMARK("multi::reduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::reduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<double> v(100000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::accumulate") { return runSerial(v); };
+		BENCHMARK("multi::reduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::reduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<double> v(1000000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::accumulate") { return runSerial(v); };
+		BENCHMARK("multi::reduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::reduce (4x oversub)") { return runMultiOversub(v); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// transformReduce_sumOfSquares — per-element x*x followed by +. Adds a
+// non-trivial transform op atop the reduce path; useful for sanity-checking
+// that the chunked fold inlines the transform cleanly. Baseline is
+// std::transform_reduce.
+// ---------------------------------------------------------------------------
+TEST_CASE("transformReduce_sumOfSquares", "[bench][fast]")
+{
+	auto sq = [](double x) { return x * x; };
+
+	auto runSerial = [&](const std::vector<double>& v) {
+		return std::transform_reduce(v.begin(), v.end(), 0.0, std::plus<>{}, sq);
+	};
+	auto runMultiDefault = [&](const std::vector<double>& v) {
+		return multi::transformReduce(v.begin(), v.end(), 0.0, std::plus<>{}, sq);
+	};
+	auto runMultiOversub = [&](const std::vector<double>& v) {
+		const std::size_t chunks = (multi::threadCount() + 1) * 4;
+		return multi::transformReduce(chunks, v.begin(), v.end(), 0.0, std::plus<>{}, sq);
+	};
+
+	SECTION("10k items")
+	{
+		std::vector<double> v(10000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<double> v(100000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<double> v(1000000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
 	}
 }
