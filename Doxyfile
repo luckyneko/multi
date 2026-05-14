@@ -1,0 +1,59 @@
+# Doxyfile for multi — minimal config, defaults left untouched.
+# Run locally:   doxygen Doxyfile
+# Output:        build/docs/html/index.html
+# CI publish:    .github/workflows/docs.yml (deploys to GitHub Pages)
+#
+# Bump PROJECT_NUMBER alongside CMakeLists.txt's `project(... VERSION ...)`.
+
+PROJECT_NAME           = "multi"
+PROJECT_BRIEF          = "C++17 real-time threading framework"
+PROJECT_NUMBER         = 0.1.0
+
+# Inputs — public headers + README as the landing page.
+INPUT                  = include README.md
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# Output goes into build/ so it's gitignored.
+OUTPUT_DIRECTORY       = build/docs
+
+# Extract everything (also items without /// comments) — we have good
+# header prose throughout but not strict Doxygen-style markers on every
+# symbol; EXTRACT_ALL produces a complete reference without forcing a
+# comment-style migration.
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = NO
+HIDE_UNDOCUMENTED_MEMBERS = NO
+
+# C++ niceties: STL types in the inheritance/collaboration graphs, treat
+# `///` and `/** */` as JavaDoc-style, preprocess macros so the version
+# header and platform branches resolve.
+BUILTIN_STL_SUPPORT    = YES
+JAVADOC_AUTOBRIEF      = YES
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+INCLUDE_PATH           = include
+# `__cpp_lib_hardware_interference_size` is the only conditional in
+# constants.h; tell Doxygen to act as if it's defined so the modern
+# branch is documented.
+PREDEFINED             = __cpp_lib_hardware_interference_size
+
+# Output format — HTML only. No LaTeX, no man, no RTF.
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+# Render source files with cross-links so the docs link to actual
+# definitions; cheap and very useful for a library this size.
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# Keep the build quiet; CI surfaces errors via exit code. We don't
+# enforce "every symbol documented" — too much churn on transparent
+# helpers — so undocumented warnings are off.
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_AS_ERROR          = NO

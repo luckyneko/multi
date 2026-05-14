@@ -1,5 +1,7 @@
-# multi [![CI](https://github.com/luckyneko/multi/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/luckyneko/multi/actions/workflows/ci.yml)&nbsp; ![Release](https://img.shields.io/github/v/release/luckyneko/multi?include_prereleases)
+# multi [![CI](https://github.com/luckyneko/multi/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/luckyneko/multi/actions/workflows/ci.yml)&nbsp; [![Docs](https://github.com/luckyneko/multi/actions/workflows/docs.yml/badge.svg?branch=master)](https://luckyneko.github.io/multi/)&nbsp; ![Release](https://img.shields.io/github/v/release/luckyneko/multi?include_prereleases)
 C++17 real-time threading framework
+
+API reference (Doxygen, regenerated from `master` on push): **<https://luckyneko.github.io/multi/>**
 
 ## Build / Integrate
 

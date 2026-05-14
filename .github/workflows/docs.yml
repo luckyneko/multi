@@ -1,0 +1,49 @@
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Pages deploys via id-token; the upload step needs contents read.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A single in-flight deploy at a time. New pushes cancel any pending
+# build but allow an in-progress deploy to finish — otherwise a flurry
+# of master pushes can corrupt the deployed artifact.
+concurrency:
+  group: docs
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doxygen + graphviz
+        # graphviz is optional but draws the inheritance/collaboration
+        # diagrams Doxygen embeds. Without it those graphs are silently
+        # replaced with text fallbacks, which is uglier than necessary.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Build docs
+        run: doxygen Doxyfile
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Matches OUTPUT_DIRECTORY/HTML in Doxyfile.
+          path: build/docs/html
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

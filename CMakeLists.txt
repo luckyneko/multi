@@ -25,6 +25,7 @@ include(GNUInstallDirs)
 option(MULTI_BUILD_TESTING "Build UnitTesting project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
+option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
 
 # Load Catch2
@@ -107,6 +108,20 @@ if(MULTI_BUILD_BENCHMARK)
         bench/workloads.cpp
     )
     target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
+endif()
+
+# Docs — invokes doxygen on the repo-root Doxyfile. We don't use CMake's
+# doxygen_add_docs because that helper *generates* its own Doxyfile from
+# DOXYGEN_* variables, which would conflict with the committed Doxyfile
+# that CI consumes directly. Instead, expose a target named `docs` that
+# shells out to doxygen. Build with: cmake --build build --target docs
+if(MULTI_BUILD_DOCS)
+    find_package(Doxygen REQUIRED)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating API documentation (output in build/docs/html)"
+        VERBATIM)
 endif()
 
 # Examples — one executable per file in examples/, named example-<stem>.
