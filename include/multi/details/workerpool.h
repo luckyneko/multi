@@ -60,8 +60,8 @@ namespace multi
 		// an out-of-range index, which would otherwise UB silently in release.
 		const WorkStealDeque& dequeOf(size_t idx) const
 		{
-			assert(idx < m_workers.size() && "WorkerPool::dequeOf: idx out of range");
-			return m_workers[idx]->deque;
+			assert(idx < m_workerCount && "WorkerPool::dequeOf: idx out of range");
+			return m_workers[idx].deque;
 		}
 
 		// Returns the calling thread's worker index, or SIZE_MAX if the caller
@@ -94,7 +94,15 @@ namespace multi
 		static void fencedNotify(Worker& w);
 
 	private:
-		std::vector<std::unique_ptr<Worker>> m_workers;
+		// Workers live in a single heap-allocated array (one allocation
+		// regardless of N). The previous vector<unique_ptr<Worker>>
+		// added a per-element pointer chase on every access; this gives
+		// direct indexing into one contiguous block. Worker is non-movable
+		// (it holds a std::mutex / std::condition_variable), so we don't
+		// use std::vector<Worker> — vector would risk a reseat on resize.
+		// Capacity is fixed at start() time; m_workerCount tracks it.
+		std::unique_ptr<Worker[]> m_workers;
+		size_t m_workerCount = 0;
 		std::vector<std::thread> m_threads;
 
 		// Align 'Hot' Variables

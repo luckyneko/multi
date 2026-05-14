@@ -29,7 +29,7 @@ namespace multi
 			return;
 		}
 
-		const size_t workerCount = m_workers.size();
+		const size_t workerCount = m_workerCount;
 		const size_t base = m_nextWorker.fetch_add(count, std::memory_order_relaxed);
 		const size_t self = currentWorkerIndex();
 
@@ -51,7 +51,7 @@ namespace multi
 		{
 			const size_t idx = (base + i) % workerCount;
 			if (idx != self)
-				fencedNotify(*m_workers[idx]);
+				fencedNotify(m_workers[idx]);
 		}
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);

@@ -81,6 +81,7 @@ namespace multi
 
 	WorkerPool::WorkerPool()
 		: m_workers()
+		, m_workerCount(0)
 		, m_threads()
 		, m_active(false)
 		, m_nextWorker(0)
@@ -94,7 +95,7 @@ namespace multi
 		// Debug builds assert the user called stop() explicitly. Release builds
 		// fall back to stopping here so OS threads don't leak on user error.
 		assert(m_threads.empty());
-		assert(m_workers.empty());
+		assert(m_workerCount == 0);
 		if (!m_threads.empty())
 		{
 			try
@@ -122,9 +123,12 @@ namespace multi
 		m_nextWorker.store(0, std::memory_order_relaxed);
 		m_nextVictim.store(0, std::memory_order_relaxed);
 
-		m_workers.reserve(threadCount);
-		for (size_t i = 0; i < threadCount; ++i)
-			m_workers.push_back(std::make_unique<Worker>());
+		// One heap allocation for the whole array — each Worker is
+		// default-constructed in place. Worker is alignas(CACHE_LINE_SIZE)
+		// so `new Worker[N]` requests aligned storage (C++17 over-aligned
+		// new), which keeps the cache-line discipline intact.
+		m_workers = std::make_unique<Worker[]>(threadCount);
+		m_workerCount = threadCount;
 
 		m_threads.reserve(threadCount);
 		for (size_t i = 0; i < threadCount; ++i)
@@ -152,8 +156,8 @@ namespace multi
 		// Now safe: no submitter can touch m_workers. Wake workers (do-while
 		// drain in workerMain runs anything pushed before m_active flipped)
 		// and tear down.
-		for (auto& worker : m_workers)
-			fencedNotify(*worker);
+		for (size_t i = 0; i < m_workerCount; ++i)
+			fencedNotify(m_workers[i]);
 
 		for (auto& thread : m_threads)
 			thread.join();
@@ -167,9 +171,9 @@ namespace multi
 		// stopping thread before clearing m_workers; m_inFlight == 0
 		// guarantees the deques are stable.
 		Task leftover;
-		for (auto& worker : m_workers)
+		for (size_t i = 0; i < m_workerCount; ++i)
 		{
-			while (worker->deque.pop(&leftover))
+			while (m_workers[i].deque.pop(&leftover))
 			{
 				try
 				{
@@ -183,7 +187,8 @@ namespace multi
 		}
 
 		m_threads.clear();
-		m_workers.clear();
+		m_workers.reset();
+		m_workerCount = 0;
 	}
 
 	bool WorkerPool::pushWithRetry(size_t idx, Task& task)
@@ -193,7 +198,7 @@ namespace multi
 		// stop() spins on m_inFlight reaching zero before clearing m_workers.
 		// Without it, the lock-free deque internals don't help: the Worker
 		// storage itself could vanish under us.
-		Worker* worker = m_workers[idx].get();
+		Worker* worker = &m_workers[idx];
 		const bool isSelf = (idx == currentWorkerIndex());
 		for (;;)
 		{
@@ -238,9 +243,9 @@ namespace multi
 			return;
 		}
 
-		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workers.size();
+		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workerCount;
 		if (pushWithRetry(idx, task) && idx != currentWorkerIndex())
-			fencedNotify(*m_workers[idx]);
+			fencedNotify(m_workers[idx]);
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
@@ -267,7 +272,7 @@ namespace multi
 			return;
 		}
 
-		const size_t workerCount = m_workers.size();
+		const size_t workerCount = m_workerCount;
 		const size_t base = m_nextWorker.fetch_add(tasks.size(), std::memory_order_relaxed);
 		const size_t self = currentWorkerIndex();
 
@@ -289,7 +294,7 @@ namespace multi
 		{
 			const size_t idx = (base + i) % workerCount;
 			if (idx != self)
-				fencedNotify(*m_workers[idx]);
+				fencedNotify(m_workers[idx]);
 		}
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
@@ -297,7 +302,7 @@ namespace multi
 
 	bool WorkerPool::tryStealAny(Task* task)
 	{
-		const size_t workerCount = m_workers.size();
+		const size_t workerCount = m_workerCount;
 		if (workerCount == 0)
 			return false;
 
@@ -309,7 +314,7 @@ namespace multi
 		const size_t base = m_nextVictim.fetch_add(1, std::memory_order_relaxed) % workerCount;
 		for (size_t i = 0; i < workerCount; ++i)
 		{
-			if (m_workers[(base + i) % workerCount]->deque.steal(task))
+			if (m_workers[(base + i) % workerCount].deque.steal(task))
 				return true;
 		}
 		return false;
@@ -326,7 +331,7 @@ namespace multi
 		std::snprintf(name, sizeof(name), "multi-%zu", workerIndex);
 		setCurrentThreadName(name);
 
-		Worker* self = m_workers[workerIndex].get();
+		Worker* self = &m_workers[workerIndex];
 		Task task;
 		// do-while, not while: if start() returns and stop() is called before
 		// this thread is scheduled, m_active is already false on first entry.
@@ -363,15 +368,15 @@ namespace multi
 	bool WorkerPool::tryGetTask(size_t workerIndex, Task* task)
 	{
 		// 1. Try own deque first (LIFO - temporal locality)
-		if (m_workers[workerIndex]->deque.pop(task))
+		if (m_workers[workerIndex].deque.pop(task))
 			return true;
 
 		// 2. Try stealing from other workers (starting after self to spread contention)
-		size_t workerCount = m_workers.size();
+		size_t workerCount = m_workerCount;
 		for (size_t i = 1; i < workerCount; ++i)
 		{
 			size_t victim = (workerIndex + i) % workerCount;
-			if (m_workers[victim]->deque.steal(task))
+			if (m_workers[victim].deque.steal(task))
 				return true;
 		}
 

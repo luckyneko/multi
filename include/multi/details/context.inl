@@ -32,6 +32,26 @@ namespace multi
 			return;
 		}
 
+		// Two-task fast path (parallel(a, b) hits this every call): submit
+		// task 0 to a worker so it can start in parallel, then run task 1
+		// inline on the caller. Saves one push + fencedNotify + steal-loop
+		// iteration vs the generic two-task submitBatch path. The spin
+		// below still runs because we still need to wait for task 0 to
+		// finish, but it has only one outstanding task to drain rather
+		// than two.
+		if (count == 2)
+		{
+			m_workerPool.submit(Task([&job]() { job.run(0); }));
+			job.run(1);
+			while (job.remaining() > 0)
+			{
+				if (!tryRunSteal())
+					std::this_thread::yield();
+			}
+			job.rethrowIfFailed();
+			return;
+		}
+
 		// Generator-based submitBatch constructs each wrapper Task at push
 		// time, no intermediate vector. Wrapper is [&job, i] = 16 B (SBO fit).
 		// `&job` carries the JobT type, so the inner job.run(i) is a direct

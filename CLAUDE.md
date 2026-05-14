@@ -88,10 +88,11 @@ Three layers, public → private:
 
 The base [`Job`](include/multi/details/job.h) is non-polymorphic — no virtual `run`, protected non-virtual destructor. It only holds the shared state: `m_taskCount` (immutable), `m_remaining` (atomic countdown), `m_excOnce`/`m_firstException` (exception capture), plus the `runOne(F&&)` template helper that wraps user code with try/catch + release-`fetch_sub`.
 
-`Context::runQueueJob<JobT>(JobT&)` is templated on the concrete subclass so `job.run(i)` is a direct call resolved at compile time, not a vtable hop. Three paths:
+`Context::runQueueJob<JobT>(JobT&)` is templated on the concrete subclass so `job.run(i)` is a direct call resolved at compile time, not a vtable hop. Four paths:
 - `taskCount() == 0`: no-op.
 - `taskCount() == 1`: run inline on caller (covers historical `taskCount<=1` serial fallback for chunked jobs, and any single-task dispatch).
-- `taskCount() >  1`: submit a batch via `WorkerPool::submitBatch(count, gen)` (the generator-based overload — no intermediate `vector<Task>`), spin on `remaining()` while participating via `tryRunSteal`, then `rethrowIfFailed()`.
+- `taskCount() == 2`: submit task 0 to a worker via `submit(Task)`, run task 1 inline on the caller, then spin on `remaining()` for task 0. The `parallel(a, b)` / sort recursion fast path — saves one push + `fencedNotify` + steal-loop iteration vs the generic submitBatch path. Measured `~−40%` on the dispatch-heavy `parallel_pair / 1k rounds` bench; neutral on recursive workloads with non-trivial per-leaf work.
+- `taskCount() >  2`: submit a batch via `WorkerPool::submitBatch(count, gen)` (the generator-based overload — no intermediate `vector<Task>`), spin on `remaining()` while participating via `tryRunSteal`, then `rethrowIfFailed()`.
 
 Wrapper Tasks pushed into worker deques are `[&job, i]() { job.run(i); }` (16 B SBO fit) for sync jobs; AsyncJob's wrapper is `[job]() { job->run(0); }` capturing the `shared_ptr` by value (also SBO). Sibling tasks are **not** cancelled on exception — the surviving `runOne` calls still decrement `m_remaining`.
 
