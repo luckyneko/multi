@@ -170,4 +170,13 @@ namespace multi
 		                                   std::forward<BinaryOp>(reduceOp),
 		                                   std::forward<UnaryOp>(transformOp));
 	}
+
+	// In-place parallel sort — see Context::sort for the algorithm
+	// (median-of-three pivot, 3-way partition, std::sort cutoff). RA
+	// iterators only.
+	template <typename ITER, typename COMP = std::less<>>
+	void sort(ITER begin, ITER end, COMP comp = {})
+	{
+		context()->sort(begin, end, std::move(comp));
+	}
 } // namespace multi

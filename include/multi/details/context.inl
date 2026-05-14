@@ -1,4 +1,7 @@
 
+#include <algorithm>
+#include <functional>
+#include <iterator>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -229,5 +232,97 @@ namespace multi
 			job(taskCount, begin, end, std::move(init), reduceOp, transformOp);
 		runQueueJob(job);
 		return job.finalize();
+	}
+
+	namespace details
+	{
+		// Parallel quicksort body. Templated on `CtxT` (always Context here)
+		// so the recursive call resolves without re-naming the dispatcher;
+		// keeps this routine independent of multi::context() so it works on
+		// any Context instance, including test-local pools.
+		//
+		// Strategy: pick a median-of-three pivot from {begin, mid, last};
+		// 3-way partition into [<pivot | ==pivot | >pivot]; recurse on the
+		// two outer parts in parallel. The equal-to-pivot middle stays
+		// where it is (already correctly placed). Stops parallel recursion
+		// when a subrange falls under `cutoff` and delegates to std::sort.
+		//
+		// `cutoff` is computed at the top-level `Context::sort` entry from
+		// total size and worker count, and threaded through recursion
+		// unchanged. Bounded recursion depth (≈ log₂(workerCount·8)) keeps
+		// the caller-stack safe even when the spin-and-steal participation
+		// pulls every recursive task back onto the calling thread.
+		template <class CtxT, class Iter, class Comp>
+		void parallelSortImpl(CtxT* ctx, Iter begin, Iter end, const Comp& comp,
+		                     typename std::iterator_traits<Iter>::difference_type cutoff)
+		{
+			using diff_t = typename std::iterator_traits<Iter>::difference_type;
+
+			const diff_t n = std::distance(begin, end);
+			if (n <= cutoff)
+			{
+				std::sort(begin, end, comp);
+				return;
+			}
+
+			// Median-of-three: sort {*begin, *mid, *last} in place so *mid
+			// becomes the median under `comp`. Defends against degenerate
+			// O(n²) on already-sorted / reverse-sorted input.
+			Iter mid = begin + n / 2;
+			Iter last = end - 1;
+			if (comp(*mid, *begin)) std::iter_swap(begin, mid);
+			if (comp(*last, *begin)) std::iter_swap(begin, last);
+			if (comp(*last, *mid)) std::iter_swap(mid, last);
+			// `pivot` is a value copy — *mid may move during partition.
+			auto pivot = *mid;
+
+			// 3-way partition:
+			//   p1 = first element NOT (x < pivot)  → [begin, p1) is < pivot
+			//   p2 = first element NOT (x <= pivot) → [p1, p2) is == pivot,
+			//                                        [p2, end) is > pivot
+			// Handles duplicates well: a run of equal-to-pivot elements
+			// lands in the middle and is excluded from recursion. Worst
+			// case (all equal) returns after these two O(n) scans.
+			auto p1 = std::partition(begin, end, [&](const auto& x) { return comp(x, pivot); });
+			auto p2 = std::partition(p1, end, [&](const auto& x) { return !comp(pivot, x); });
+
+			// `parallel(a, b)` is fire-and-block, so reference captures of
+			// begin/p1/p2/end/comp/cutoff are safe: this stack frame
+			// outlives the dispatched tasks.
+			ctx->parallel(
+				[&]() { parallelSortImpl(ctx, begin, p1, comp, cutoff); },
+				[&]() { parallelSortImpl(ctx, p2, end, comp, cutoff); });
+		}
+	} // namespace details
+
+	template <typename ITER, typename COMP>
+	void Context::sort(ITER begin, ITER end, COMP comp)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::sort requires random-access iterators (matches std::sort)");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		const std::size_t tc = threadCount();
+
+		// Cutoff scales with workerCount: aim for ~(workerCount * 8) leaf
+		// chunks at most, so the worst-case caller-side recursion depth
+		// is ≈ log₂(workerCount·8). Floor of 1024 keeps tiny chunks out
+		// of dispatch and lets std::sort do the leaf work efficiently.
+		//
+		// Why bound *depth* and not *fan-out*: the calling thread spins
+		// in `parallel(left, right)` and steals work while waiting. If a
+		// stolen recursive sort spawns another `parallel`, the caller's
+		// stack grows by another frame for each level. A linear cutoff
+		// (e.g. fixed 1024) lets depth reach log₂(n/1024), which over
+		// large inputs combined with ASan/UBSan stack-frame overhead can
+		// run the main thread out of stack.
+		const diff_t cutoff = std::max<diff_t>(
+			1024,
+			n / static_cast<diff_t>(std::max<std::size_t>(1, tc * 8)));
+
+		details::parallelSortImpl(this, begin, end, comp, cutoff);
 	}
 } // namespace multi

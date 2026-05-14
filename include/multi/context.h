@@ -102,6 +102,15 @@ namespace multi
 		T transformReduce(size_t taskCount, ITER begin, ITER end, T init,
 		                   BinaryOp&& reduceOp, UnaryOp&& transformOp);
 
+		// In-place parallel sort over [begin, end). Random-access
+		// iterators only (matches std::sort). Algorithm: median-of-three
+		// pivot, 3-way partition, recursive parallel on the < and >
+		// subranges; falls through to std::sort once a subrange is small
+		// enough that dispatch overhead would outweigh the parallelism.
+		// COMP must be the strict-weak-ordering compare used by std::sort.
+		template <typename ITER, typename COMP = std::less<>>
+		void sort(ITER begin, ITER end, COMP comp = {});
+
 		// Block the calling thread until `pred()` returns true, helping
 		// drain the pool in the meantime via tryRunSteal(). The underlying
 		// primitive for waitAll / waitAny — also useful directly when the

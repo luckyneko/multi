@@ -23,11 +23,13 @@
 
 #include <multi/multi.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <numeric>
+#include <random>
 #include <vector>
 
 namespace
@@ -754,5 +756,78 @@ TEST_CASE("transformReduce_sumOfSquares", "[bench][fast]")
 		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
 		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
 		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sort_random — parallel sort of a random-shuffled int vector vs std::sort.
+// Each sample sorts a *fresh* copy (allocated up front, outside the timed
+// portion via BENCHMARK_ADVANCED + Chronometer): after the first sort the
+// data is in order and a subsequent std::sort would run in O(n), masking
+// the actual cost.
+//
+// Catch2 calls `meter.measure(fn)` exactly `meter.runs()` times, so we
+// pre-build one shuffled copy per run. The shuffle is deterministic per
+// section (fixed RNG seed) — different sections see different data.
+// ---------------------------------------------------------------------------
+TEST_CASE("sort_random", "[bench][fast]")
+{
+	auto buildShuffled = [](std::size_t n, std::uint32_t seed, std::size_t runs) {
+		std::vector<std::vector<int>> out(runs);
+		std::mt19937 rng(seed);
+		std::vector<int> master(n);
+		std::iota(master.begin(), master.end(), 0);
+		std::shuffle(master.begin(), master.end(), rng);
+		for (auto& v : out)
+			v = master;
+		return out;
+	};
+
+	SECTION("10k items")
+	{
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(10000, 0xA1, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(10000, 0xA1, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+	}
+
+	SECTION("100k items")
+	{
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(100000, 0xB2, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(100000, 0xB2, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+	}
+
+	SECTION("1M items")
+	{
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(1000000, 0xC3, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(1000000, 0xC3, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
 	}
 }

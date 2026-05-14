@@ -6,12 +6,14 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
 #include <functional>
 #include <multi/multi.h>
 #include <numeric>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>

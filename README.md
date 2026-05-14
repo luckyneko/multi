@@ -172,6 +172,27 @@ void function()
 }
 ```
 
+### Parallel sort
+``` C++
+#include <multi/multi.h>
+#include <vector>
+
+void function()
+{
+    std::vector<int> v = /* … */;
+
+    // In-place parallel sort; random-access iterators only (matches
+    // std::sort). Median-of-three pivot + 3-way partition; falls back
+    // to std::sort once a subrange is small enough that dispatch
+    // overhead would dominate. The cutoff scales with worker count
+    // so recursion depth stays bounded.
+    multi::sort(v.begin(), v.end());
+
+    // With a custom comparator (descending order).
+    multi::sort(v.begin(), v.end(), std::greater<>{});
+}
+```
+
 ### Parallel reduce / transformReduce
 ``` C++
 #include <functional>
@@ -279,6 +300,7 @@ Workloads:
 | `async_fanout` | fast | N concurrent `async` tasks vs `range`-based dispatch |
 | `reduce_sum` | fast | Parallel `reduce` (sum of N doubles) vs `std::accumulate`; shows the N at which parallel overtakes serial |
 | `transformReduce_sumOfSquares` | fast | Parallel `transformReduce` (x*x + sum) vs `std::transform_reduce` |
+| `sort_random` | fast | Parallel `sort` of a random-shuffled int vector vs `std::sort`; fresh copy per sample |
 | `mandelbrot` | slow | Uniform CPU-bound; the "well-behaved" case |
 | `imbalanced` | slow | O(i) work per task; measures steal quality |
 

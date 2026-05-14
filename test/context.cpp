@@ -16,9 +16,11 @@
 #include <map>
 #include <multi/context.h>
 #include <numeric>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace
@@ -818,5 +820,150 @@ TEST_CASE("Context: waitAny on a tuple from parallelAsync")
 	CHECK(h1.get() == 2);
 
 	h0.wait();
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Context: sort
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: sort sorts a randomly shuffled int vector")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	// 8k items: above the 1024 cutoff so parallel recursion is exercised
+	// once thread count > 0; the threadCount=0 case stays serial inline.
+	std::vector<int> v(8000);
+	std::iota(v.begin(), v.end(), 0);
+	std::mt19937 rng(12345);
+	std::shuffle(v.begin(), v.end(), rng);
+
+	context.sort(v.begin(), v.end());
+
+	CHECK(std::is_sorted(v.begin(), v.end()));
+	CHECK(v.front() == 0);
+	CHECK(v.back() == 7999);
+
+	context.stop();
+}
+
+TEST_CASE("Context: sort with custom comparator (descending)")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(3000);
+	std::iota(v.begin(), v.end(), 0);
+	std::mt19937 rng(67890);
+	std::shuffle(v.begin(), v.end(), rng);
+
+	context.sort(v.begin(), v.end(), std::greater<>{});
+
+	CHECK(std::is_sorted(v.begin(), v.end(), std::greater<>{}));
+	CHECK(v.front() == 2999);
+	CHECK(v.back() == 0);
+
+	context.stop();
+}
+
+TEST_CASE("Context: sort handles degenerate inputs")
+{
+	multi::Context context;
+	context.start(4);
+
+	SECTION("empty range")
+	{
+		std::vector<int> v;
+		CHECK_NOTHROW(context.sort(v.begin(), v.end()));
+		CHECK(v.empty());
+	}
+
+	SECTION("single element")
+	{
+		std::vector<int> v = {42};
+		context.sort(v.begin(), v.end());
+		CHECK(v == std::vector<int>{42});
+	}
+
+	SECTION("already sorted, large enough to trigger parallel recursion")
+	{
+		// Already-sorted input is the classic pathological case for naive
+		// quicksort (degrades to O(n²) on first-element pivots). Median-
+		// of-three should pick the middle and keep this fast.
+		std::vector<int> v(4000);
+		std::iota(v.begin(), v.end(), 0);
+		context.sort(v.begin(), v.end());
+		CHECK(std::is_sorted(v.begin(), v.end()));
+	}
+
+	SECTION("reverse sorted")
+	{
+		std::vector<int> v(4000);
+		std::iota(v.rbegin(), v.rend(), 0);
+		context.sort(v.begin(), v.end());
+		CHECK(std::is_sorted(v.begin(), v.end()));
+	}
+
+	SECTION("all equal — 3-way partition's win condition")
+	{
+		// All elements equal: 3-way partition lumps everything in the
+		// middle, no recursion needed. Returns after two O(n) scans even
+		// for large input. Worst case for plain (2-way) quicksort.
+		std::vector<int> v(4000, 7);
+		context.sort(v.begin(), v.end());
+		CHECK(std::all_of(v.begin(), v.end(), [](int x) { return x == 7; }));
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: sort on a non-trivial element type")
+{
+	// Pair-of-strings: exercises move/swap on a type with heap storage,
+	// not just trivially-copyable ints. Comparator orders by the int
+	// field so the string is just payload that has to migrate correctly
+	// through partition/swap.
+	multi::Context context;
+	context.start(4);
+
+	std::vector<std::pair<int, std::string>> v;
+	for (int i = 0; i < 2000; ++i)
+		v.emplace_back(i, "item-" + std::to_string(i));
+	std::mt19937 rng(0xC0FFEE);
+	std::shuffle(v.begin(), v.end(), rng);
+
+	context.sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+	CHECK(std::is_sorted(v.begin(), v.end(),
+	                     [](const auto& a, const auto& b) { return a.first < b.first; }));
+	CHECK(v.front().second == "item-0");
+	CHECK(v.back().second == "item-1999");
+
+	context.stop();
+}
+
+TEST_CASE("Context: sort on 1M items matches std::sort")
+{
+	// Larger input where parallel recursion runs to depth and chunks
+	// land in the std::sort fallback. Cross-checks against std::sort
+	// for total correctness — every value, not just is_sorted.
+	multi::Context context;
+	context.start(4);
+
+	constexpr std::size_t N = 1'000'000;
+	std::vector<int> v(N);
+	std::iota(v.begin(), v.end(), 0);
+	std::mt19937 rng(0xBEEF);
+	std::shuffle(v.begin(), v.end(), rng);
+
+	std::vector<int> reference = v;
+	std::sort(reference.begin(), reference.end());
+
+	context.sort(v.begin(), v.end());
+
+	CHECK(v == reference);
+
 	context.stop();
 }
