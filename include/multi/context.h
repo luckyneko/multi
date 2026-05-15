@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "multi/handle.h"
 #include "multi/details/job.h"
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
@@ -16,12 +17,6 @@
 
 namespace multi
 {
-	// Forward declaration so Context::async can name Handle<R> in its
-	// signature. Full definition (and the template method bodies that call
-	// Context::tryRunSteal) lives in multi/handle.h, included after the
-	// Context class is fully defined below.
-	template <class T> class Handle;
-
 	/*
 	 * Context
 	 * Holds multi-wide state.
@@ -100,7 +95,7 @@ namespace multi
 		T transformReduce(ITER begin, ITER end, T init, BinaryOp&& reduceOp, UnaryOp&& transformOp);
 		template <typename ITER, typename T, typename BinaryOp, typename UnaryOp>
 		T transformReduce(size_t taskCount, ITER begin, ITER end, T init,
-		                   BinaryOp&& reduceOp, UnaryOp&& transformOp);
+						  BinaryOp&& reduceOp, UnaryOp&& transformOp);
 
 		// In-place parallel sort over [begin, end). Random-access
 		// iterators only (matches std::sort). Algorithm: median-of-three
@@ -124,11 +119,11 @@ namespace multi
 		// MERGE_PARALLEL_THRESHOLD or with workerCount < 2, delegates
 		// directly to std::merge.
 		template <typename IterA, typename IterB, typename OutIter,
-		          typename Comp = std::less<>>
+				  typename Comp = std::less<>>
 		void merge(IterA aBegin, IterA aEnd,
-		           IterB bBegin, IterB bEnd,
-		           OutIter outBegin,
-		           Comp comp = {});
+				   IterB bBegin, IterB bEnd,
+				   OutIter outBegin,
+				   Comp comp = {});
 
 		// Block the calling thread until `pred()` returns true, helping
 		// drain the pool in the meantime via tryRunSteal(). The underlying
@@ -192,9 +187,4 @@ namespace multi
 	};
 } // namespace multi
 
-// Full definition of Handle<T> + its template method bodies. Included here,
-// after Context is defined, so handle.inl's calls to Context::tryRunSteal
-// resolve. context.inl below depends on Handle being complete to build the
-// async() return value.
-#include "multi/handle.h"
 #include "multi/details/context.inl"
