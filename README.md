@@ -200,14 +200,37 @@ void function()
     std::vector<int> v = /* … */;
 
     // In-place parallel sort; random-access iterators only (matches
-    // std::sort). Median-of-three pivot + 3-way partition; falls back
-    // to std::sort once a subrange is small enough that dispatch
-    // overhead would dominate. The cutoff scales with worker count
-    // so recursion depth stays bounded.
+    // std::sort). Picks one of three strategies based on input size:
+    //   - tiny ranges punt to std::sort directly
+    //   - mid ranges use a recursive median-of-three + 3-way partition
+    //     quicksort that parallelises the top-level partition
+    //   - large ranges (~500k+) use a chunked sort: K = workerCount*4
+    //     std::sort chunks in parallel, then log2(K) parallel-merge stages
     multi::sort(v.begin(), v.end());
 
     // With a custom comparator (descending order).
     multi::sort(v.begin(), v.end(), std::greater<>{});
+}
+```
+
+### Parallel merge
+``` C++
+#include <multi/multi.h>
+#include <vector>
+
+void function()
+{
+    std::vector<int> a = /* sorted */, b = /* sorted */;
+    std::vector<int> out(a.size() + b.size());
+
+    // Merge two sorted ranges into a third. Matches std::merge's
+    // contract: stable, equivalent elements from A come first. Output
+    // must have room for a.size() + b.size() and must not overlap
+    // either input. Co-rank binary search picks K balanced split
+    // points; below ~8k total it delegates to std::merge.
+    multi::merge(a.begin(), a.end(),
+                 b.begin(), b.end(),
+                 out.begin());
 }
 ```
 
@@ -277,6 +300,9 @@ Headline numbers — Apple M4 Pro (14 cores), macOS, Release, 20 samples. Times 
 | `empty_tasks` / 5k        |    —     |    402 µs |    39 µs |   10.3× *      |
 | `each` / 10k random-access|    —     |   1009 µs |   445 µs |    2.3×        |
 | `each` / 10k map (bidi)   |    —     |   1020 µs |   518 µs |    2.0×        |
+| `sort_random` / 500k      |  6.86 ms |        —  |  1.81 ms |  **3.8×**      |
+| `sort_random` / 1M        | 14.06 ms |        —  |  3.11 ms |  **4.5×**      |
+| `sort_random` / 10M       |   155 ms |        —  | 25.64 ms |  **6.0×**      |
 | `async_latency`           |    —     |     ~2 µs/round (single-task round-trip) |       —     |
 
 \* `empty_tasks` measures raw dispatch overhead — the "chunks speedup" is overhead-vs-overhead, not work-throughput.

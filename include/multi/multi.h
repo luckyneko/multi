@@ -179,4 +179,17 @@ namespace multi
 	{
 		context()->sort(begin, end, std::move(comp));
 	}
+
+	// Parallel merge of two sorted ranges into a third. Matches
+	// std::merge's contract (stable: equivalent elements from A come
+	// first). See Context::merge for the co-rank algorithm.
+	template <typename IterA, typename IterB, typename OutIter,
+	          typename Comp = std::less<>>
+	void merge(IterA aBegin, IterA aEnd,
+	           IterB bBegin, IterB bEnd,
+	           OutIter outBegin,
+	           Comp comp = {})
+	{
+		context()->merge(aBegin, aEnd, bBegin, bEnd, outBegin, std::move(comp));
+	}
 } // namespace multi

@@ -916,6 +916,20 @@ TEST_CASE("Context: sort handles degenerate inputs")
 		CHECK(std::all_of(v.begin(), v.end(), [](int x) { return x == 7; }));
 	}
 
+	SECTION("all equal at parallel size — exercises parallel 3-way DNF")
+	{
+		// Below the sub-threshold short-circuit (2 * LEAF_FLOOR = 8192)
+		// the previous sections fall through to std::sort and never hit
+		// multi::sort's parallel-DNF path on degenerate input. This
+		// section uses a size above that threshold so the parallel DNF
+		// actually runs on all-equal data; correctness is the same
+		// (every element ends == 42), but we're exercising the algorithm
+		// rather than the std::sort fallback.
+		std::vector<int> v(20000, 42);
+		context.sort(v.begin(), v.end());
+		CHECK(std::all_of(v.begin(), v.end(), [](int x) { return x == 42; }));
+	}
+
 	context.stop();
 }
 
@@ -964,6 +978,258 @@ TEST_CASE("Context: sort on 1M items matches std::sort")
 	context.sort(v.begin(), v.end());
 
 	CHECK(v == reference);
+
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Context: merge
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: merge of two empty ranges produces empty output")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> a;
+	std::vector<int> b;
+	std::vector<int> out(1, -1);  // sentinel — must remain untouched
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+
+	CHECK(out.front() == -1);  // nothing written
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge with one empty side copies the other")
+{
+	multi::Context context;
+	context.start(4);
+
+	SECTION("A empty, B non-empty")
+	{
+		std::vector<int> a;
+		std::vector<int> b = {1, 2, 3, 5, 8};
+		std::vector<int> out(b.size(), 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+		CHECK(out == b);
+	}
+	SECTION("A non-empty, B empty")
+	{
+		std::vector<int> a = {1, 1, 2, 3, 5};
+		std::vector<int> b;
+		std::vector<int> out(a.size(), 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+		CHECK(out == a);
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge of two single-element ranges")
+{
+	multi::Context context;
+	context.start(2);
+
+	SECTION("a < b")
+	{
+		std::vector<int> a = {1};
+		std::vector<int> b = {2};
+		std::vector<int> out(2, 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+		CHECK(out == std::vector<int>{1, 2});
+	}
+	SECTION("b < a")
+	{
+		std::vector<int> a = {3};
+		std::vector<int> b = {1};
+		std::vector<int> out(2, 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+		CHECK(out == std::vector<int>{1, 3});
+	}
+	SECTION("equal — A comes first (stable)")
+	{
+		// std::merge spec: equivalent elements from the first range come
+		// first. multi::merge must match.
+		std::vector<int> a = {5};
+		std::vector<int> b = {5};
+		std::vector<int> out(2, 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), out.begin());
+		CHECK(out == std::vector<int>{5, 5});
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge of equal-length sorted runs")
+{
+	multi::Context context;
+	context.start(4);
+
+	// Sizes above MERGE_PARALLEL_THRESHOLD (8192 total) so the co-rank
+	// parallel path actually runs. Compare against std::merge result.
+	std::vector<int> a(5000), b(5000);
+	for (int i = 0; i < 5000; ++i)
+	{
+		a[i] = 2 * i;       // evens
+		b[i] = 2 * i + 1;   // odds
+	}
+
+	std::vector<int> got(10000, 0);
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+	std::vector<int> expected(10000, 0);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+	CHECK(got == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge with very imbalanced lengths")
+{
+	multi::Context context;
+	context.start(4);
+
+	SECTION("A=1, B=100k")
+	{
+		// One-element A streamed into a long B — the co-rank should
+		// place the single A element correctly; most of the work is
+		// just copying B.
+		std::vector<int> a = {50000};
+		std::vector<int> b(100000);
+		std::iota(b.begin(), b.end(), 0);
+
+		std::vector<int> got(100001, 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+		std::vector<int> expected(100001, 0);
+		std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+		CHECK(got == expected);
+	}
+	SECTION("A=100k, B=1")
+	{
+		std::vector<int> a(100000);
+		std::iota(a.begin(), a.end(), 0);
+		std::vector<int> b = {50000};
+
+		std::vector<int> got(100001, 0);
+		context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+		std::vector<int> expected(100001, 0);
+		std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+		CHECK(got == expected);
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge of identical sorted streams produces interleaved doubles")
+{
+	// Each stream is 0..9999. The merge result should have each value
+	// twice in a row (e.g. 0, 0, 1, 1, 2, 2, ...). Pure stability test
+	// at scale — every chunk boundary will land on a duplicate.
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> a(10000), b(10000);
+	std::iota(a.begin(), a.end(), 0);
+	std::iota(b.begin(), b.end(), 0);
+
+	std::vector<int> got(20000, 0);
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+	std::vector<int> expected(20000, 0);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+	CHECK(got == expected);
+	REQUIRE(got.size() == 20000);
+	// Spot-check: pairs are sorted-and-equal at consecutive indices.
+	for (int i = 0; i < 10000; ++i)
+	{
+		CHECK(got[2 * i] == i);
+		CHECK(got[2 * i + 1] == i);
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge with custom comparator (descending)")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> a(5000), b(5000);
+	std::iota(a.rbegin(), a.rend(), 0);  // 4999, 4998, …, 0
+	std::iota(b.rbegin(), b.rend(), 0);
+
+	std::vector<int> got(10000, 0);
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin(), std::greater<>{});
+
+	std::vector<int> expected(10000, 0);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin(), std::greater<>{});
+	CHECK(got == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge stability on duplicates across chunk boundary")
+{
+	// Pair<int, char> with comparator on the int field — stability is
+	// observable via the char tag. After a stable merge, all 'A' tags
+	// for a given key precede 'B' tags. Tests the co-rank's strict-vs-
+	// non-strict comparison choice; the `(j > 0 && i < m && !comp(...))`
+	// branch is the load-bearing line.
+	multi::Context context;
+	context.start(4);
+
+	using P = std::pair<int, char>;
+	std::vector<P> a, b;
+	a.reserve(5000);
+	b.reserve(5000);
+	for (int i = 0; i < 5000; ++i)
+	{
+		a.emplace_back(i / 5, 'A');   // 1000 distinct keys, each appearing 5x in A
+		b.emplace_back(i / 5, 'B');   // same keys, tag 'B' in B
+	}
+
+	auto byFirst = [](const P& x, const P& y) { return x.first < y.first; };
+
+	std::vector<P> got(10000);
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin(), byFirst);
+
+	std::vector<P> expected(10000);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin(), byFirst);
+	CHECK(got == expected);
+
+	// Explicit stability check: within each key group, all 'A' come
+	// before all 'B'.
+	for (int key = 0; key < 1000; ++key)
+	{
+		const int start = key * 10;
+		// First 5 of each 10-block should be 'A', next 5 'B'.
+		for (int j = 0; j < 5; ++j)
+			CHECK(got[start + j].second == 'A');
+		for (int j = 5; j < 10; ++j)
+			CHECK(got[start + j].second == 'B');
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: merge at 1M items cross-checks std::merge")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> a(500000), b(500000);
+	std::iota(a.begin(), a.end(), 0);          // 0..499999
+	std::iota(b.begin(), b.end(), 250000);     // 250000..749999 — overlapping range with A
+
+	std::vector<int> got(1000000, 0);
+	context.merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+	std::vector<int> expected(1000000, 0);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+	CHECK(got == expected);
 
 	context.stop();
 }

@@ -799,6 +799,22 @@ TEST_CASE("sort_random", "[bench][fast]")
 		};
 	}
 
+	SECTION("50k items")
+	{
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(50000, 0xB1, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(50000, 0xB1, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+	}
+
 	SECTION("100k items")
 	{
 		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
@@ -815,6 +831,22 @@ TEST_CASE("sort_random", "[bench][fast]")
 		};
 	}
 
+	SECTION("500k items")
+	{
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(500000, 0xC2, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(500000, 0xC2, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+	}
+
 	SECTION("1M items")
 	{
 		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
@@ -826,6 +858,25 @@ TEST_CASE("sort_random", "[bench][fast]")
 		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
 		{
 			auto data = buildShuffled(1000000, 0xC3, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+	}
+
+	SECTION("10M items")
+	{
+		// Verify the chunked-sort path scales sub-linearly out beyond
+		// 1M. 10× the items should be substantially less than 10× the
+		// time (Phase 4 acceptance criterion: ratio < 12).
+		BENCHMARK_ADVANCED("serial std::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(10000000, 0xC4, meter.runs());
+			std::size_t i = 0;
+			meter.measure([&]() { std::sort(data[i].begin(), data[i].end()); return ++i; });
+		};
+		BENCHMARK_ADVANCED("multi::sort")(Catch::Benchmark::Chronometer meter)
+		{
+			auto data = buildShuffled(10000000, 0xC4, meter.runs());
 			std::size_t i = 0;
 			meter.measure([&]() { multi::sort(data[i].begin(), data[i].end()); return ++i; });
 		};

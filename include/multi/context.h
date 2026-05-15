@@ -111,6 +111,25 @@ namespace multi
 		template <typename ITER, typename COMP = std::less<>>
 		void sort(ITER begin, ITER end, COMP comp = {});
 
+		// Parallel merge of two sorted ranges [aBegin, aEnd) and
+		// [bBegin, bEnd) into the range starting at outBegin. Output
+		// must have space for (aEnd-aBegin) + (bEnd-bBegin) elements and
+		// must not overlap either input. Stable: for equivalent elements
+		// (neither comp(a, b) nor comp(b, a)), the element from the A
+		// range appears first — matches std::merge's contract.
+		//
+		// Algorithm: co-rank binary search computes K balanced split
+		// points across both inputs in O(K * log(min(m, n))); each
+		// chunk then runs serial std::merge in parallel. Below
+		// MERGE_PARALLEL_THRESHOLD or with workerCount < 2, delegates
+		// directly to std::merge.
+		template <typename IterA, typename IterB, typename OutIter,
+		          typename Comp = std::less<>>
+		void merge(IterA aBegin, IterA aEnd,
+		           IterB bBegin, IterB bEnd,
+		           OutIter outBegin,
+		           Comp comp = {});
+
 		// Block the calling thread until `pred()` returns true, helping
 		// drain the pool in the meantime via tryRunSteal(). The underlying
 		// primitive for waitAll / waitAny — also useful directly when the

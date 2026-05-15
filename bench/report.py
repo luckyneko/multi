@@ -25,8 +25,16 @@ import tempfile
 import xml.etree.ElementTree as ET
 from typing import List, Optional, Tuple
 
-BASELINE = "serial (baseline)"
 DEFAULT_EXEC = "./build/bench-multi"
+
+
+def is_baseline(name: str) -> bool:
+    """Treat any benchmark whose name starts with 'serial' as the per-
+    group baseline. Catches both the canonical 'serial (baseline)' used
+    by tiny_tasks/mandelbrot/nested and the descriptive forms like
+    'serial std::sort' / 'serial std::accumulate' / 'serial
+    std::transform_reduce' used by the reduce/sort benches."""
+    return name.startswith("serial")
 
 
 # ---------------------------------------------------------------------------
@@ -132,10 +140,10 @@ def parse_xml(xml_path: str) -> List[Row]:
 # ---------------------------------------------------------------------------
 
 def print_report(rows: List[Row]) -> None:
-    W_WL      = 34
-    W_VARIANT = 22
+    W_WL      = 42
+    W_VARIANT = 40
     W_MEAN    = 10
-    W_SD      =  9
+    W_SD      = 10
     W_SPEEDUP =  8
     sep = "-" * (W_WL + W_VARIANT + W_MEAN + W_SD + W_SPEEDUP + 10)
 
@@ -151,7 +159,7 @@ def print_report(rows: List[Row]) -> None:
         label = tc_name if sec_name is None else f"{tc_name} / {sec_name}"
 
         baseline_ns = next(
-            (mean for name, mean, _ in benchmarks if name == BASELINE),
+            (mean for name, mean, _ in benchmarks if is_baseline(name)),
             None,
         )
 
@@ -160,7 +168,7 @@ def print_report(rows: List[Row]) -> None:
             wl_col = label if first else ""
             first = False
 
-            if name == BASELINE:
+            if is_baseline(name):
                 speedup = fmt_speedup(1.0)
             elif baseline_ns:
                 speedup = fmt_speedup(baseline_ns / mean_ns)

@@ -214,3 +214,24 @@ TEST_CASE("multi: async rethrows task exception")
 
 	multi::stop();
 }
+
+TEST_CASE("multi: merge free function routes through global context")
+{
+	multi::start(4);
+
+	std::vector<int> a(5000), b(5000);
+	for (int i = 0; i < 5000; ++i)
+	{
+		a[i] = 2 * i;
+		b[i] = 2 * i + 1;
+	}
+
+	std::vector<int> got(10000, 0);
+	multi::merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
+
+	std::vector<int> expected(10000, 0);
+	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
+	CHECK(got == expected);
+
+	multi::stop();
+}
