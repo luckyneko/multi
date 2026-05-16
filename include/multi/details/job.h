@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * Job
@@ -451,17 +451,14 @@ namespace multi
 		F m_func;
 	};
 
-	namespace details
+	// Used by Context::reduce to share TransformReduceJob with the no-
+	// transform path. Perfect-forwards its argument so it inlines to a
+	// no-op in optimised builds.
+	struct Identity
 	{
-		// Used by Context::reduce to share TransformReduceJob with the no-
-		// transform path. Perfect-forwards its argument so it inlines to a
-		// no-op in optimised builds.
-		struct Identity
-		{
-			template <class X>
-			constexpr X&& operator()(X&& x) const noexcept { return std::forward<X>(x); }
-		};
-	} // namespace details
+		template <class X>
+		constexpr X&& operator()(X&& x) const noexcept { return std::forward<X>(x); }
+	};
 
 	/*
 	 * TransformReduceJob — taskCount tasks, each folding a slice of the
@@ -625,4 +622,4 @@ namespace multi
 
 		std::tuple<Fs...> m_funcs;
 	};
-} // namespace multi
+} // namespace multi::details

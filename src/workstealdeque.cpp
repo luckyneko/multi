@@ -5,7 +5,7 @@
 
 #include "multi/details/workstealdeque.h"
 
-namespace multi
+namespace multi::details
 {
 	bool WorkStealDeque::tryPushLocal(Task&& task)
 	{
@@ -68,4 +68,4 @@ namespace multi
 			m_local.tryPushBottom(t);
 		}
 	}
-} // namespace multi
+} // namespace multi::details

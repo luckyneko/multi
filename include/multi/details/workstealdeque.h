@@ -11,7 +11,7 @@
 
 #include <cstddef>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * WorkStealDeque
@@ -67,4 +67,4 @@ namespace multi
 		ChaseLevDeque<Task, LOCAL_CAP> m_local;
 		MpmcQueue<Task, OVERFLOW_CAP>  m_overflow;
 	};
-} // namespace multi
+} // namespace multi::details

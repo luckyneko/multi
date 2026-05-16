@@ -30,7 +30,7 @@ namespace multi
 
 	bool Context::tryRunSteal()
 	{
-		Task stolen;
+		details::Task stolen;
 		if (m_workerPool.tryStealAny(&stolen))
 		{
 			try

@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * MpmcQueue
@@ -136,4 +136,4 @@ namespace multi
 		alignas(CACHE_LINE_SIZE) std::atomic<std::size_t> m_dequeuePos;
 		alignas(CACHE_LINE_SIZE) std::array<Cell, Capacity> m_cells;
 	};
-} // namespace multi
+} // namespace multi::details

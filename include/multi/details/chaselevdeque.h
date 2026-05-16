@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * ChaseLevDeque
@@ -178,4 +178,4 @@ namespace multi
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_bottom;
 		alignas(CACHE_LINE_SIZE) std::array<Slot, Capacity> m_buffer;
 	};
-} // namespace multi
+} // namespace multi::details

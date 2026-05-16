@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * Task
@@ -144,4 +144,4 @@ namespace multi
 		explicit operator bool() const noexcept { return m_vtable != nullptr; }
 	};
 
-} // namespace multi
+} // namespace multi::details

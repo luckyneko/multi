@@ -88,7 +88,7 @@ namespace
 		template <class A, class B>
 		void operator()(A&& a, B&& b) const
 		{
-			multi::parallel(multi::Task(std::forward<A>(a)), multi::Task(std::forward<B>(b)));
+			multi::parallel(multi::details::Task(std::forward<A>(a)), multi::details::Task(std::forward<B>(b)));
 		}
 	};
 

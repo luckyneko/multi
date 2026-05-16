@@ -28,8 +28,20 @@ namespace multi
 		Context(const Context&) = delete;
 		~Context() = default;
 
+		// Start `threadCount` worker threads. Idempotent only in the sense
+		// that calling `start()` on a running pool is undefined; call
+		// `stop()` first. Passing 0 leaves the pool inactive — every
+		// dispatch primitive runs inline on the caller in that state.
 		void start(size_t threadCount);
+
+		// Stop all workers, draining any in-flight tasks first. Blocks
+		// until every worker has exited. Safe to call on an inactive pool
+		// (no-op). After `stop()`, the pool can be `start()`ed again.
 		void stop();
+
+		// Number of worker threads currently running. Returns 0 when the
+		// pool is inactive — every dispatch primitive short-circuits to
+		// inline execution in that state.
 		size_t threadCount() const;
 
 		// Launch task onto a thread.
@@ -183,7 +195,7 @@ namespace multi
 		bool tryRunSteal();
 
 	private:
-		WorkerPool m_workerPool;
+		details::WorkerPool m_workerPool;
 	};
 } // namespace multi
 

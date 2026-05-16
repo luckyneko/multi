@@ -11,18 +11,18 @@
 
 TEST_CASE("WorkStealDeque: empty")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 	CHECK(deque.empty());
 	CHECK(deque.sizeHint() == 0);
 
-	multi::Task task;
+	multi::details::Task task;
 	CHECK(deque.pop(&task) == false);
 	CHECK(deque.steal(&task) == false);
 }
 
 TEST_CASE("WorkStealDeque: push and pop (LIFO)")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 	int order = 0;
 
 	deque.tryPushRemote([&order]() { order = 1; });
@@ -30,7 +30,7 @@ TEST_CASE("WorkStealDeque: push and pop (LIFO)")
 	deque.tryPushRemote([&order]() { order = 3; });
 	CHECK(deque.sizeHint() == 3);
 
-	multi::Task task;
+	multi::details::Task task;
 
 	// Pop returns from back (LIFO)
 	REQUIRE(deque.pop(&task));
@@ -51,14 +51,14 @@ TEST_CASE("WorkStealDeque: push and pop (LIFO)")
 
 TEST_CASE("WorkStealDeque: push and steal (FIFO)")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 	int order = 0;
 
 	deque.tryPushRemote([&order]() { order = 1; });
 	deque.tryPushRemote([&order]() { order = 2; });
 	deque.tryPushRemote([&order]() { order = 3; });
 
-	multi::Task task;
+	multi::details::Task task;
 
 	// Steal returns from front (FIFO)
 	REQUIRE(deque.steal(&task));
@@ -79,13 +79,13 @@ TEST_CASE("WorkStealDeque: push and steal (FIFO)")
 
 TEST_CASE("WorkStealDeque: mixed pop and steal")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 
 	deque.tryPushRemote([&]() {});
 	deque.tryPushRemote([&]() {});
 	deque.tryPushRemote([&]() {});
 
-	multi::Task task;
+	multi::details::Task task;
 
 	// Steal takes from front, pop takes from back
 	REQUIRE(deque.steal(&task)); // removes front
@@ -98,7 +98,7 @@ TEST_CASE("WorkStealDeque: mixed pop and steal")
 
 TEST_CASE("WorkStealDeque: concurrent push and steal stress", "[stress]")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 	const int numTasks = 1000;
 	std::atomic<int> counter(0);
 
@@ -115,7 +115,7 @@ TEST_CASE("WorkStealDeque: concurrent push and steal stress", "[stress]")
 	{
 		thieves.emplace_back([&]()
 							 {
-			multi::Task task;
+			multi::details::Task task;
 			while (totalStolen.load() < numTasks)
 			{
 				if (deque.steal(&task))
@@ -135,7 +135,7 @@ TEST_CASE("WorkStealDeque: concurrent push and steal stress", "[stress]")
 		t.join();
 
 	// Some tasks may still be in the deque if thieves stopped early
-	multi::Task task;
+	multi::details::Task task;
 	while (deque.pop(&task))
 	{
 		task();
@@ -148,7 +148,7 @@ TEST_CASE("WorkStealDeque: concurrent push and steal stress", "[stress]")
 
 TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 	const int numTasks = 1000;
 	std::atomic<int> counter(0);
 
@@ -159,7 +159,7 @@ TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 	std::atomic<int> totalDone(0);
 	std::thread owner([&]()
 					  {
-		multi::Task task;
+		multi::details::Task task;
 		while (deque.pop(&task))
 		{
 			task();
@@ -172,7 +172,7 @@ TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 	{
 		thieves.emplace_back([&]()
 							 {
-			multi::Task task;
+			multi::details::Task task;
 			while (deque.steal(&task))
 			{
 				task();
@@ -199,19 +199,19 @@ TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 // ---------------------------------------------------------------------------
 TEST_CASE("WorkStealDeque: tryPushLocal cascade preserves Task contents")
 {
-	multi::WorkStealDeque deque;
+	multi::details::WorkStealDeque deque;
 
 	constexpr std::size_t N = 1000;  // > LOCAL_CAP=256, forces cascade to overflow
 	std::atomic<int> counter(0);
 
 	for (std::size_t i = 0; i < N; ++i)
 	{
-		multi::Task t([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
+		multi::details::Task t([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
 		REQUIRE(deque.tryPushLocal(std::move(t)));
 	}
 
 	// Drain everything. Each popped Task must be invocable (m_vtable != nullptr).
-	multi::Task popped;
+	multi::details::Task popped;
 	std::size_t popCount = 0;
 	while (deque.pop(&popped))
 	{

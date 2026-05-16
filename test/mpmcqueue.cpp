@@ -11,7 +11,7 @@
 
 TEST_CASE("MpmcQueue: empty")
 {
-	multi::MpmcQueue<int, 8> q;
+	multi::details::MpmcQueue<int, 8> q;
 	CHECK(q.sizeHint() == 0);
 	int v = -1;
 	CHECK_FALSE(q.tryPop(&v));
@@ -19,7 +19,7 @@ TEST_CASE("MpmcQueue: empty")
 
 TEST_CASE("MpmcQueue: FIFO order")
 {
-	multi::MpmcQueue<int, 8> q;
+	multi::details::MpmcQueue<int, 8> q;
 	for (int i = 0; i < 5; ++i)
 		REQUIRE(q.tryPush(int(i)));
 	CHECK(q.sizeHint() == 5);
@@ -35,7 +35,7 @@ TEST_CASE("MpmcQueue: FIFO order")
 
 TEST_CASE("MpmcQueue: full at capacity")
 {
-	multi::MpmcQueue<int, 4> q;
+	multi::details::MpmcQueue<int, 4> q;
 	for (int i = 0; i < 4; ++i)
 		REQUIRE(q.tryPush(int(i)));
 	CHECK_FALSE(q.tryPush(99));
@@ -49,7 +49,7 @@ TEST_CASE("MpmcQueue: full at capacity")
 
 TEST_CASE("MpmcQueue: wraparound past capacity")
 {
-	multi::MpmcQueue<int, 4> q;
+	multi::details::MpmcQueue<int, 4> q;
 	int v = 0;
 	for (int round = 0; round < 20; ++round)
 	{
@@ -62,7 +62,7 @@ TEST_CASE("MpmcQueue: wraparound past capacity")
 TEST_CASE("MpmcQueue: concurrent producers and consumers stress", "[stress]")
 {
 	constexpr std::size_t CAP = 1024;
-	multi::MpmcQueue<int, CAP> q;
+	multi::details::MpmcQueue<int, CAP> q;
 
 	const int producerCount = 4;
 	const int consumerCount = 4;

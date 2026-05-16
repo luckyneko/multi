@@ -11,7 +11,7 @@
 
 TEST_CASE("ChaseLevDeque: empty")
 {
-	multi::ChaseLevDeque<int, 8> d;
+	multi::details::ChaseLevDeque<int, 8> d;
 	CHECK(d.sizeHint() == 0);
 	int v = -1;
 	CHECK_FALSE(d.tryPopBottom(&v));
@@ -20,7 +20,7 @@ TEST_CASE("ChaseLevDeque: empty")
 
 TEST_CASE("ChaseLevDeque: LIFO pop")
 {
-	multi::ChaseLevDeque<int, 8> d;
+	multi::details::ChaseLevDeque<int, 8> d;
 	for (int i = 0; i < 5; ++i)
 		REQUIRE(d.tryPushBottom(int(i)));
 	CHECK(d.sizeHint() == 5);
@@ -37,7 +37,7 @@ TEST_CASE("ChaseLevDeque: LIFO pop")
 
 TEST_CASE("ChaseLevDeque: FIFO steal")
 {
-	multi::ChaseLevDeque<int, 8> d;
+	multi::details::ChaseLevDeque<int, 8> d;
 	for (int i = 0; i < 5; ++i)
 		REQUIRE(d.tryPushBottom(int(i)));
 
@@ -52,7 +52,7 @@ TEST_CASE("ChaseLevDeque: FIFO steal")
 
 TEST_CASE("ChaseLevDeque: full at capacity")
 {
-	multi::ChaseLevDeque<int, 4> d;
+	multi::details::ChaseLevDeque<int, 4> d;
 	for (int i = 0; i < 4; ++i)
 		REQUIRE(d.tryPushBottom(int(i)));
 	CHECK_FALSE(d.tryPushBottom(99));
@@ -65,7 +65,7 @@ TEST_CASE("ChaseLevDeque: full at capacity")
 
 TEST_CASE("ChaseLevDeque: wraparound past capacity")
 {
-	multi::ChaseLevDeque<int, 4> d;
+	multi::details::ChaseLevDeque<int, 4> d;
 	int v = 0;
 	// Push/pop > capacity times to force the bottom index past Capacity.
 	for (int round = 0; round < 20; ++round)
@@ -78,7 +78,7 @@ TEST_CASE("ChaseLevDeque: wraparound past capacity")
 
 TEST_CASE("ChaseLevDeque: pop drains down to last element via CAS")
 {
-	multi::ChaseLevDeque<int, 8> d;
+	multi::details::ChaseLevDeque<int, 8> d;
 	REQUIRE(d.tryPushBottom(42));
 	int v = 0;
 	REQUIRE(d.tryPopBottom(&v));
@@ -91,7 +91,7 @@ TEST_CASE("ChaseLevDeque: concurrent steal stress", "[stress]")
 	// Owner produces N items and pops some; M stealers grab the rest.
 	// Every produced value must be observed exactly once across owner+stealers.
 	constexpr std::size_t CAP = 1024;
-	multi::ChaseLevDeque<int, CAP> d;
+	multi::details::ChaseLevDeque<int, CAP> d;
 
 	const int totalItems = 50000;
 	const int stealerCount = 4;

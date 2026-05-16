@@ -135,9 +135,9 @@ namespace multi
 		context()->range(begin, end, step, std::forward<FUNC>(func));
 	}
 	template <typename IDX, typename FUNC>
-	void range(size_t jobCount, IDX begin, IDX end, IDX step, FUNC&& func)
+	void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		context()->range(jobCount, begin, end, step, std::forward<FUNC>(func));
+		context()->range(taskCount, begin, end, step, std::forward<FUNC>(func));
 	}
 
 	// Parallel reduce / transformReduce — see Context::reduce documentation

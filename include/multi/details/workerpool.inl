@@ -1,5 +1,5 @@
 
-namespace multi
+namespace multi::details
 {
 	template <class Gen>
 	void WorkerPool::submitBatch(size_t count, Gen&& gen)
@@ -56,4 +56,4 @@ namespace multi
 
 		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
-} // namespace multi
+} // namespace multi::details

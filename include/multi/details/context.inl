@@ -45,7 +45,7 @@ namespace multi
 		// than two.
 		if (count == 2)
 		{
-			m_workerPool.submit(Task([&job]() { job.run(0); }));
+			m_workerPool.submit(details::Task([&job]() { job.run(0); }));
 			job.run(1);
 			while (job.remaining() > 0)
 			{
@@ -61,7 +61,7 @@ namespace multi
 		// `&job` carries the JobT type, so the inner job.run(i) is a direct
 		// call resolved at compile time.
 		m_workerPool.submitBatch(count, [&job](std::size_t i)
-								 { return Task([&job, i]() { job.run(i); }); });
+								 { return details::Task([&job, i]() { job.run(i); }); });
 
 		// Caller participates by stealing while waiting. The release in
 		// runOne() pairs with the acquire in remaining(), so every task's
@@ -89,7 +89,7 @@ namespace multi
 	{
 		using DecayedF = std::decay_t<F>;
 		using R = std::invoke_result_t<DecayedF>;
-		auto job = std::make_shared<AsyncJob<DecayedF, R>>(std::forward<F>(f));
+		auto job = std::make_shared<details::AsyncJob<DecayedF, R>>(std::forward<F>(f));
 		auto fut = job->getFuture();
 		m_workerPool.submit([job]() { job->run(0); });
 		return Handle<R>(std::move(fut));
@@ -160,7 +160,7 @@ namespace multi
 	template <typename... TASKS>
 	void Context::parallel(TASKS&&... tasks)
 	{
-		ParallelJob<std::decay_t<TASKS>...> job(std::forward<TASKS>(tasks)...);
+		details::ParallelJob<std::decay_t<TASKS>...> job(std::forward<TASKS>(tasks)...);
 		runQueueJob(job);
 	}
 
@@ -182,14 +182,14 @@ namespace multi
 	template <typename ITER, typename FUNC>
 	void Context::each(ITER begin, ITER end, FUNC&& func)
 	{
-		EachJob<ITER, std::remove_reference_t<FUNC>> job(begin, end, func);
+		details::EachJob<ITER, std::remove_reference_t<FUNC>> job(begin, end, func);
 		runQueueJob(job);
 	}
 
 	template <typename ITER, typename FUNC>
 	void Context::each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
 	{
-		ChunkedEachJob<ITER, std::remove_reference_t<FUNC>> job(taskCount, begin, end, func);
+		details::ChunkedEachJob<ITER, std::remove_reference_t<FUNC>> job(taskCount, begin, end, func);
 		runQueueJob(job);
 	}
 
@@ -202,14 +202,14 @@ namespace multi
 	template <typename IDX, typename FUNC>
 	void Context::range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		RangeJob<IDX, std::remove_reference_t<FUNC>> job(begin, end, step, func);
+		details::RangeJob<IDX, std::remove_reference_t<FUNC>> job(begin, end, step, func);
 		runQueueJob(job);
 	}
 
 	template <typename IDX, typename FUNC>
 	void Context::range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(taskCount, begin, end, step, func);
+		details::ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(taskCount, begin, end, step, func);
 		runQueueJob(job);
 	}
 
@@ -252,7 +252,7 @@ namespace multi
 	T Context::reduce(size_t taskCount, ITER begin, ITER end, T init, BinaryOp&& op)
 	{
 		details::Identity identity;
-		TransformReduceJob<ITER, T,
+		details::TransformReduceJob<ITER, T,
 		                   std::remove_reference_t<BinaryOp>,
 		                   details::Identity>
 			job(taskCount, begin, end, std::move(init), op, identity);
@@ -292,7 +292,7 @@ namespace multi
 	T Context::transformReduce(size_t taskCount, ITER begin, ITER end, T init,
 	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
-		TransformReduceJob<ITER, T,
+		details::TransformReduceJob<ITER, T,
 		                   std::remove_reference_t<BinaryOp>,
 		                   std::remove_reference_t<UnaryOp>>
 			job(taskCount, begin, end, std::move(init), reduceOp, transformOp);

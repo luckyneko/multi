@@ -16,7 +16,7 @@
 #include <thread>
 #include <vector>
 
-namespace multi
+namespace multi::details
 {
 	/*
 	 * WorkerPool
@@ -116,6 +116,6 @@ namespace multi
 		// worker storage.
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_inFlight;
 	};
-} // namespace multi
+} // namespace multi::details
 
 #include "multi/details/workerpool.inl"

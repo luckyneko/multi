@@ -19,7 +19,7 @@
 #	include <pthread.h>
 #endif
 
-namespace multi
+namespace multi::details
 {
 	namespace
 	{
@@ -114,7 +114,7 @@ namespace multi
 		// would let users keep submitting against a pool that doesn't match
 		// the threadCount they just requested.
 		if (m_active.load(std::memory_order_relaxed))
-			throw std::logic_error("multi::WorkerPool::start called while pool is already active");
+			throw std::logic_error("multi::details::WorkerPool::start called while pool is already active");
 
 		if (threadCount == 0)
 			return;
@@ -382,4 +382,4 @@ namespace multi
 
 		return false;
 	}
-} // namespace multi
+} // namespace multi::details

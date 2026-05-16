@@ -181,9 +181,9 @@ TEST_CASE("Context: parallel rethrows first exception and runs siblings")
 	std::atomic<int> otherRan(0);
 	CHECK_THROWS_AS(
 		context.parallel(
-			multi::Task([]()
+			multi::details::Task([]()
 						{ throw std::runtime_error("boom"); }),
-			multi::Task([&]()
+			multi::details::Task([&]()
 						{ otherRan++; })),
 		std::runtime_error);
 	CHECK(otherRan == 1);

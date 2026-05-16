@@ -13,14 +13,14 @@
 
 TEST_CASE("WorkerPool: submit runs inline when not started")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	REQUIRE(pool.threadCount() == 0);
 
 	int value = 0;
 	pool.submit([&value]() { value = 42; });
 	CHECK(value == 42);
 
-	std::vector<multi::Task> batch;
+	std::vector<multi::details::Task> batch;
 	batch.emplace_back([&value]() { value += 1; });
 	batch.emplace_back([&value]() { value += 2; });
 	pool.submitBatch(std::move(batch));
@@ -29,7 +29,7 @@ TEST_CASE("WorkerPool: submit runs inline when not started")
 
 TEST_CASE("WorkerPool: submit runs inline after stop")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(2);
 	pool.stop();
 	REQUIRE(!pool.isActive());
@@ -38,7 +38,7 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 	pool.submit([&value]() { value = 42; });
 	CHECK(value == 42);
 
-	std::vector<multi::Task> batch;
+	std::vector<multi::details::Task> batch;
 	batch.emplace_back([&value]() { value += 1; });
 	batch.emplace_back([&value]() { value += 2; });
 	pool.submitBatch(std::move(batch));
@@ -48,7 +48,7 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 TEST_CASE("WorkerPool: submit single tasks")
 {
 	auto numThreads = GENERATE(1, 2, 4, 8, 16);
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(numThreads);
 
 	std::atomic<int> value(0);
@@ -75,7 +75,7 @@ TEST_CASE("WorkerPool: submit single tasks")
 TEST_CASE("WorkerPool: submitBatch distributes work")
 {
 	auto numThreads = GENERATE(1, 2, 4, 8, 16);
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(numThreads);
 
 	const int numTasks = 100;
@@ -83,7 +83,7 @@ TEST_CASE("WorkerPool: submitBatch distributes work")
 	auto done = std::make_shared<std::promise<void>>();
 	auto doneHandle = done->get_future();
 
-	std::vector<multi::Task> tasks;
+	std::vector<multi::details::Task> tasks;
 	for (int i = 0; i < numTasks; ++i)
 	{
 		tasks.emplace_back([&counter, numTasks, done]()
@@ -100,10 +100,10 @@ TEST_CASE("WorkerPool: submitBatch distributes work")
 
 TEST_CASE("WorkerPool: empty batch is a no-op")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(2);
 
-	std::vector<multi::Task> empty;
+	std::vector<multi::details::Task> empty;
 	pool.submitBatch(std::move(empty));
 
 	pool.stop();
@@ -112,7 +112,7 @@ TEST_CASE("WorkerPool: empty batch is a no-op")
 TEST_CASE("WorkerPool: nested submit completes")
 {
 	auto numThreads = GENERATE(1, 2, 4, 8, 16);
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(numThreads);
 
 	std::atomic<int> value(0);
@@ -140,18 +140,18 @@ TEST_CASE("WorkerPool: nested submit completes")
 TEST_CASE("WorkerPool: tryStealAny lets caller participate")
 {
 	auto numThreads = GENERATE(1, 2, 4, 8, 16);
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(numThreads);
 
 	const int numTasks = 50;
 	std::atomic<int> counter(0);
 
-	std::vector<multi::Task> tasks;
+	std::vector<multi::details::Task> tasks;
 	for (int i = 0; i < numTasks; ++i)
 		tasks.emplace_back([&counter]() { counter++; });
 	pool.submitBatch(std::move(tasks));
 
-	multi::Task stolen;
+	multi::details::Task stolen;
 	while (pool.tryStealAny(&stolen))
 	{
 		stolen();
@@ -168,7 +168,7 @@ TEST_CASE("WorkerPool: tryStealAny lets caller participate")
 TEST_CASE("WorkerPool: high contention batch")
 {
 	auto numThreads = GENERATE(1, 2, 4, 8, 16);
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(numThreads);
 
 	const int numBatches = 20;
@@ -180,7 +180,7 @@ TEST_CASE("WorkerPool: high contention batch")
 
 	for (int b = 0; b < numBatches; ++b)
 	{
-		std::vector<multi::Task> tasks;
+		std::vector<multi::details::Task> tasks;
 		for (int i = 0; i < batchSize; ++i)
 		{
 			tasks.emplace_back([&counter, totalTasks, allDone]()
@@ -198,7 +198,7 @@ TEST_CASE("WorkerPool: high contention batch")
 
 TEST_CASE("WorkerPool: start throws when already active")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(2);
 	CHECK_THROWS_AS(pool.start(2), std::logic_error);
 	CHECK_THROWS_AS(pool.start(0), std::logic_error);
@@ -215,7 +215,7 @@ TEST_CASE("WorkerPool: destructor stops threads on forgotten stop")
 {
 	std::atomic<int> counter(0);
 	{
-		multi::WorkerPool pool;
+		multi::details::WorkerPool pool;
 		pool.start(2);
 		pool.submit([&counter]() { counter++; });
 		// Intentionally no stop() — destructor must join threads defensively.
@@ -230,13 +230,13 @@ TEST_CASE("WorkerPool: destructor stops threads on forgotten stop")
 // the local Chase-Lev half.
 TEST_CASE("WorkerPool: stop drains pending tasks")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(2);
 
 	std::atomic<int> counter(0);
 	const int numTasks = 2000;
 
-	std::vector<multi::Task> tasks;
+	std::vector<multi::details::Task> tasks;
 	tasks.reserve(numTasks);
 	for (int i = 0; i < numTasks; ++i)
 		tasks.emplace_back([&counter]()
@@ -258,7 +258,7 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 {
 	for (int trial = 0; trial < 8; ++trial)
 	{
-		multi::WorkerPool pool;
+		multi::details::WorkerPool pool;
 		pool.start(2);
 
 		std::atomic<int> totalRun(0);
@@ -279,7 +279,7 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 		{
 			while (shouldRun.load(std::memory_order_relaxed))
 			{
-				std::vector<multi::Task> batch;
+				std::vector<multi::details::Task> batch;
 				for (int i = 0; i < 8; ++i)
 					batch.emplace_back([&totalRun]()
 									   { totalRun.fetch_add(1, std::memory_order_relaxed); });
@@ -321,7 +321,7 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 
 TEST_CASE("WorkerPool: worker thread name matches multi-N convention")
 {
-	multi::WorkerPool pool;
+	multi::details::WorkerPool pool;
 	pool.start(3);
 
 	// Capture names from each worker via async-style submit. Each task reads
@@ -330,7 +330,7 @@ TEST_CASE("WorkerPool: worker thread name matches multi-N convention")
 	auto done = std::make_shared<std::atomic<int>>(0);
 	for (std::size_t i = 0; i < 3; ++i)
 	{
-		pool.submit(multi::Task([&, i, done]() {
+		pool.submit(multi::details::Task([&, i, done]() {
 			char buf[32] = {0};
 			pthread_getname_np(pthread_self(), buf, sizeof(buf));
 			names[i] = buf;
