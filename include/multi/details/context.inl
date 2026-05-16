@@ -6,6 +6,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -215,12 +216,36 @@ namespace multi
 	template <typename ITER, typename T, typename BinaryOp>
 	T Context::reduce(ITER begin, ITER end, T init, BinaryOp&& op)
 	{
-		// Default chunk count: one chunk per worker, minimum 1. Caller can
-		// override via the taskCount overload. Picked by measurement: more
+		// Small-N serial fallback. Parallel dispatch (~5-10 µs round-trip
+		// even with fencedNotify wake) dominates below this band — measured
+		// at 10k items: serial std::accumulate ~5.5 µs vs parallel ~30 µs
+		// (0.17×); at 100k serial ~55 µs vs parallel ~41 µs (1.34×). The
+		// threshold sits between the two. Applies even for moderately
+		// expensive transforms: trig+sqrt at 10k items still loses
+		// 0.73× because dispatch is the floor, not per-element work.
+		//
+		// Only applied for random-access iterators — for other categories
+		// std::distance is O(n) and the parallel path already does a full
+		// walk in TransformReduceJob::makeSetup, so the cost ordering is
+		// unchanged. Users with very expensive ops at small N can force
+		// parallel via the explicit-taskCount overload below.
+		constexpr std::size_t REDUCE_SERIAL_THRESHOLD = 32768;
+		constexpr bool isRA = std::is_base_of_v<std::random_access_iterator_tag,
+			typename std::iterator_traits<ITER>::iterator_category>;
+		if (threadCount() < 2)
+			return std::accumulate(begin, end, std::move(init), std::forward<BinaryOp>(op));
+		if constexpr (isRA)
+		{
+			if (static_cast<std::size_t>(std::distance(begin, end)) < REDUCE_SERIAL_THRESHOLD)
+				return std::accumulate(begin, end, std::move(init), std::forward<BinaryOp>(op));
+		}
+
+		// Default chunk count: one chunk per worker. Caller can override
+		// via the taskCount overload. Picked by measurement: more
 		// oversubscription hurt simple sums (combine overhead) on the
 		// arithmetic benches without measurable load-balance gain.
-		const size_t n = threadCount() > 0 ? threadCount() : 1;
-		return reduce(n, begin, end, std::move(init), std::forward<BinaryOp>(op));
+		return reduce(threadCount(), begin, end, std::move(init),
+		               std::forward<BinaryOp>(op));
 	}
 
 	template <typename ITER, typename T, typename BinaryOp>
@@ -239,8 +264,26 @@ namespace multi
 	T Context::transformReduce(ITER begin, ITER end, T init,
 	                            BinaryOp&& reduceOp, UnaryOp&& transformOp)
 	{
-		const size_t n = threadCount() > 0 ? threadCount() : 1;
-		return transformReduce(n, begin, end, std::move(init),
+		// Small-N serial fallback — see Context::reduce for rationale.
+		// Same 32k threshold: even with ~30 ns/element transforms, dispatch
+		// overhead dominates below this size (measured 0.11× at 1k items,
+		// 0.73× at 10k items on a trig+sqrt op).
+		constexpr std::size_t REDUCE_SERIAL_THRESHOLD = 32768;
+		constexpr bool isRA = std::is_base_of_v<std::random_access_iterator_tag,
+			typename std::iterator_traits<ITER>::iterator_category>;
+		if (threadCount() < 2)
+			return std::transform_reduce(begin, end, std::move(init),
+			                              std::forward<BinaryOp>(reduceOp),
+			                              std::forward<UnaryOp>(transformOp));
+		if constexpr (isRA)
+		{
+			if (static_cast<std::size_t>(std::distance(begin, end)) < REDUCE_SERIAL_THRESHOLD)
+				return std::transform_reduce(begin, end, std::move(init),
+				                              std::forward<BinaryOp>(reduceOp),
+				                              std::forward<UnaryOp>(transformOp));
+		}
+
+		return transformReduce(threadCount(), begin, end, std::move(init),
 		                        std::forward<BinaryOp>(reduceOp),
 		                        std::forward<UnaryOp>(transformOp));
 	}

@@ -760,6 +760,69 @@ TEST_CASE("transformReduce_sumOfSquares", "[bench][fast]")
 }
 
 // ---------------------------------------------------------------------------
+// transformReduce_expensive — same shape as transformReduce_sumOfSquares but
+// with a non-trivial per-element op (mixed trig + sqrt, ~30-60 ns/element).
+// Probes the *other* end of the dispatch-cost / per-item-work spectrum: if
+// the per-element work is high enough, parallel should win at much smaller
+// N than the cheap-op case. Used to size a serial-fallback threshold: a
+// threshold tuned only against cheap ops may punt to serial when expensive
+// ops would have parallelised profitably.
+// ---------------------------------------------------------------------------
+TEST_CASE("transformReduce_expensive", "[bench][fast]")
+{
+	// ~30-60 ns/element on modern hardware — trig + sqrt won't vectorise as
+	// tightly as `x*x`, and exercises the chunked fold under realistic
+	// "moderately expensive" per-item work.
+	auto expensive = [](double x) {
+		return std::sin(x) * std::cos(x) + std::sqrt(std::abs(x) + 1.0);
+	};
+
+	auto runSerial = [&](const std::vector<double>& v) {
+		return std::transform_reduce(v.begin(), v.end(), 0.0, std::plus<>{}, expensive);
+	};
+	auto runMultiDefault = [&](const std::vector<double>& v) {
+		return multi::transformReduce(v.begin(), v.end(), 0.0, std::plus<>{}, expensive);
+	};
+	auto runMultiOversub = [&](const std::vector<double>& v) {
+		const std::size_t chunks = (multi::threadCount() + 1) * 4;
+		return multi::transformReduce(chunks, v.begin(), v.end(), 0.0, std::plus<>{}, expensive);
+	};
+
+	SECTION("1k items")
+	{
+		std::vector<double> v(1000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("10k items")
+	{
+		std::vector<double> v(10000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<double> v(100000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<double> v(1000000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
+}
+
+// ---------------------------------------------------------------------------
 // sort_random — parallel sort of a random-shuffled int vector vs std::sort.
 // Each sample sorts a *fresh* copy (allocated up front, outside the timed
 // portion via BENCHMARK_ADVANCED + Chronometer): after the first sort the
