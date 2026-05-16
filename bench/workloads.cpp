@@ -686,6 +686,14 @@ TEST_CASE("reduce_sum", "[bench][fast]")
 		return multi::reduce(chunks, v.begin(), v.end(), 0.0, std::plus<>{});
 	};
 
+	SECTION("1k items")
+	{
+		std::vector<double> v(1000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::accumulate") { return runSerial(v); };
+		BENCHMARK("multi::reduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::reduce (4x oversub)") { return runMultiOversub(v); };
+	}
 	SECTION("10k items")
 	{
 		std::vector<double> v(10000);
@@ -733,6 +741,14 @@ TEST_CASE("transformReduce_sumOfSquares", "[bench][fast]")
 		return multi::transformReduce(chunks, v.begin(), v.end(), 0.0, std::plus<>{}, sq);
 	};
 
+	SECTION("1k items")
+	{
+		std::vector<double> v(1000);
+		std::iota(v.begin(), v.end(), 1.0);
+		BENCHMARK("serial std::transform_reduce") { return runSerial(v); };
+		BENCHMARK("multi::transformReduce (default chunks)") { return runMultiDefault(v); };
+		BENCHMARK("multi::transformReduce (4x oversub)") { return runMultiOversub(v); };
+	}
 	SECTION("10k items")
 	{
 		std::vector<double> v(10000);
