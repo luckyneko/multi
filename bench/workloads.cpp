@@ -999,3 +999,162 @@ TEST_CASE("parallel_pair", "[bench][fast]")
 		};
 	}
 }
+
+// ---------------------------------------------------------------------------
+// transform_unary — parallel transform vs std::transform. Per-element op
+// is a cheap arithmetic load + multiply; this is the toughest case for
+// parallel (dispatch must amortise over very little work). 32k+ items
+// is where multi::transform's parallel path kicks in (below that, it
+// delegates to std::transform serial).
+// ---------------------------------------------------------------------------
+TEST_CASE("transform_unary", "[bench][fast]")
+{
+	auto op = [](double x) { return x * 2.0 + 1.0; };
+
+	auto runSerial = [&](const std::vector<double>& in, std::vector<double>& out) {
+		std::transform(in.begin(), in.end(), out.begin(), op);
+		return out[0];
+	};
+	auto runMulti = [&](const std::vector<double>& in, std::vector<double>& out) {
+		multi::transform(in.begin(), in.end(), out.begin(), op);
+		return out[0];
+	};
+
+	SECTION("10k items")
+	{
+		std::vector<double> in(10000); std::iota(in.begin(), in.end(), 1.0);
+		std::vector<double> out(10000);
+		BENCHMARK("serial std::transform") { return runSerial(in, out); };
+		BENCHMARK("multi::transform")      { return runMulti(in, out); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<double> in(100000); std::iota(in.begin(), in.end(), 1.0);
+		std::vector<double> out(100000);
+		BENCHMARK("serial std::transform") { return runSerial(in, out); };
+		BENCHMARK("multi::transform")      { return runMulti(in, out); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<double> in(1000000); std::iota(in.begin(), in.end(), 1.0);
+		std::vector<double> out(1000000);
+		BENCHMARK("serial std::transform") { return runSerial(in, out); };
+		BENCHMARK("multi::transform")      { return runMulti(in, out); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// fill — parallel fill vs std::fill. Write-only; the most bandwidth-bound
+// of the elementwise primitives. Establishes the "even with the per-chunk
+// std::* dispatch, write-bandwidth caps us" ceiling for the README story.
+// ---------------------------------------------------------------------------
+TEST_CASE("fill", "[bench][fast]")
+{
+	auto runSerial = [&](std::vector<double>& v) { std::fill(v.begin(), v.end(), 7.0); return v[0]; };
+	auto runMulti  = [&](std::vector<double>& v) { multi::fill(v.begin(), v.end(), 7.0); return v[0]; };
+
+	SECTION("10k items")
+	{
+		std::vector<double> v(10000);
+		BENCHMARK("serial std::fill") { return runSerial(v); };
+		BENCHMARK("multi::fill")      { return runMulti(v); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<double> v(100000);
+		BENCHMARK("serial std::fill") { return runSerial(v); };
+		BENCHMARK("multi::fill")      { return runMulti(v); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<double> v(1000000);
+		BENCHMARK("serial std::fill") { return runSerial(v); };
+		BENCHMARK("multi::fill")      { return runMulti(v); };
+	}
+	SECTION("10M items")
+	{
+		std::vector<double> v(10000000);
+		BENCHMARK("serial std::fill") { return runSerial(v); };
+		BENCHMARK("multi::fill")      { return runMulti(v); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// count_if — parallel count_if vs std::count_if. K-chunk dispatch, each
+// chunk calls std::count_if on its slice (lets the lib's vectorised inner
+// loop do the SIMD work).
+// ---------------------------------------------------------------------------
+TEST_CASE("count_if", "[bench][fast]")
+{
+	auto pred = [](int x) { return (x & 0xF) == 0; };
+
+	auto runSerial = [&](const std::vector<int>& v) {
+		return std::count_if(v.begin(), v.end(), pred);
+	};
+	auto runMulti = [&](const std::vector<int>& v) {
+		return multi::count_if(v.begin(), v.end(), pred);
+	};
+
+	SECTION("10k items")
+	{
+		std::vector<int> v(10000); std::iota(v.begin(), v.end(), 0);
+		BENCHMARK("serial std::count_if") { return runSerial(v); };
+		BENCHMARK("multi::count_if")      { return runMulti(v); };
+	}
+	SECTION("100k items")
+	{
+		std::vector<int> v(100000); std::iota(v.begin(), v.end(), 0);
+		BENCHMARK("serial std::count_if") { return runSerial(v); };
+		BENCHMARK("multi::count_if")      { return runMulti(v); };
+	}
+	SECTION("1M items")
+	{
+		std::vector<int> v(1000000); std::iota(v.begin(), v.end(), 0);
+		BENCHMARK("serial std::count_if") { return runSerial(v); };
+		BENCHMARK("multi::count_if")      { return runMulti(v); };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// min_element — parallel scan reduction. Tests the K-chunk + serial-combine
+// path that backs minmax_element / max_element too.
+// ---------------------------------------------------------------------------
+TEST_CASE("min_element", "[bench][fast]")
+{
+	auto runSerial = [&](const std::vector<int>& v) {
+		return std::min_element(v.begin(), v.end()) - v.begin();
+	};
+	auto runMulti = [&](const std::vector<int>& v) {
+		return multi::min_element(v.begin(), v.end()) - v.begin();
+	};
+
+	// Minimum hidden somewhere in the middle so the parallel chunks all do
+	// real work (vs an early-termination-friendly layout).
+	auto makeData = [](std::size_t n) {
+		std::vector<int> v(n);
+		std::mt19937 rng(0xC0FFEE);
+		std::uniform_int_distribution<int> d(1, 1'000'000);
+		for (auto& x : v) x = d(rng);
+		v[n / 2] = -1;                          // single guaranteed minimum
+		return v;
+	};
+
+	SECTION("10k items")
+	{
+		auto v = makeData(10000);
+		BENCHMARK("serial std::min_element") { return runSerial(v); };
+		BENCHMARK("multi::min_element")      { return runMulti(v); };
+	}
+	SECTION("100k items")
+	{
+		auto v = makeData(100000);
+		BENCHMARK("serial std::min_element") { return runSerial(v); };
+		BENCHMARK("multi::min_element")      { return runMulti(v); };
+	}
+	SECTION("1M items")
+	{
+		auto v = makeData(1000000);
+		BENCHMARK("serial std::min_element") { return runSerial(v); };
+		BENCHMARK("multi::min_element")      { return runMulti(v); };
+	}
+}

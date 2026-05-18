@@ -1233,3 +1233,244 @@ TEST_CASE("Context: merge at 1M items cross-checks std::merge")
 
 	context.stop();
 }
+
+// =============================================================================
+// transform / fill / generate / replace / replace_if / count / count_if /
+// min_element / max_element / minmax_element
+// =============================================================================
+//
+// Each set uses a thread count >= 4 with input sizes both below the
+// ELEMENT_SERIAL_THRESHOLD (32768) — to exercise the serial fallback — and
+// well above it, to exercise the parallel range dispatch. The "large"
+// rungs are sized to be ≥ threshold but quick enough to keep the test
+// suite under a second.
+
+TEST_CASE("Context: transform (unary) over a small range uses serial fallback")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> in{1, 2, 3, 4, 5};
+	std::vector<int> out(in.size(), 0);
+	context.transform(in.begin(), in.end(), out.begin(),
+	                   [](int x) { return x * x; });
+	CHECK(out == std::vector<int>{1, 4, 9, 16, 25});
+
+	context.stop();
+}
+
+TEST_CASE("Context: transform (unary) at scale dispatches in parallel")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> in(50000);
+	std::iota(in.begin(), in.end(), 0);
+	std::vector<int> out(in.size(), 0);
+	context.transform(in.begin(), in.end(), out.begin(),
+	                   [](int x) { return x + 1; });
+	for (std::size_t i = 0; i < in.size(); ++i)
+		REQUIRE(out[i] == static_cast<int>(i) + 1);
+
+	context.stop();
+}
+
+TEST_CASE("Context: transform (binary) combines two inputs")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> a(40000), b(40000), out(40000, 0);
+	std::iota(a.begin(), a.end(), 1);          // 1..40000
+	std::iota(b.begin(), b.end(), 100);        // 100..40099
+	context.transform(a.begin(), a.end(), b.begin(), out.begin(),
+	                   [](int x, int y) { return x + y; });
+	for (std::size_t i = 0; i < a.size(); ++i)
+		REQUIRE(out[i] == a[i] + b[i]);
+
+	context.stop();
+}
+
+TEST_CASE("Context: transform handles empty input")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> in, out;
+	context.transform(in.begin(), in.end(), out.begin(),
+	                   [](int x) { return x; });
+	CHECK(out.empty());
+
+	context.stop();
+}
+
+TEST_CASE("Context: fill sets every element")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(40000, 0);
+	context.fill(v.begin(), v.end(), 7);
+	for (int x : v) REQUIRE(x == 7);
+
+	// Below-threshold path
+	std::vector<int> small(100, 0);
+	context.fill(small.begin(), small.end(), 9);
+	for (int x : small) REQUIRE(x == 9);
+
+	context.stop();
+}
+
+TEST_CASE("Context: generate invokes thread-safe gen for every element")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::atomic<int> counter{0};
+	std::vector<int> v(40000, -1);
+	context.generate(v.begin(), v.end(),
+	                  [&counter]() { return counter.fetch_add(1, std::memory_order_relaxed); });
+
+	// gen was called exactly v.size() times.
+	CHECK(counter.load() == static_cast<int>(v.size()));
+	// Every slot was written (no -1 left).
+	CHECK(std::find(v.begin(), v.end(), -1) == v.end());
+
+	context.stop();
+}
+
+TEST_CASE("Context: replace and replace_if rewrite matching elements")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(40000);
+	std::iota(v.begin(), v.end(), 0);          // 0..39999
+	// Mark every 7th element with -1 then replace it back via replace_if.
+	// Sentinel values are outside the iota range to avoid accidental hits.
+	for (std::size_t i = 0; i < v.size(); i += 7) v[i] = -1;
+	const std::ptrdiff_t markedCount =
+		static_cast<std::ptrdiff_t>((v.size() + 6) / 7);
+	context.replace_if(v.begin(), v.end(),
+	                    [](int x) { return x < 0; }, 1'000'000);
+	CHECK(std::count(v.begin(), v.end(), 1'000'000) == markedCount);
+
+	// replace by exact value: 1'000'000 → 2'000'000.
+	context.replace(v.begin(), v.end(), 1'000'000, 2'000'000);
+	CHECK(std::count(v.begin(), v.end(), 1'000'000) == 0);
+	CHECK(std::count(v.begin(), v.end(), 2'000'000) == markedCount);
+
+	context.stop();
+}
+
+TEST_CASE("Context: count and count_if match std::count semantics")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(50000, 0);
+	// Pattern: every 3rd element is 1, every 5th is 2, others stay 0.
+	for (std::size_t i = 0; i < v.size(); ++i)
+	{
+		if (i % 3 == 0)      v[i] = 1;
+		else if (i % 5 == 0) v[i] = 2;
+	}
+
+	const auto expectedOnes = std::count(v.begin(), v.end(), 1);
+	const auto expectedTwos = std::count(v.begin(), v.end(), 2);
+	CHECK(context.count(v.begin(), v.end(), 1) == expectedOnes);
+	CHECK(context.count(v.begin(), v.end(), 2) == expectedTwos);
+	CHECK(context.count_if(v.begin(), v.end(),
+	                        [](int x) { return x != 0; }) ==
+	      expectedOnes + expectedTwos);
+
+	// Empty range returns 0.
+	std::vector<int> empty;
+	CHECK(context.count(empty.begin(), empty.end(), 1) == 0);
+	CHECK(context.count_if(empty.begin(), empty.end(),
+	                        [](int) { return true; }) == 0);
+
+	context.stop();
+}
+
+TEST_CASE("Context: min_element / max_element find extrema and tie-break first")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(50000);
+	std::iota(v.begin(), v.end(), -10000);     // -10000 .. 39999
+
+	auto minIt = context.min_element(v.begin(), v.end());
+	auto maxIt = context.max_element(v.begin(), v.end());
+	REQUIRE(minIt != v.end());
+	REQUIRE(maxIt != v.end());
+	CHECK(*minIt == -10000);
+	CHECK(*maxIt == 39999);
+	// Iterator points to the actual element, not a copy.
+	CHECK(minIt == v.begin());
+	CHECK(maxIt == v.end() - 1);
+
+	// Tie-breaking: both min and max return the FIRST occurrence.
+	std::vector<int> ties(50000, 5);
+	ties[0]     = 1;                            // single min at front
+	ties[10000] = 1;                            // duplicate min — should be ignored
+	ties[1]     = 9;                            // single max near front
+	ties[40000] = 9;                            // duplicate max — should be ignored
+	auto minTieIt = context.min_element(ties.begin(), ties.end());
+	auto maxTieIt = context.max_element(ties.begin(), ties.end());
+	CHECK(minTieIt == ties.begin());            // index 0
+	CHECK(maxTieIt == ties.begin() + 1);        // index 1
+
+	// Empty range returns end.
+	std::vector<int> empty;
+	CHECK(context.min_element(empty.begin(), empty.end()) == empty.end());
+	CHECK(context.max_element(empty.begin(), empty.end()) == empty.end());
+
+	context.stop();
+}
+
+TEST_CASE("Context: min_element with custom comparator")
+{
+	multi::Context context;
+	context.start(4);
+
+	std::vector<int> v(50000);
+	std::iota(v.begin(), v.end(), 0);
+	// `min_element` under `std::greater<>` picks the largest.
+	auto it = context.min_element(v.begin(), v.end(), std::greater<>{});
+	CHECK(*it == 49999);
+
+	context.stop();
+}
+
+TEST_CASE("Context: minmax_element — min keeps first, max keeps last on tie")
+{
+	multi::Context context;
+	context.start(4);
+
+	// Single-pass tie-break test on 50k elements.
+	std::vector<int> v(50000, 5);
+	v[0]     = 1;
+	v[10000] = 1;                              // duplicate min — must be skipped
+	v[200]   = 9;                              // first max
+	v[49999] = 9;                              // last max — must win
+
+	auto p = context.minmax_element(v.begin(), v.end());
+	CHECK(p.first  == v.begin());              // first 1
+	CHECK(p.second == v.begin() + 49999);      // last 9
+
+	// All-equal range: min = begin, max = end - 1.
+	std::vector<int> flat(40000, 42);
+	auto pf = context.minmax_element(flat.begin(), flat.end());
+	CHECK(pf.first  == flat.begin());
+	CHECK(pf.second == flat.end() - 1);
+
+	// Empty range returns {end, end}.
+	std::vector<int> empty;
+	auto pe = context.minmax_element(empty.begin(), empty.end());
+	CHECK(pe.first  == empty.end());
+	CHECK(pe.second == empty.end());
+
+	context.stop();
+}

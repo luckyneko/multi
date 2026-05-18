@@ -140,6 +140,76 @@ namespace multi
 		context()->range(taskCount, begin, end, step, std::forward<FUNC>(func));
 	}
 
+	// Parallel transform — see Context::transform. Output range must not
+	// overlap input(s); random-access iterators required.
+	template <typename InputIt, typename OutputIt, typename UnaryOp>
+	void transform(InputIt begin, InputIt end, OutputIt outBegin, UnaryOp op)
+	{
+		context()->transform(begin, end, outBegin, std::move(op));
+	}
+	template <typename InputIt1, typename InputIt2, typename OutputIt, typename BinaryOp>
+	void transform(InputIt1 first1, InputIt1 last1, InputIt2 first2,
+	                OutputIt outBegin, BinaryOp op)
+	{
+		context()->transform(first1, last1, first2, outBegin, std::move(op));
+	}
+
+	// Parallel fill / generate / replace / replace_if — see Context for
+	// thread-safety notes (especially `generate`: its callable is invoked
+	// concurrently from worker threads).
+	template <typename ITER, typename T>
+	void fill(ITER begin, ITER end, const T& value)
+	{
+		context()->fill(begin, end, value);
+	}
+	template <typename ITER, typename Generator>
+	void generate(ITER begin, ITER end, Generator gen)
+	{
+		context()->generate(begin, end, std::move(gen));
+	}
+	template <typename ITER, typename T>
+	void replace(ITER begin, ITER end, const T& oldValue, const T& newValue)
+	{
+		context()->replace(begin, end, oldValue, newValue);
+	}
+	template <typename ITER, typename UnaryPred, typename T>
+	void replace_if(ITER begin, ITER end, UnaryPred pred, const T& newValue)
+	{
+		context()->replace_if(begin, end, std::move(pred), newValue);
+	}
+
+	// Parallel count / count_if — backed by transformReduce.
+	template <typename ITER, typename T>
+	typename std::iterator_traits<ITER>::difference_type
+	count(ITER begin, ITER end, const T& value)
+	{
+		return context()->count(begin, end, value);
+	}
+	template <typename ITER, typename UnaryPred>
+	typename std::iterator_traits<ITER>::difference_type
+	count_if(ITER begin, ITER end, UnaryPred pred)
+	{
+		return context()->count_if(begin, end, std::move(pred));
+	}
+
+	// Parallel min_element / max_element / minmax_element — tie-breaking
+	// matches std::* (min/max: first occurrence; minmax-max: last occurrence).
+	template <typename ITER, typename Comp = std::less<>>
+	ITER min_element(ITER begin, ITER end, Comp comp = {})
+	{
+		return context()->min_element(begin, end, std::move(comp));
+	}
+	template <typename ITER, typename Comp = std::less<>>
+	ITER max_element(ITER begin, ITER end, Comp comp = {})
+	{
+		return context()->max_element(begin, end, std::move(comp));
+	}
+	template <typename ITER, typename Comp = std::less<>>
+	std::pair<ITER, ITER> minmax_element(ITER begin, ITER end, Comp comp = {})
+	{
+		return context()->minmax_element(begin, end, std::move(comp));
+	}
+
 	// Parallel reduce / transformReduce — see Context::reduce documentation
 	// for the associativity/commutativity contract on the binary op.
 	template <typename ITER, typename T, typename BinaryOp>

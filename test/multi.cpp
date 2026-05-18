@@ -235,3 +235,69 @@ TEST_CASE("multi: merge free function routes through global context")
 
 	multi::stop();
 }
+
+TEST_CASE("multi: tier-1 elementwise free functions route through global context")
+{
+	multi::start(4);
+
+	// transform (unary)
+	std::vector<int> in(40000), out(40000, 0);
+	std::iota(in.begin(), in.end(), 1);
+	multi::transform(in.begin(), in.end(), out.begin(),
+	                  [](int x) { return x * 2; });
+	for (std::size_t i = 0; i < in.size(); ++i)
+		REQUIRE(out[i] == 2 * static_cast<int>(i + 1));
+
+	// transform (binary)
+	std::vector<int> sum(40000, 0);
+	multi::transform(in.begin(), in.end(), out.begin(), sum.begin(),
+	                  [](int a, int b) { return a + b; });
+	for (std::size_t i = 0; i < in.size(); ++i)
+		REQUIRE(sum[i] == in[i] + out[i]);
+
+	// fill
+	std::vector<int> v(40000, 0);
+	multi::fill(v.begin(), v.end(), 13);
+	for (int x : v) REQUIRE(x == 13);
+
+	// generate (thread-safe counter)
+	std::atomic<int> ctr{0};
+	multi::generate(v.begin(), v.end(),
+	                 [&ctr] { return ctr.fetch_add(1, std::memory_order_relaxed); });
+	CHECK(ctr.load() == static_cast<int>(v.size()));
+
+	// replace / replace_if
+	std::iota(v.begin(), v.end(), 0);
+	multi::replace_if(v.begin(), v.end(),
+	                   [](int x) { return x % 2 == 0; }, -1);
+	multi::replace(v.begin(), v.end(), -1, -7);
+	CHECK(std::count(v.begin(), v.end(), -7) ==
+	      static_cast<std::ptrdiff_t>(v.size() / 2));
+
+	multi::stop();
+}
+
+TEST_CASE("multi: tier-1 search free functions route through global context")
+{
+	multi::start(4);
+
+	std::vector<int> v(50000);
+	std::iota(v.begin(), v.end(), -25000);     // -25000 .. 24999
+
+	CHECK(multi::count(v.begin(), v.end(), 0) == 1);
+	CHECK(multi::count_if(v.begin(), v.end(),
+	                       [](int x) { return x >= 0; }) == 25000);
+
+	auto mn = multi::min_element(v.begin(), v.end());
+	auto mx = multi::max_element(v.begin(), v.end());
+	REQUIRE(mn != v.end());
+	REQUIRE(mx != v.end());
+	CHECK(*mn == -25000);
+	CHECK(*mx == 24999);
+
+	auto mm = multi::minmax_element(v.begin(), v.end());
+	CHECK(*mm.first  == -25000);
+	CHECK(*mm.second == 24999);
+
+	multi::stop();
+}

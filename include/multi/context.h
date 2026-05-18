@@ -87,6 +87,81 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
 
+		// Parallel transform: apply `op` to each element in [begin, end) and
+		// write the result to `outBegin`. Output must have space for
+		// `std::distance(begin, end)` elements and must not overlap the
+		// input. Random-access iterators only (matches the parallel
+		// `range`-based dispatch). Below a small-N threshold or with
+		// `threadCount() < 2`, delegates to `std::transform`.
+		template <typename InputIt, typename OutputIt, typename UnaryOp>
+		void transform(InputIt begin, InputIt end, OutputIt outBegin, UnaryOp op);
+
+		// Binary variant: apply `op` to corresponding pairs from
+		// [first1, last1) and [first2, first2 + (last1 - first1)). Output
+		// must have space for `last1 - first1` and must not overlap either
+		// input.
+		template <typename InputIt1, typename InputIt2, typename OutputIt, typename BinaryOp>
+		void transform(InputIt1 first1, InputIt1 last1, InputIt2 first2,
+		                OutputIt outBegin, BinaryOp op);
+
+		// Parallel fill: assigns `value` to every element in [begin, end).
+		// Random-access iterators only; below a small-N threshold, delegates
+		// to `std::fill`.
+		template <typename ITER, typename T>
+		void fill(ITER begin, ITER end, const T& value);
+
+		// Parallel generate: invokes `gen()` for each element in [begin, end)
+		// and assigns the result. `gen` is called concurrently from multiple
+		// worker threads — **it must be thread-safe** (no shared mutable
+		// state without synchronisation). Below a small-N threshold,
+		// delegates to `std::generate` which is serial.
+		template <typename ITER, typename Generator>
+		void generate(ITER begin, ITER end, Generator gen);
+
+		// Parallel replace: assigns `newValue` to every element in
+		// [begin, end) that compares equal to `oldValue`.
+		template <typename ITER, typename T>
+		void replace(ITER begin, ITER end, const T& oldValue, const T& newValue);
+
+		// Parallel replace_if: assigns `newValue` to every element in
+		// [begin, end) for which `pred(element)` returns true.
+		template <typename ITER, typename UnaryPred, typename T>
+		void replace_if(ITER begin, ITER end, UnaryPred pred, const T& newValue);
+
+		// Parallel count: returns the number of elements in [begin, end)
+		// equal to `value`. Backed by `transformReduce` — inherits its
+		// small-N serial fallback.
+		template <typename ITER, typename T>
+		typename std::iterator_traits<ITER>::difference_type
+		count(ITER begin, ITER end, const T& value);
+
+		// Parallel count_if: returns the number of elements in [begin, end)
+		// for which `pred(element)` returns true.
+		template <typename ITER, typename UnaryPred>
+		typename std::iterator_traits<ITER>::difference_type
+		count_if(ITER begin, ITER end, UnaryPred pred);
+
+		// Parallel min_element: returns an iterator to the smallest element
+		// in [begin, end) under `comp` (std::less<> by default). On tie,
+		// returns the iterator to the **first** such element (matches
+		// `std::min_element`). Returns `end` for an empty range.
+		// Random-access iterators only.
+		template <typename ITER, typename Comp = std::less<>>
+		ITER min_element(ITER begin, ITER end, Comp comp = {});
+
+		// Parallel max_element: like min_element under the opposite
+		// orientation. On tie, returns the iterator to the **first** such
+		// element (matches `std::max_element`).
+		template <typename ITER, typename Comp = std::less<>>
+		ITER max_element(ITER begin, ITER end, Comp comp = {});
+
+		// Parallel minmax_element: returns `{min_it, max_it}`. On tie:
+		// `min_it` is the **first** occurrence; `max_it` is the **last**
+		// occurrence (matches `std::minmax_element`). Returns `{end, end}`
+		// for an empty range.
+		template <typename ITER, typename Comp = std::less<>>
+		std::pair<ITER, ITER> minmax_element(ITER begin, ITER end, Comp comp = {});
+
 		// Parallel reduce over [begin, end). Returns the result of folding
 		// the range with `op`, seeded by `init`. `op` must be associative
 		// AND commutative — partials are combined in unspecified order.

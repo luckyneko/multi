@@ -300,6 +300,371 @@ namespace multi
 		return job.finalize();
 	}
 
+	// Shared threshold for the elementwise / search primitives below.
+	// Higher than `REDUCE_SERIAL_THRESHOLD` (32768) because these ops
+	// have much cheaper per-element work than a reduce — a transform
+	// writes one element, count_if does a predicate + 0/1 add, fill
+	// stores a value. With SIMD-vectorisable scalar work the serial
+	// path on M-class hardware processes 100k doubles in ~12 µs, well
+	// below the ~25 µs parallel dispatch floor. Threshold tuned by
+	// measurement on transform_unary / count_if / min_element benches:
+	// 256k is the smallest power of 2 where parallel reliably beats
+	// serial across the three shapes.
+	//
+	// Dispatch pattern shared by tier-1 wrappers: K = threadCount() chunks,
+	// each calls the matching `std::*` algorithm on its slice. Calling the
+	// library impl per chunk (rather than a per-index lambda inside
+	// ChunkedRangeJob) keeps the inner loop in `std::*`'s own body, outside
+	// `Job::runOne`'s try-catch — which lets the compiler vectorise the same
+	// way it does for the serial path. Measured: ~2× win on count_if/1M,
+	// ~3-4× win on min_element/1M vs the prior per-index implementations.
+	namespace details
+	{
+		inline constexpr std::size_t ELEMENT_SERIAL_THRESHOLD = 262144;
+
+		// Higher threshold for write-only ops (fill). std::fill on
+		// contiguous memory becomes streaming-store / memset on every
+		// modern toolchain, which already saturates single-core write
+		// bandwidth — so a single core gets ~all of DRAM-write-bw on its
+		// own. Splitting work across cores adds dispatch + cache-coherence
+		// traffic without growing aggregate bandwidth, so parallel fill
+		// loses below ~2M items on M-class hardware. 2097152 chosen by
+		// measurement: 1M loses 0.94×; 10M wins 1.6×.
+		inline constexpr std::size_t WRITE_SERIAL_THRESHOLD = 2097152;
+
+		// Bounds of chunk `k` when `n` elements are split into `K` chunks
+		// (balanced: first `n%K` chunks get one extra element). Mirrors
+		// ChunkedRangeJob's distribution.
+		template <class Diff>
+		inline std::pair<Diff, Diff>
+		chunkBounds(Diff n, std::size_t K, std::size_t k) noexcept
+		{
+			const Diff base  = n / static_cast<Diff>(K);
+			const Diff extra = n % static_cast<Diff>(K);
+			const Diff kS = static_cast<Diff>(k);
+			const Diff kNext = static_cast<Diff>(k + 1);
+			return {kS    * base + std::min<Diff>(kS,    extra),
+			        kNext * base + std::min<Diff>(kNext, extra)};
+		}
+	}
+
+	template <typename InputIt, typename OutputIt, typename UnaryOp>
+	void Context::transform(InputIt begin, InputIt end, OutputIt outBegin, UnaryOp op)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<InputIt>::iterator_category>,
+			"multi::transform input iterator must be random-access");
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<OutputIt>::iterator_category>,
+			"multi::transform output iterator must be random-access");
+
+		using diff_t = typename std::iterator_traits<InputIt>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			std::transform(begin, end, outBegin, op);
+			return;
+		}
+
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::transform(begin + lo, begin + hi, outBegin + lo, op);
+		});
+	}
+
+	template <typename InputIt1, typename InputIt2, typename OutputIt, typename BinaryOp>
+	void Context::transform(InputIt1 first1, InputIt1 last1, InputIt2 first2,
+	                         OutputIt outBegin, BinaryOp op)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<InputIt1>::iterator_category> &&
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<InputIt2>::iterator_category> &&
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<OutputIt>::iterator_category>,
+			"multi::transform (binary) requires random-access iterators on all three ranges");
+
+		using diff_t = typename std::iterator_traits<InputIt1>::difference_type;
+		const diff_t n = std::distance(first1, last1);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			std::transform(first1, last1, first2, outBegin, op);
+			return;
+		}
+
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::transform(first1 + lo, first1 + hi, first2 + lo, outBegin + lo, op);
+		});
+	}
+
+	template <typename ITER, typename T>
+	void Context::fill(ITER begin, ITER end, const T& value)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::fill requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::WRITE_SERIAL_THRESHOLD)
+		{
+			std::fill(begin, end, value);
+			return;
+		}
+
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::fill(begin + lo, begin + hi, value);
+		});
+	}
+
+	template <typename ITER, typename Generator>
+	void Context::generate(ITER begin, ITER end, Generator gen)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::generate requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			std::generate(begin, end, gen);
+			return;
+		}
+
+		// `gen` is called concurrently — caller's responsibility to make it
+		// thread-safe. Documented in the declaration.
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::generate(begin + lo, begin + hi, gen);
+		});
+	}
+
+	template <typename ITER, typename T>
+	void Context::replace(ITER begin, ITER end, const T& oldValue, const T& newValue)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::replace requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			std::replace(begin, end, oldValue, newValue);
+			return;
+		}
+
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::replace(begin + lo, begin + hi, oldValue, newValue);
+		});
+	}
+
+	template <typename ITER, typename UnaryPred, typename T>
+	void Context::replace_if(ITER begin, ITER end, UnaryPred pred, const T& newValue)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::replace_if requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			std::replace_if(begin, end, pred, newValue);
+			return;
+		}
+
+		const std::size_t K = threadCount();
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, static_cast<std::size_t>(ks));
+			std::replace_if(begin + lo, begin + hi, pred, newValue);
+		});
+	}
+
+	template <typename ITER, typename T>
+	typename std::iterator_traits<ITER>::difference_type
+	Context::count(ITER begin, ITER end, const T& value)
+	{
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < static_cast<diff_t>(details::ELEMENT_SERIAL_THRESHOLD))
+			return std::count(begin, end, value);
+
+		const std::size_t K = threadCount();
+		std::vector<diff_t> partials(K, 0);
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const std::size_t k = static_cast<std::size_t>(ks);
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, k);
+			partials[k] = std::count(begin + lo, begin + hi, value);
+		});
+		diff_t total = 0;
+		for (diff_t c : partials) total += c;
+		return total;
+	}
+
+	template <typename ITER, typename UnaryPred>
+	typename std::iterator_traits<ITER>::difference_type
+	Context::count_if(ITER begin, ITER end, UnaryPred pred)
+	{
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < static_cast<diff_t>(details::ELEMENT_SERIAL_THRESHOLD))
+			return std::count_if(begin, end, pred);
+
+		const std::size_t K = threadCount();
+		std::vector<diff_t> partials(K, 0);
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const std::size_t k = static_cast<std::size_t>(ks);
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, k);
+			partials[k] = std::count_if(begin + lo, begin + hi, pred);
+		});
+		diff_t total = 0;
+		for (diff_t c : partials) total += c;
+		return total;
+	}
+
+	template <typename ITER, typename Comp>
+	ITER Context::min_element(ITER begin, ITER end, Comp comp)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::min_element requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (n <= 0)
+			return end;
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+			return std::min_element(begin, end, comp);
+
+		// K chunks, each runs std::min_element on its slice (gets the lib's
+		// vectorised scalar reduction). Serial combine keeps the earlier
+		// chunk on tie → first occurrence overall.
+		const std::size_t K = threadCount();
+		std::vector<diff_t> localMin(K);
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const std::size_t k = static_cast<std::size_t>(ks);
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, k);
+			localMin[k] = std::min_element(begin + lo, begin + hi, comp) - begin;
+		});
+
+		diff_t best = localMin[0];
+		for (std::size_t k = 1; k < K; ++k)
+		{
+			const diff_t cand = localMin[k];
+			if (comp(begin[cand], begin[best])) best = cand;
+		}
+		return begin + best;
+	}
+
+	template <typename ITER, typename Comp>
+	ITER Context::max_element(ITER begin, ITER end, Comp comp)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::max_element requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (n <= 0)
+			return end;
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+			return std::max_element(begin, end, comp);
+
+		// Mirror of min_element using std::max_element per chunk. Cannot
+		// reuse min_element(swap-comp) here without losing std::*'s
+		// hand-tuned max reduction; spelling it out keeps the inner loop
+		// in libc++'s body. Tie-breaking: std::max_element returns first
+		// occurrence; serial combine across chunks `comp(best, cand)` —
+		// strict — keeps earlier chunk on tie. Both match std::max_element.
+		const std::size_t K = threadCount();
+		std::vector<diff_t> localMax(K);
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const std::size_t k = static_cast<std::size_t>(ks);
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, k);
+			localMax[k] = std::max_element(begin + lo, begin + hi, comp) - begin;
+		});
+
+		diff_t best = localMax[0];
+		for (std::size_t k = 1; k < K; ++k)
+		{
+			const diff_t cand = localMax[k];
+			if (comp(begin[best], begin[cand])) best = cand;
+		}
+		return begin + best;
+	}
+
+	template <typename ITER, typename Comp>
+	std::pair<ITER, ITER> Context::minmax_element(ITER begin, ITER end, Comp comp)
+	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::minmax_element requires random-access iterators");
+
+		using diff_t = typename std::iterator_traits<ITER>::difference_type;
+		const diff_t n = std::distance(begin, end);
+		if (n <= 0)
+			return {end, end};
+		if (threadCount() < 2 ||
+		    static_cast<std::size_t>(n) < details::ELEMENT_SERIAL_THRESHOLD)
+		{
+			auto p = std::minmax_element(begin, end, comp);
+			return {p.first, p.second};
+		}
+
+		// std::minmax_element returns first-min, last-max per chunk — same
+		// tie rules we want overall. Combine: keep earlier chunk for min
+		// (strict `<` on combine), keep later chunk for max (non-strict
+		// `>=` via `!comp(cand, best)`).
+		const std::size_t K = threadCount();
+		std::vector<diff_t> localMin(K), localMax(K);
+		range(diff_t(0), static_cast<diff_t>(K), diff_t(1), [&](diff_t ks) {
+			const std::size_t k = static_cast<std::size_t>(ks);
+			const auto [lo, hi] = details::chunkBounds<diff_t>(n, K, k);
+			auto p = std::minmax_element(begin + lo, begin + hi, comp);
+			localMin[k] = p.first  - begin;
+			localMax[k] = p.second - begin;
+		});
+
+		diff_t bMin = localMin[0];
+		diff_t bMax = localMax[0];
+		for (std::size_t k = 1; k < K; ++k)
+		{
+			if (comp(begin[localMin[k]], begin[bMin])) bMin = localMin[k];
+			if (!comp(begin[localMax[k]], begin[bMax])) bMax = localMax[k];
+		}
+		return {begin + bMin, begin + bMax};
+	}
+
 	template <typename ITER, typename COMP>
 	void Context::sort(ITER begin, ITER end, COMP comp)
 	{
