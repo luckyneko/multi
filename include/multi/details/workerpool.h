@@ -54,6 +54,12 @@ namespace multi::details
 		bool isActive() const { return m_active.load(std::memory_order_relaxed); }
 		size_t threadCount() const { return m_threads.size(); }
 
+#ifdef MULTI_ENABLE_TEST_HOOKS
+		// Test-only hook: fail the next start() after this many successful
+		// worker thread creations, then clear the hook.
+		static void failNextStartAfterThreadCreations(size_t successfulCreations);
+#endif
+
 		// Observability: read-only access to a worker's deque. Used by tests
 		// and benchmarks to probe local-vs-overflow routing decisions.
 		// Internal/diagnostics-only — the assert catches a stray test passing
@@ -79,6 +85,34 @@ namespace multi::details
 
 		void workerMain(size_t workerIndex);
 		bool tryGetTask(size_t workerIndex, Task* task);
+
+		bool tryEnterOperation();
+		void leaveOperation() noexcept;
+
+		class OperationGuard
+		{
+		public:
+			explicit OperationGuard(WorkerPool& pool)
+				: m_pool(&pool)
+				, m_entered(pool.tryEnterOperation())
+			{
+			}
+
+			~OperationGuard()
+			{
+				if (m_entered)
+					m_pool->leaveOperation();
+			}
+
+			OperationGuard(const OperationGuard&) = delete;
+			OperationGuard& operator=(const OperationGuard&) = delete;
+
+			bool entered() const noexcept { return m_entered; }
+
+		private:
+			WorkerPool* m_pool;
+			bool m_entered;
+		};
 
 		// Spin-yield until the task is pushed onto worker idx's deque, or until
 		// shutdown is observed — in which case the task is run inline. Returns
@@ -109,12 +143,12 @@ namespace multi::details
 		alignas(CACHE_LINE_SIZE) std::atomic<bool> m_active;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextVictim;
-		// Count of submitters currently inside the push region (between the
-		// post-increment isActive() check and the matching fetch_sub). stop()
-		// flips m_active and then spins on this counter reaching zero before
-		// joining/clearing m_workers, so a concurrent submit can't UAF the
-		// worker storage.
-		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_inFlight;
+		// Count of public operations currently touching worker storage
+		// (submitters and external stealers). stop() flips m_active and then
+		// spins on this counter reaching zero before joining/clearing
+		// m_workers, so concurrent public operations cannot UAF the worker
+		// storage.
+		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_opsInFlight;
 	};
 } // namespace multi::details
 

@@ -129,14 +129,15 @@ namespace multi
 		void replace_if(ITER begin, ITER end, UnaryPred pred, const T& newValue);
 
 		// Parallel count: returns the number of elements in [begin, end)
-		// equal to `value`. Backed by `transformReduce` — inherits its
-		// small-N serial fallback.
+		// equal to `value`. Random-access iterators only; below a small-N
+		// threshold, delegates to std::count.
 		template <typename ITER, typename T>
 		typename std::iterator_traits<ITER>::difference_type
 		count(ITER begin, ITER end, const T& value);
 
 		// Parallel count_if: returns the number of elements in [begin, end)
-		// for which `pred(element)` returns true.
+		// for which `pred(element)` returns true. Random-access iterators only;
+		// below a small-N threshold, delegates to std::count_if.
 		template <typename ITER, typename UnaryPred>
 		typename std::iterator_traits<ITER>::difference_type
 		count_if(ITER begin, ITER end, UnaryPred pred);
@@ -189,6 +190,8 @@ namespace multi
 		// pivot, 3-way partition, recursive parallel on the < and >
 		// subranges; falls through to std::sort once a subrange is small
 		// enough that dispatch overhead would outweigh the parallelism.
+		// Parallel scratch-buffer paths require value_type to be
+		// default-constructible.
 		// COMP must be the strict-weak-ordering compare used by std::sort.
 		template <typename ITER, typename COMP = std::less<>>
 		void sort(ITER begin, ITER end, COMP comp = {});
@@ -196,7 +199,8 @@ namespace multi
 		// Parallel merge of two sorted ranges [aBegin, aEnd) and
 		// [bBegin, bEnd) into the range starting at outBegin. Output
 		// must have space for (aEnd-aBegin) + (bEnd-bBegin) elements and
-		// must not overlap either input. Stable: for equivalent elements
+		// must not overlap either input. Random-access iterators required
+		// for both inputs and the output. Stable: for equivalent elements
 		// (neither comp(a, b) nor comp(b, a)), the element from the A
 		// range appears first — matches std::merge's contract.
 		//

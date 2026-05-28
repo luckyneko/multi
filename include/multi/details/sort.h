@@ -140,6 +140,10 @@ namespace multi::details
 	std::pair<Iter, Iter> parallelPartition3way(
 		CtxT* ctx, Iter begin, Iter end, const V& pivot, const Comp& comp)
 	{
+		static_assert(std::is_default_constructible_v<V>,
+			"multi::sort: parallel partition requires value_type to be default-constructible "
+			"(scratch buffer is default-initialized before scatter)");
+
 		using diff_t = typename std::iterator_traits<Iter>::difference_type;
 
 		const std::size_t n = static_cast<std::size_t>(end - begin);
@@ -259,6 +263,10 @@ namespace multi::details
 	{
 		using V      = typename std::iterator_traits<Iter>::value_type;
 		using diff_t = typename std::iterator_traits<Iter>::difference_type;
+
+		static_assert(std::is_default_constructible_v<V>,
+			"multi::sort: chunked parallel sort requires value_type to be default-constructible "
+			"(scratch buffer is default-initialized before merge stages)");
 
 		const diff_t n = std::distance(begin, end);
 		const std::size_t tc = std::max<std::size_t>(2, ctx->threadCount());

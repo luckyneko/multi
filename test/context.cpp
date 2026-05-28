@@ -677,6 +677,35 @@ TEST_CASE("Context: waitUntil drains the pool while waiting on a custom predicat
 	context.stop();
 }
 
+TEST_CASE("Context: waitUntil and stop can race without freed worker access", "[stress]")
+{
+	for (int trial = 0; trial < 8; ++trial)
+	{
+		multi::Context context;
+		context.start(2);
+
+		std::atomic<bool> done(false);
+		std::atomic<int> ran(0);
+		std::vector<multi::Handle<>> handles;
+		for (int i = 0; i < 64; ++i)
+			handles.push_back(context.async([&ran]()
+			                                { ran.fetch_add(1, std::memory_order_relaxed); }));
+
+		std::thread waiter([&]() {
+			context.waitUntil([&]() { return done.load(std::memory_order_acquire); });
+		});
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		context.stop();
+		done.store(true, std::memory_order_release);
+		waiter.join();
+
+		for (auto& h : handles)
+			h.wait();
+		CHECK(ran.load(std::memory_order_relaxed) == 64);
+	}
+}
+
 TEST_CASE("Context: waitAll blocks until every handle completes")
 {
 	multi::Context context;
@@ -954,6 +983,45 @@ TEST_CASE("Context: sort on a non-trivial element type")
 	                     [](const auto& a, const auto& b) { return a.first < b.first; }));
 	CHECK(v.front().second == "item-0");
 	CHECK(v.back().second == "item-1999");
+
+	context.stop();
+}
+
+TEST_CASE("Context: sort handles default-constructible move-aware values on parallel scratch path")
+{
+	struct MoveAware
+	{
+		int key = 0;
+		std::string payload;
+
+		MoveAware() = default;
+		MoveAware(int k, std::string p)
+			: key(k)
+			, payload(std::move(p))
+		{
+		}
+		MoveAware(const MoveAware&) = default;
+		MoveAware& operator=(const MoveAware&) = default;
+		MoveAware(MoveAware&&) noexcept = default;
+		MoveAware& operator=(MoveAware&&) noexcept = default;
+	};
+
+	multi::Context context;
+	context.start(4);
+
+	std::vector<MoveAware> v;
+	for (int i = 0; i < 20000; ++i)
+		v.emplace_back(i, "item-" + std::to_string(i));
+	std::mt19937 rng(0x5150);
+	std::shuffle(v.begin(), v.end(), rng);
+
+	context.sort(v.begin(), v.end(),
+	             [](const MoveAware& a, const MoveAware& b) { return a.key < b.key; });
+
+	CHECK(std::is_sorted(v.begin(), v.end(),
+	                     [](const MoveAware& a, const MoveAware& b) { return a.key < b.key; }));
+	CHECK(v.front().payload == "item-0");
+	CHECK(v.back().payload == "item-19999");
 
 	context.stop();
 }
@@ -1368,7 +1436,7 @@ TEST_CASE("Context: count and count_if match std::count semantics")
 	multi::Context context;
 	context.start(4);
 
-	std::vector<int> v(50000, 0);
+	std::vector<int> v(300000, 0);
 	// Pattern: every 3rd element is 1, every 5th is 2, others stay 0.
 	for (std::size_t i = 0; i < v.size(); ++i)
 	{

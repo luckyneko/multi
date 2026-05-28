@@ -98,6 +98,8 @@ if(MULTI_BUILD_TESTING)
         test/workerpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2WithMain)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE MULTI_ENABLE_TEST_HOOKS)
+    target_compile_definitions(test-${PROJECT_NAME} PRIVATE MULTI_ENABLE_TEST_HOOKS)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
 endif()
 

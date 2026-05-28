@@ -209,6 +209,22 @@ TEST_CASE("WorkerPool: start throws when already active")
 	pool.stop();
 }
 
+#ifdef MULTI_ENABLE_TEST_HOOKS
+TEST_CASE("WorkerPool: failed start rolls back created workers")
+{
+	multi::details::WorkerPool pool;
+	multi::details::WorkerPool::failNextStartAfterThreadCreations(1);
+
+	CHECK_THROWS_AS(pool.start(4), std::runtime_error);
+	CHECK(pool.threadCount() == 0);
+	CHECK_FALSE(pool.isActive());
+
+	CHECK_NOTHROW(pool.start(2));
+	CHECK(pool.threadCount() == 2);
+	pool.stop();
+}
+#endif
+
 #ifdef NDEBUG
 // Release only: debug builds assert in ~WorkerPool when stop() was skipped.
 TEST_CASE("WorkerPool: destructor stops threads on forgotten stop")
@@ -250,7 +266,7 @@ TEST_CASE("WorkerPool: stop drains pending tasks")
 
 // Stresses the submit-vs-stop race: external submitter threads call
 // submit/submitBatch in tight loops while the test thread calls stop().
-// Without m_inFlight, a submitter that passed isActive() could push into
+// Without the operation guard, a submitter that passed isActive() could push into
 // m_workers after stop() cleared it (UAF). With the guard, every submitted
 // task must run exactly once: pushed-and-drained while active, or inline-
 // fallback once m_active flips. Repeated trials shake out timing jitter.
@@ -305,6 +321,49 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 		// Every task that was returned from submit/submitBatch must have run
 		// exactly once. Drift here would indicate a lost task in the race.
 		CHECK(totalRun.load() == totalSubmitted.load());
+	}
+}
+
+TEST_CASE("WorkerPool: external steal and stop race without touching freed workers", "[stress]")
+{
+	for (int trial = 0; trial < 8; ++trial)
+	{
+		multi::details::WorkerPool pool;
+		pool.start(2);
+
+		const int numTasks = 4096;
+		std::atomic<int> totalRun(0);
+		std::atomic<bool> keepStealing(true);
+
+		std::vector<multi::details::Task> tasks;
+		tasks.reserve(numTasks);
+		for (int i = 0; i < numTasks; ++i)
+			tasks.emplace_back([&totalRun]()
+							   { totalRun.fetch_add(1, std::memory_order_relaxed); });
+		pool.submitBatch(std::move(tasks));
+
+		auto stealerMain = [&pool, &keepStealing]()
+		{
+			while (keepStealing.load(std::memory_order_relaxed))
+			{
+				multi::details::Task stolen;
+				if (pool.tryStealAny(&stolen))
+					stolen();
+				else
+					std::this_thread::yield();
+			}
+		};
+
+		std::thread a(stealerMain);
+		std::thread b(stealerMain);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		pool.stop();
+		keepStealing.store(false, std::memory_order_relaxed);
+		a.join();
+		b.join();
+
+		CHECK(totalRun.load(std::memory_order_relaxed) == numTasks);
 	}
 }
 

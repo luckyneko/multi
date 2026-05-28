@@ -31,6 +31,33 @@ namespace multi::details
 		// overload (defined in the header) can read it too.
 		thread_local std::size_t g_workerIndex = std::numeric_limits<std::size_t>::max();
 
+#ifdef MULTI_ENABLE_TEST_HOOKS
+		std::atomic<std::size_t> g_failStartAfterThreadCreations{
+			std::numeric_limits<std::size_t>::max()};
+
+		bool shouldFailThreadCreationForTest()
+		{
+			std::size_t remaining = g_failStartAfterThreadCreations.load(std::memory_order_relaxed);
+			while (remaining != std::numeric_limits<std::size_t>::max())
+			{
+				if (remaining == 0)
+				{
+					g_failStartAfterThreadCreations.store(
+						std::numeric_limits<std::size_t>::max(),
+						std::memory_order_relaxed);
+					return true;
+				}
+				if (g_failStartAfterThreadCreations.compare_exchange_weak(
+						remaining,
+						remaining - 1,
+						std::memory_order_relaxed,
+						std::memory_order_relaxed))
+					return false;
+			}
+			return false;
+		}
+#endif
+
 		// Set the calling thread's name so debuggers/profilers can identify
 		// it. Best-effort: failures (unsupported platform, security policy,
 		// over-long name) are silently ignored — the name is purely for
@@ -86,9 +113,16 @@ namespace multi::details
 		, m_active(false)
 		, m_nextWorker(0)
 		, m_nextVictim(0)
-		, m_inFlight(0)
+		, m_opsInFlight(0)
 	{
 	}
+
+#ifdef MULTI_ENABLE_TEST_HOOKS
+	void WorkerPool::failNextStartAfterThreadCreations(size_t successfulCreations)
+	{
+		g_failStartAfterThreadCreations.store(successfulCreations, std::memory_order_relaxed);
+	}
+#endif
 
 	WorkerPool::~WorkerPool()
 	{
@@ -119,20 +153,50 @@ namespace multi::details
 		if (threadCount == 0)
 			return;
 
-		m_active.store(true, std::memory_order_relaxed);
-		m_nextWorker.store(0, std::memory_order_relaxed);
-		m_nextVictim.store(0, std::memory_order_relaxed);
-
 		// One heap allocation for the whole array — each Worker is
 		// default-constructed in place. Worker is alignas(CACHE_LINE_SIZE)
 		// so `new Worker[N]` requests aligned storage (C++17 over-aligned
 		// new), which keeps the cache-line discipline intact.
-		m_workers = std::make_unique<Worker[]>(threadCount);
-		m_workerCount = threadCount;
+		auto workers = std::make_unique<Worker[]>(threadCount);
+		std::vector<std::thread> threads;
+		threads.reserve(threadCount);
 
-		m_threads.reserve(threadCount);
-		for (size_t i = 0; i < threadCount; ++i)
-			m_threads.emplace_back(&WorkerPool::workerMain, this, i);
+		m_workers = std::move(workers);
+		m_workerCount = threadCount;
+		m_nextWorker.store(0, std::memory_order_relaxed);
+		m_nextVictim.store(0, std::memory_order_relaxed);
+		m_opsInFlight.store(0, std::memory_order_relaxed);
+		m_active.store(true, std::memory_order_relaxed);
+
+		try
+		{
+			for (size_t i = 0; i < threadCount; ++i)
+			{
+#ifdef MULTI_ENABLE_TEST_HOOKS
+				if (shouldFailThreadCreationForTest())
+					throw std::runtime_error("multi::details::WorkerPool::start test-injected thread creation failure");
+#endif
+				threads.emplace_back(&WorkerPool::workerMain, this, i);
+			}
+		}
+		catch (...)
+		{
+			m_active.store(false, std::memory_order_seq_cst);
+			for (size_t i = 0; i < m_workerCount; ++i)
+				fencedNotify(m_workers[i]);
+			for (auto& thread : threads)
+			{
+				if (thread.joinable())
+					thread.join();
+			}
+			m_threads.clear();
+			m_workers.reset();
+			m_workerCount = 0;
+			m_opsInFlight.store(0, std::memory_order_relaxed);
+			throw;
+		}
+
+		m_threads = std::move(threads);
 	}
 
 	void WorkerPool::fencedNotify(Worker& w)
@@ -144,18 +208,19 @@ namespace multi::details
 
 	void WorkerPool::stop()
 	{
-		// Flip m_active then wait for any concurrent submitter that's already
-		// past its isActive() check to leave the push region. Pair: submit
-		// fetch_adds m_inFlight before re-checking m_active; the seq_cst on
-		// both sides gives a Dekker-style total order, so either the submitter
-		// observes !m_active and bails, or we observe its increment and spin.
+		// Flip m_active then wait for any concurrent public operation that's
+		// already past its isActive() check to leave the worker-storage region.
+		// Pair: operations fetch_add m_opsInFlight before re-checking m_active;
+		// the seq_cst on both sides gives a Dekker-style total order, so either
+		// the operation observes !m_active and bails, or we observe its
+		// increment and spin.
 		m_active.store(false, std::memory_order_seq_cst);
-		while (m_inFlight.load(std::memory_order_seq_cst) > 0)
+		while (m_opsInFlight.load(std::memory_order_seq_cst) > 0)
 			std::this_thread::yield();
 
-		// Now safe: no submitter can touch m_workers. Wake workers (do-while
-		// drain in workerMain runs anything pushed before m_active flipped)
-		// and tear down.
+		// Now safe: no public submitter/stealer can touch m_workers. Wake
+		// workers (do-while drain in workerMain runs anything pushed before
+		// m_active flipped) and tear down.
 		for (size_t i = 0; i < m_workerCount; ++i)
 			fencedNotify(m_workers[i]);
 
@@ -168,7 +233,7 @@ namespace multi::details
 		// deque before its own fetch_sub. The in-flight counter keeps stop()
 		// waiting until that submitter is done, but the worker is already
 		// gone — so the task is still in the deque. Drain it on the
-		// stopping thread before clearing m_workers; m_inFlight == 0
+		// stopping thread before clearing m_workers; m_opsInFlight == 0
 		// guarantees the deques are stable.
 		Task leftover;
 		for (size_t i = 0; i < m_workerCount; ++i)
@@ -191,11 +256,30 @@ namespace multi::details
 		m_workerCount = 0;
 	}
 
+	bool WorkerPool::tryEnterOperation()
+	{
+		if (!isActive())
+			return false;
+
+		m_opsInFlight.fetch_add(1, std::memory_order_seq_cst);
+		if (!isActive())
+		{
+			m_opsInFlight.fetch_sub(1, std::memory_order_seq_cst);
+			return false;
+		}
+		return true;
+	}
+
+	void WorkerPool::leaveOperation() noexcept
+	{
+		m_opsInFlight.fetch_sub(1, std::memory_order_seq_cst);
+	}
+
 	bool WorkerPool::pushWithRetry(size_t idx, Task& task)
 	{
-		// Caller must hold a slot in m_inFlight before getting here. That slot
+		// Caller must hold a slot in m_opsInFlight before getting here. That slot
 		// is what keeps m_workers[idx] alive against a concurrent stop() —
-		// stop() spins on m_inFlight reaching zero before clearing m_workers.
+		// stop() spins on m_opsInFlight reaching zero before clearing m_workers.
 		// Without it, the lock-free deque internals don't help: the Worker
 		// storage itself could vanish under us.
 		Worker* worker = &m_workers[idx];
@@ -208,7 +292,7 @@ namespace multi::details
 			if (pushed)
 				return true;
 			// Overflow ring is full. If shutdown started while we were spinning,
-			// stop() is waiting on m_inFlight — bail to inline so the post-stop
+			// stop() is waiting on m_opsInFlight — bail to inline so the post-stop
 			// drain doesn't deadlock on us. Tasks ending up here run on the
 			// submitter rather than a worker.
 			if (!isActive())
@@ -222,23 +306,9 @@ namespace multi::details
 
 	void WorkerPool::submit(Task&& task)
 	{
-		// Fast path: never-started or already-stopped pool runs inline on
-		// the caller, no push-region claim needed.
-		if (!isActive())
+		OperationGuard op(*this);
+		if (!op.entered())
 		{
-			task();
-			return;
-		}
-
-		// Claim a slot in the push region. After this, stop() will spin on
-		// m_inFlight before clearing m_workers, so the m_workers access below
-		// is safe even if stop() runs concurrently.
-		m_inFlight.fetch_add(1, std::memory_order_seq_cst);
-		if (!isActive())
-		{
-			// Lost the race: stop() flipped m_active between our first check
-			// and our fetch_add. Release the slot and fall back to inline.
-			m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 			task();
 			return;
 		}
@@ -246,8 +316,6 @@ namespace multi::details
 		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workerCount;
 		if (pushWithRetry(idx, task) && idx != currentWorkerIndex())
 			fencedNotify(m_workers[idx]);
-
-		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
 
 	void WorkerPool::submitBatch(std::vector<Task>&& tasks)
@@ -255,18 +323,9 @@ namespace multi::details
 		if (tasks.empty())
 			return;
 
-		if (!isActive())
+		OperationGuard op(*this);
+		if (!op.entered())
 		{
-			for (auto& task : tasks)
-				task();
-			return;
-		}
-
-		// Same push-region claim pattern as submit(). See submit() for rationale.
-		m_inFlight.fetch_add(1, std::memory_order_seq_cst);
-		if (!isActive())
-		{
-			m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 			for (auto& task : tasks)
 				task();
 			return;
@@ -296,12 +355,14 @@ namespace multi::details
 			if (idx != self)
 				fencedNotify(m_workers[idx]);
 		}
-
-		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
 
 	bool WorkerPool::tryStealAny(Task* task)
 	{
+		OperationGuard op(*this);
+		if (!op.entered())
+			return false;
+
 		const size_t workerCount = m_workerCount;
 		if (workerCount == 0)
 			return false;

@@ -507,6 +507,11 @@ namespace multi
 	typename std::iterator_traits<ITER>::difference_type
 	Context::count(ITER begin, ITER end, const T& value)
 	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::count requires random-access iterators");
+
 		using diff_t = typename std::iterator_traits<ITER>::difference_type;
 		const diff_t n = std::distance(begin, end);
 		if (threadCount() < 2 ||
@@ -529,6 +534,11 @@ namespace multi
 	typename std::iterator_traits<ITER>::difference_type
 	Context::count_if(ITER begin, ITER end, UnaryPred pred)
 	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<ITER>::iterator_category>,
+			"multi::count_if requires random-access iterators");
+
 		using diff_t = typename std::iterator_traits<ITER>::difference_type;
 		const diff_t n = std::distance(begin, end);
 		if (threadCount() < 2 ||
@@ -683,6 +693,15 @@ namespace multi
 	                    OutIter outBegin,
 	                    Comp comp)
 	{
+		static_assert(
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<IterA>::iterator_category> &&
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<IterB>::iterator_category> &&
+			std::is_base_of_v<std::random_access_iterator_tag,
+			                  typename std::iterator_traits<OutIter>::iterator_category>,
+			"multi::merge requires random-access iterators for both inputs and the output");
+
 		details::Merger<Context, IterA, IterB, OutIter, Comp> merger(
 			this, aBegin, aEnd, bBegin, bEnd, outBegin, std::move(comp));
 		merger.run();

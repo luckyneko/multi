@@ -178,7 +178,8 @@ namespace multi
 		context()->replace_if(begin, end, std::move(pred), newValue);
 	}
 
-	// Parallel count / count_if — backed by transformReduce.
+	// Parallel count / count_if — see Context for random-access iterator
+	// requirement and small-N serial fallback.
 	template <typename ITER, typename T>
 	typename std::iterator_traits<ITER>::difference_type
 	count(ITER begin, ITER end, const T& value)
@@ -243,16 +244,18 @@ namespace multi
 
 	// In-place parallel sort — see Context::sort for the algorithm
 	// (median-of-three pivot, 3-way partition, std::sort cutoff). RA
-	// iterators only.
+	// iterators only; parallel scratch-buffer paths require default-
+	// constructible value types.
 	template <typename ITER, typename COMP = std::less<>>
 	void sort(ITER begin, ITER end, COMP comp = {})
 	{
 		context()->sort(begin, end, std::move(comp));
 	}
 
-	// Parallel merge of two sorted ranges into a third. Matches
-	// std::merge's contract (stable: equivalent elements from A come
-	// first). See Context::merge for the co-rank algorithm.
+	// Parallel merge of two sorted ranges into a third. Random-access
+	// iterators required for both inputs and output. Matches std::merge's
+	// contract (stable: equivalent elements from A come first). See
+	// Context::merge for the co-rank algorithm.
 	template <typename IterA, typename IterB, typename OutIter,
 	          typename Comp = std::less<>>
 	void merge(IterA aBegin, IterA aEnd,

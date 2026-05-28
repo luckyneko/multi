@@ -7,20 +7,9 @@ namespace multi::details
 		if (count == 0)
 			return;
 
-		if (!isActive())
+		OperationGuard op(*this);
+		if (!op.entered())
 		{
-			for (size_t i = 0; i < count; ++i)
-			{
-				Task t = gen(i);
-				t();
-			}
-			return;
-		}
-
-		m_inFlight.fetch_add(1, std::memory_order_seq_cst);
-		if (!isActive())
-		{
-			m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 			for (size_t i = 0; i < count; ++i)
 			{
 				Task t = gen(i);
@@ -53,7 +42,5 @@ namespace multi::details
 			if (idx != self)
 				fencedNotify(m_workers[idx]);
 		}
-
-		m_inFlight.fetch_sub(1, std::memory_order_seq_cst);
 	}
 } // namespace multi::details
