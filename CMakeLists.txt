@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15...3.28)
+cmake_minimum_required(VERSION 3.20)
 
 # disable testsuite if bundled
 if(NOT DEFINED PROJECT_NAME)
@@ -27,11 +27,6 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
-
-# Load Catch2
-if(MULTI_BUILD_TESTING OR MULTI_BUILD_BENCHMARK)
-    include(addcatch2)
-endif()
 
 # Static Library Target
 find_package(Threads REQUIRED)
@@ -73,16 +68,30 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+target_compile_options(${PROJECT_NAME} PRIVATE
+    # MSVC Flags
+    # /wd4324: cache-line alignas() on small members intentionally pads the struct.
+    $<$<CXX_COMPILER_ID:MSVC>:/WX;/W4;/wd4324>
+
+    # Clang / GCC Flags
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror;-Wall;-Wextra>
+)
 
 # Namespaced alias so consumers can always write multi::multi regardless of
 # whether they got the target via add_subdirectory or find_package.
 add_library(multi::multi ALIAS ${PROJECT_NAME})
-if(MSVC)
-    string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    # /wd4324: cache-line alignas() on small members intentionally pads the struct.
-    target_compile_options(${PROJECT_NAME} PRIVATE /WX /W4 /wd4324)
-else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -Werror -Wall -Wextra)
+
+# Load Catch2
+if(MULTI_BUILD_TESTING OR MULTI_BUILD_BENCHMARK)
+    include(FetchContent)
+	set(CATCH2_VER "3.14.0")
+    set(CATCH2_FILE "github.com/catchorg/Catch2/archive/v${CATCH2_VER}.tar.gz")
+	FetchContent_Declare(catch2
+		URL          "https://${CATCH2_FILE}"
+		DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/.cache/fetch/${CATCH2_FILE}"
+	)
+	FetchContent_MakeAvailable(catch2)
+    include(Catch)
 endif()
 
 # Testing Target
