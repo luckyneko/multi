@@ -8,7 +8,6 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
-#include <functional>
 #include <thread>
 
 // Compile-time probe of the generated version header.
@@ -28,16 +27,15 @@ int main()
 	multi::range(0, 1000, [&](int i) { sum += i; });
 
 	std::array<int, 4> values = {1, 2, 3, 4};
-	auto squareSum = multi::transformReduce(
-		values.begin(), values.end(),
-		0, std::plus<>{}, [](int x) { return x * x; });
+	std::atomic<int> squareSum(0);
+	multi::each(values.begin(), values.end(), [&](int x) { squareSum += x * x; });
 
 	auto h = multi::async([]() { return 42; });
 	const int value = h.get();
 
 	multi::stop();
 
-	const bool ok = (sum.load() == 499500) && (squareSum == 30) && (value == 42);
+	const bool ok = (sum.load() == 499500) && (squareSum.load() == 30) && (value == 42);
 	std::printf("dispatch smoke: %s\n", ok ? "OK" : "FAIL");
 	return ok ? 0 : 1;
 }
