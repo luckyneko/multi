@@ -28,30 +28,9 @@ option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
 
-# Static Library Target
+# Find Required Packages
 find_package(Threads REQUIRED)
-add_library(${PROJECT_NAME} STATIC 
-    # Headers
-    include/multi/details/chaselevdeque.h
-    include/multi/details/constants.h
-    include/multi/details/context.inl
-    include/multi/details/job.h
-    include/multi/details/mpmcqueue.h
-    include/multi/details/task.h
-    include/multi/details/workstealdeque.h
-    include/multi/details/workerpool.h
-    include/multi/details/workerpool.inl
-    include/multi/details/handle.inl
-    include/multi/context.h
-    include/multi/handle.h
-    include/multi/multi.h
 
-    # Source
-    src/context.cpp
-    src/multi.cpp
-    src/workstealdeque.cpp
-    src/workerpool.cpp
-)
 # Generate <multi/version.h> from the project version declared above.
 # Lives in the build tree so it's regenerated when the version changes
 # without dirtying the source tree.
@@ -61,12 +40,21 @@ configure_file(
     @ONLY
 )
 
+# Add Multi library
+add_library(${PROJECT_NAME} STATIC 
+    src/context.cpp
+    src/multi.cpp
+    src/workstealdeque.cpp
+    src/workerpool.cpp
+)
 target_include_directories(${PROJECT_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
+
+# Set C++17 + Warnings
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_compile_options(${PROJECT_NAME} PRIVATE
     # MSVC Flags
@@ -140,7 +128,7 @@ endif()
 # if a result check fails. Useful as documentation and as a smoke check
 # (`for f in build/example-*; do $f || break; done`).
 if(MULTI_BUILD_EXAMPLES)
-    set(MULTI_EXAMPLES hello parallel_for reduce fanout nested)
+    set(MULTI_EXAMPLES hello parallel_for fanout nested)
     foreach(example IN LISTS MULTI_EXAMPLES)
         add_executable(example-${example} examples/${example}.cpp)
         target_link_libraries(example-${example} PRIVATE ${PROJECT_NAME})

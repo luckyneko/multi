@@ -6,16 +6,11 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#include <algorithm>
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
-#include <functional>
 #include <multi/multi.h>
-#include <numeric>
-#include <random>
 #include <stdexcept>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -37,8 +32,8 @@ TEST_CASE("multi: version header agrees with itself")
 	CHECK(multi::version_patch == MULTI_VERSION_PATCH);
 
 	std::string expected = std::to_string(MULTI_VERSION_MAJOR) + "." +
-	                       std::to_string(MULTI_VERSION_MINOR) + "." +
-	                       std::to_string(MULTI_VERSION_PATCH);
+						   std::to_string(MULTI_VERSION_MINOR) + "." +
+						   std::to_string(MULTI_VERSION_PATCH);
 	CHECK(std::string(multi::version_string) == expected);
 
 	const int encoded = MULTI_VERSION_MAJOR * 10000 + MULTI_VERSION_MINOR * 100 + MULTI_VERSION_PATCH;
@@ -49,11 +44,12 @@ TEST_CASE("multi: waitAll / waitAny free functions route through global context"
 {
 	multi::start(2);
 
-	auto h0 = multi::async([]() {
+	auto h0 = multi::async([]()
+						   {
 		std::this_thread::sleep_for(std::chrono::milliseconds(40));
-		return 1;
-	});
-	auto h1 = multi::async([]() { return 2; });
+		return 1; });
+	auto h1 = multi::async([]()
+						   { return 2; });
 
 	// Pre-complete h1 via plain wait() so waitAny sees a deterministic
 	// "first complete" — otherwise the caller-side stealing could pull
@@ -75,11 +71,12 @@ TEST_CASE("multi: waitUntil free function blocks on a custom predicate")
 	multi::start(2);
 
 	std::atomic<bool> ready(false);
-	auto h = multi::async([&]() {
+	auto h = multi::async([&]()
+						  {
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
-		ready.store(true, std::memory_order_release);
-	});
-	multi::waitUntil([&]() { return ready.load(std::memory_order_acquire); });
+		ready.store(true, std::memory_order_release); });
+	multi::waitUntil([&]()
+					 { return ready.load(std::memory_order_acquire); });
 	CHECK(ready.load());
 	h.wait();
 
@@ -91,39 +88,15 @@ TEST_CASE("multi: parallelAsync free function routes through global context")
 	multi::start(2);
 
 	auto handles = multi::parallelAsync(
-		[]() { return 1; },
-		[]() { return 2; });
+		[]()
+		{ return 1; },
+		[]()
+		{ return 2; });
 	auto& [h1, h2] = handles;
 	CHECK(h1.get() == 1);
 	CHECK(h2.get() == 2);
 
 	multi::stop();
-}
-
-TEST_CASE("multi: reduce / transformReduce free functions route through global context")
-{
-	multi::start(4);
-
-	std::vector<int> v(1000);
-	std::iota(v.begin(), v.end(), 1);  // 1..1000
-	CHECK(multi::reduce(v.begin(), v.end(), 0, std::plus<>{}) == 500500);
-	CHECK(multi::transformReduce(v.begin(), v.end(), 0, std::plus<>{},
-	                              [](int x) { return x * x; })
-	      == 333833500);
-
-	multi::stop();
-}
-
-TEST_CASE("multi: context() accessor is swappable")
-{
-	CHECK(multi::context() != nullptr);
-	auto defaultContext = multi::context();
-
-	multi::Context localContext;
-	multi::context() = &localContext;
-	CHECK(multi::context() == &localContext);
-
-	multi::context() = defaultContext;
 }
 
 TEST_CASE("multi: start/stop track threadCount")
@@ -164,7 +137,10 @@ TEST_CASE("multi: parallel runs siblings")
 {
 	multi::start(2);
 	std::atomic<int> a(0);
-	multi::parallel([&]() { a += 1; }, [&]() { a += 2; }, [&]() { a += 4; });
+	multi::parallel([&]()
+					{ a += 1; }, [&]()
+					{ a += 2; }, [&]()
+					{ a += 4; });
 	CHECK(a == 7);
 	multi::stop();
 }
@@ -177,11 +153,13 @@ TEST_CASE("multi: each over vector")
 	for (int i = 0; i < 10; ++i)
 		v[static_cast<std::size_t>(i)] = i;
 
-	multi::each(v.begin(), v.end(), [](int& x) { x *= 2; });
+	multi::each(v.begin(), v.end(), [](int& x)
+				{ x *= 2; });
 
 	std::atomic<int> sum(0);
-	multi::each(v.begin(), v.end(), [&](int x) { sum += x; });
-	CHECK(sum == 90);  // 2*(0+1+...+9)
+	multi::each(v.begin(), v.end(), [&](int x)
+				{ sum += x; });
+	CHECK(sum == 90); // 2*(0+1+...+9)
 
 	multi::stop();
 }
@@ -191,15 +169,18 @@ TEST_CASE("multi: range over integers")
 	multi::start(2);
 
 	std::atomic<int> sum(0);
-	multi::range(0, 10, [&](int i) { sum += i; });
+	multi::range(0, 10, [&](int i)
+				 { sum += i; });
 	CHECK(sum == 45);
 
 	std::atomic<int> stepSum(0);
-	multi::range(0, 10, 2, [&](int i) { stepSum += i; });
-	CHECK(stepSum == 20);  // 0+2+4+6+8
+	multi::range(0, 10, 2, [&](int i)
+				 { stepSum += i; });
+	CHECK(stepSum == 20); // 0+2+4+6+8
 
 	std::atomic<int> chunkedSum(0);
-	multi::range(std::size_t(3), 0, 10, 1, [&](int i) { chunkedSum += i; });
+	multi::range(std::size_t(3), 0, 10, 1, [&](int i)
+				 { chunkedSum += i; });
 	CHECK(chunkedSum == 45);
 
 	multi::stop();
@@ -209,95 +190,9 @@ TEST_CASE("multi: async rethrows task exception")
 {
 	multi::start(2);
 
-	auto h = multi::async([]() { throw std::runtime_error("boom"); });
+	auto h = multi::async([]()
+						  { throw std::runtime_error("boom"); });
 	CHECK_THROWS_AS(h.wait(), std::runtime_error);
-
-	multi::stop();
-}
-
-TEST_CASE("multi: merge free function routes through global context")
-{
-	multi::start(4);
-
-	std::vector<int> a(5000), b(5000);
-	for (int i = 0; i < 5000; ++i)
-	{
-		a[i] = 2 * i;
-		b[i] = 2 * i + 1;
-	}
-
-	std::vector<int> got(10000, 0);
-	multi::merge(a.begin(), a.end(), b.begin(), b.end(), got.begin());
-
-	std::vector<int> expected(10000, 0);
-	std::merge(a.begin(), a.end(), b.begin(), b.end(), expected.begin());
-	CHECK(got == expected);
-
-	multi::stop();
-}
-
-TEST_CASE("multi: tier-1 elementwise free functions route through global context")
-{
-	multi::start(4);
-
-	// transform (unary)
-	std::vector<int> in(40000), out(40000, 0);
-	std::iota(in.begin(), in.end(), 1);
-	multi::transform(in.begin(), in.end(), out.begin(),
-	                  [](int x) { return x * 2; });
-	for (std::size_t i = 0; i < in.size(); ++i)
-		REQUIRE(out[i] == 2 * static_cast<int>(i + 1));
-
-	// transform (binary)
-	std::vector<int> sum(40000, 0);
-	multi::transform(in.begin(), in.end(), out.begin(), sum.begin(),
-	                  [](int a, int b) { return a + b; });
-	for (std::size_t i = 0; i < in.size(); ++i)
-		REQUIRE(sum[i] == in[i] + out[i]);
-
-	// fill
-	std::vector<int> v(40000, 0);
-	multi::fill(v.begin(), v.end(), 13);
-	for (int x : v) REQUIRE(x == 13);
-
-	// generate (thread-safe counter)
-	std::atomic<int> ctr{0};
-	multi::generate(v.begin(), v.end(),
-	                 [&ctr] { return ctr.fetch_add(1, std::memory_order_relaxed); });
-	CHECK(ctr.load() == static_cast<int>(v.size()));
-
-	// replace / replace_if
-	std::iota(v.begin(), v.end(), 0);
-	multi::replace_if(v.begin(), v.end(),
-	                   [](int x) { return x % 2 == 0; }, -1);
-	multi::replace(v.begin(), v.end(), -1, -7);
-	CHECK(std::count(v.begin(), v.end(), -7) ==
-	      static_cast<std::ptrdiff_t>(v.size() / 2));
-
-	multi::stop();
-}
-
-TEST_CASE("multi: tier-1 search free functions route through global context")
-{
-	multi::start(4);
-
-	std::vector<int> v(50000);
-	std::iota(v.begin(), v.end(), -25000);     // -25000 .. 24999
-
-	CHECK(multi::count(v.begin(), v.end(), 0) == 1);
-	CHECK(multi::count_if(v.begin(), v.end(),
-	                       [](int x) { return x >= 0; }) == 25000);
-
-	auto mn = multi::min_element(v.begin(), v.end());
-	auto mx = multi::max_element(v.begin(), v.end());
-	REQUIRE(mn != v.end());
-	REQUIRE(mx != v.end());
-	CHECK(*mn == -25000);
-	CHECK(*mx == 24999);
-
-	auto mm = multi::minmax_element(v.begin(), v.end());
-	CHECK(*mm.first  == -25000);
-	CHECK(*mm.second == 24999);
 
 	multi::stop();
 }

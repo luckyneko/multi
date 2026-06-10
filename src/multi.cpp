@@ -10,10 +10,9 @@
 
 namespace multi
 {
-	static Context STATIC_CONTEXT;
-	Context*& context()
+	Context& context()
 	{
-		static Context* currentContext = &STATIC_CONTEXT;
-		return currentContext;
+		static Context g_context;
+		return g_context;
 	}
 }

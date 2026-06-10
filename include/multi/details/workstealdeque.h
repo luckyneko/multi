@@ -1,4 +1,7 @@
 /*
+ *  Created by LuckyNeko on 17/04/2026.
+ *  Copyright 2026 LuckyNeko
+ *
  *  Distributed under the MIT Software License
  *  (See accompanying file LICENSE.md)
  */
