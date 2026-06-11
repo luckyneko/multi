@@ -145,7 +145,7 @@ namespace multi::details
 		}
 	}
 
-	void WorkerPool::start(size_t threadCount)
+	void WorkerPool::start(int threadCount)
 	{
 		// Surface double-start in both debug and release. Silently no-op'ing
 		// would let users keep submitting against a pool that doesn't match
@@ -153,7 +153,12 @@ namespace multi::details
 		if (m_active.load(std::memory_order_relaxed))
 			throw std::logic_error("multi::details::WorkerPool::start called while pool is already active");
 
-		if (threadCount == 0)
+		// Negative Values set HW threadcount - 1;
+		if (threadCount < 0)
+			threadCount = std::thread::hardware_concurrency() - 1;
+
+		// Exit if threadCount is still less thatn or smaller than 0
+		if (threadCount <= 0)
 			return;
 
 		// One heap allocation for the whole array — each Worker is
@@ -290,8 +295,8 @@ namespace multi::details
 		for (;;)
 		{
 			const bool pushed = isSelf
-				? worker->deque.tryPushLocal(std::move(task))
-				: worker->deque.tryPushRemote(std::move(task));
+									? worker->deque.tryPushLocal(std::move(task))
+									: worker->deque.tryPushRemote(std::move(task));
 			if (pushed)
 				return true;
 			// Overflow ring is full. If shutdown started while we were spinning,

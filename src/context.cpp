@@ -13,7 +13,7 @@
 
 namespace multi
 {
-	void Context::start(size_t threadCount)
+	void Context::start(int threadCount)
 	{
 		m_workerPool.start(threadCount);
 	}

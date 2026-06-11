@@ -11,7 +11,7 @@
 namespace multi
 {
 	// Start threads
-	inline void start(size_t threadCount)
+	inline void start(int threadCount)
 	{
 		context().start(threadCount);
 	}

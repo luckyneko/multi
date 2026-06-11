@@ -8,11 +8,12 @@
 #include <multi/multi.h>
 
 #include <cstdio>
-#include <thread>
 
 int main()
 {
-	multi::start(std::thread::hardware_concurrency());
+	// No argument → default pool of hardware_concurrency()-1 workers, leaving
+	// a core for the calling thread (which also participates in work-stealing).
+	multi::start();
 
 	// Typed async: lambda returns int → Handle<int>. .get() blocks until
 	// the task finishes and returns the value (or rethrows on exception).

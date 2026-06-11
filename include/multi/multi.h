@@ -17,7 +17,7 @@ namespace multi
 	Context& context();
 
 	// Start threads
-	inline void start(size_t threadCount);
+	inline void start(int threadCount = -1);
 
 	// Stop threads
 	inline void stop();

@@ -12,9 +12,9 @@
 
 int main(int argc, char* argv[])
 {
-	// multi uses (hw-1) workers; the calling thread participates in stealing,
-	// giving hw effective parallel threads total.
-	multi::start(std::max(int(std::thread::hardware_concurrency()), 4) - 1);
+	// Default pool = (hw-1) workers; the calling thread participates in
+	// stealing, giving hw effective parallel threads total.
+	multi::start();
 	int result = Catch::Session().run(argc, argv);
 	multi::stop();
 	return result;

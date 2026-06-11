@@ -61,12 +61,14 @@ For deeper API coverage see [test/context.cpp](test/context.cpp).
 ``` C++
 #include <multi/multi.h>
 #include <atomic>
-#include <thread>
 
 int main()
 {
-    // Start with hardware thread count
-    multi::start(std::thread::hardware_concurrency());
+    // Start the worker pool. With no argument it defaults to
+    // hardware_concurrency()-1 workers, leaving a core for the calling
+    // thread (which also participates in work-stealing). Pass an explicit
+    // count to override, e.g. multi::start(4).
+    multi::start();
 
     // Run job
     std::atomic<int> i(0);

@@ -8,7 +8,6 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
-#include <thread>
 
 // Compile-time probe of the generated version header.
 static_assert(MULTI_VERSION_MAJOR >= 0, "version major macro");
@@ -19,7 +18,7 @@ int main()
 	std::printf("multi version: %s (encoded %d)\n",
 	            MULTI_VERSION_STRING, MULTI_VERSION);
 
-	multi::start(std::thread::hardware_concurrency());
+	multi::start(); // default pool: hardware_concurrency()-1 workers
 
 	// Touch each major dispatch shape to make sure the installed headers
 	// declare everything users will reach for.

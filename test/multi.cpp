@@ -108,6 +108,20 @@ TEST_CASE("multi: start/stop track threadCount")
 	REQUIRE(multi::threadCount() == 0);
 }
 
+TEST_CASE("multi: start() defaults to hardware_concurrency - 1")
+{
+	// No argument (or a negative count) auto-sizes the pool to one fewer than
+	// the hardware thread count, reserving a core for the calling thread.
+	const unsigned hw = std::thread::hardware_concurrency();
+
+	REQUIRE(multi::threadCount() == 0);
+	multi::start();
+	if (hw > 1)
+		REQUIRE(multi::threadCount() == static_cast<size_t>(hw - 1));
+	multi::stop();
+	REQUIRE(multi::threadCount() == 0);
+}
+
 TEST_CASE("multi: async returns handle that waits")
 {
 	REQUIRE(multi::threadCount() == 0);

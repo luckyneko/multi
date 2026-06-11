@@ -16,7 +16,8 @@
 
 int main()
 {
-	multi::start(std::thread::hardware_concurrency());
+	// Default pool: hardware_concurrency()-1 workers.
+	multi::start();
 
 	// Heterogeneous fan-out: each lambda has its own return type. The
 	// tuple's element types are deduced from invoke_result of each.

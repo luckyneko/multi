@@ -10,12 +10,12 @@
 
 #include <atomic>
 #include <cstdio>
-#include <thread>
 #include <vector>
 
 int main()
 {
-	multi::start(std::thread::hardware_concurrency());
+	// Default pool: hardware_concurrency()-1 workers.
+	multi::start();
 
 	// each — mutate every element in place
 	std::vector<int> v(100, 1);

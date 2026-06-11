@@ -34,7 +34,7 @@ namespace multi::details
 		WorkerPool(const WorkerPool&) = delete;
 		~WorkerPool();
 
-		void start(size_t threadCount);
+		void start(int threadCount);
 		void stop();
 
 		// Submit a single task (round-robin to a worker deque)

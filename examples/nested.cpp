@@ -10,7 +10,6 @@
 
 #include <cstdio>
 #include <numeric>
-#include <thread>
 #include <vector>
 
 namespace
@@ -40,7 +39,8 @@ namespace
 
 int main()
 {
-	multi::start(std::thread::hardware_concurrency());
+	// Default pool: hardware_concurrency()-1 workers.
+	multi::start();
 
 	std::vector<long long> v(100000);
 	std::iota(v.begin(), v.end(), 1LL);  // 1..100000

@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include "multi/handle.h"
 #include "multi/details/job.h"
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
+#include "multi/handle.h"
 
 namespace multi
 {
@@ -30,7 +30,7 @@ namespace multi
 		// that calling `start()` on a running pool is undefined; call
 		// `stop()` first. Passing 0 leaves the pool inactive — every
 		// dispatch primitive runs inline on the caller in that state.
-		void start(size_t threadCount);
+		void start(int threadCount = -1);
 
 		// Stop all workers, draining any in-flight tasks first. Blocks
 		// until every worker has exited. Safe to call on an inactive pool
