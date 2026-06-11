@@ -109,12 +109,16 @@ TEST_CASE("Context: parallel runs siblings")
 	multi::Context context;
 	context.start(threadCount);
 
+	// Each sibling contributes a distinct addend so the result is independent
+	// of the order in which the two tasks run. Don't reintroduce an
+	// order-dependent read-modify-write (e.g. a = a * 2) gated on a sleep --
+	// that races the sibling's increment and fails intermittently under CI load.
 	std::atomic<int> a(2);
-	context.parallel([&]() { ++a; },
+	context.parallel([&]() { a += 1; },
 					 [&]()
 					 {
 						 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-						 a = a * 2;
+						 a += 3;
 					 });
 	CHECK(a == 6);
 
