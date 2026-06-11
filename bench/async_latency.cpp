@@ -19,7 +19,7 @@ TEST_CASE("async_latency", "[bench][fast]")
 	BENCHMARK("multi(async)")
 	{
 		for (int i = 0; i < 1000; ++i)
-			multi::async([]() {}).wait();
+			multi::waitAll(multi::async([]() {}));
 		return 1000;
 	};
 }

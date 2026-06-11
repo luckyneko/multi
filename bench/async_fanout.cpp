@@ -25,7 +25,7 @@ TEST_CASE("async_fanout", "[bench][fast]")
 		for (int i = 0; i < numTasks; ++i)
 			handles.push_back(multi::async([]() {}));
 		for (auto& h : handles)
-			h.wait();
+			multi::waitAll(h);
 		return handles.size();
 	};
 

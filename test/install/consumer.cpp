@@ -30,7 +30,9 @@ int main()
 	multi::each(values.begin(), values.end(), [&](int x) { squareSum += x * x; });
 
 	auto h = multi::async([]() { return 42; });
-	const int value = h.get();
+	multi::waitAll(h);
+	int value = 0;
+	h.get(&value);
 
 	multi::stop();
 

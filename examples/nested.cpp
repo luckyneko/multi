@@ -33,7 +33,10 @@ namespace
 		multi::waitAll(children);
 
 		auto& [hL, hR] = children;
-		return hL.get() + hR.get();
+		long long l = 0, r = 0;
+		hL.get(&l);
+		hR.get(&r);
+		return l + r;
 	}
 } // namespace
 

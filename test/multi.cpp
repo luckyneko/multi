@@ -44,24 +44,26 @@ TEST_CASE("multi: waitAll / waitAny free functions route through global context"
 {
 	multi::start(2);
 
-	auto h0 = multi::async([]()
-						   {
-		std::this_thread::sleep_for(std::chrono::milliseconds(40));
-		return 1; });
-	auto h1 = multi::async([]()
-						   { return 2; });
-
-	// Pre-complete h1 via plain wait() so waitAny sees a deterministic
-	// "first complete" — otherwise the caller-side stealing could pull
-	// h0 onto this thread and finish it inline.
-	h1.wait();
-	const std::size_t idx = multi::waitAny(h0, h1);
-	CHECK(idx == 1);
-
-	// waitAll blocks until both complete.
+	// waitAll: both handles are complete once it returns.
+	auto h0 = multi::async([]() { return 1; });
+	auto h1 = multi::async([]() { return 2; });
 	multi::waitAll(h0, h1);
 	CHECK(h0.complete());
 	CHECK(h1.complete());
+
+	// waitAny: a slow handle vs an already-complete one. Pre-complete `b`
+	// with Handle::wait() (a plain, NON-stealing block) so the caller can't
+	// pull the 40ms `a` inline — then waitAny must report b's index.
+	auto a = multi::async([]()
+						  {
+		std::this_thread::sleep_for(std::chrono::milliseconds(40));
+		return 1; });
+	auto b = multi::async([]() { return 2; });
+	b.wait();
+	const std::size_t idx = multi::waitAny(a, b);
+	CHECK(idx == 1);
+
+	multi::waitAll(a, b);  // drain the slow sibling before stop()
 
 	multi::stop();
 }
@@ -78,7 +80,7 @@ TEST_CASE("multi: waitUntil free function blocks on a custom predicate")
 	multi::waitUntil([&]()
 					 { return ready.load(std::memory_order_acquire); });
 	CHECK(ready.load());
-	h.wait();
+	multi::waitAll(h);
 
 	multi::stop();
 }
@@ -92,9 +94,13 @@ TEST_CASE("multi: parallelAsync free function routes through global context")
 		{ return 1; },
 		[]()
 		{ return 2; });
+	multi::waitAll(handles);
 	auto& [h1, h2] = handles;
-	CHECK(h1.get() == 1);
-	CHECK(h2.get() == 2);
+	int v1 = 0, v2 = 0;
+	CHECK(h1.get(&v1));
+	CHECK(h2.get(&v2));
+	CHECK(v1 == 1);
+	CHECK(v2 == 2);
 
 	multi::stop();
 }
@@ -122,7 +128,7 @@ TEST_CASE("multi: start() defaults to hardware_concurrency - 1")
 	REQUIRE(multi::threadCount() == 0);
 }
 
-TEST_CASE("multi: async returns handle that waits")
+TEST_CASE("multi: async handle observed via waitAll")
 {
 	REQUIRE(multi::threadCount() == 0);
 	multi::start(4);
@@ -133,15 +139,8 @@ TEST_CASE("multi: async returns handle that waits")
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		++a; });
 	CHECK(a == 0);
-	hdl.wait();
+	multi::waitAll(hdl);
 	CHECK(a == 1);
-
-	// Dropped Handle still completes its task before scope exit.
-	multi::async([&]()
-				 {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		++a; });
-	CHECK(a == 2);
 
 	multi::stop();
 	REQUIRE(multi::threadCount() == 0);
@@ -204,9 +203,14 @@ TEST_CASE("multi: async rethrows task exception")
 {
 	multi::start(2);
 
-	auto h = multi::async([]()
+	// A failing task surfaces its exception through get() once complete;
+	// the value-returning form is what carries the throw (void handles have
+	// no get()).
+	auto h = multi::async([]() -> int
 						  { throw std::runtime_error("boom"); });
-	CHECK_THROWS_AS(h.wait(), std::runtime_error);
+	multi::waitAll(h);
+	int v = 0;
+	CHECK_THROWS_AS(h.get(&v), std::runtime_error);
 
 	multi::stop();
 }

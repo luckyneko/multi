@@ -70,47 +70,31 @@ int main()
     // count to override, e.g. multi::start(4).
     multi::start();
 
-    // Run job
+    // Fire off a task. async returns a Handle<T> (T is deduced from the
+    // functor's return type — void here). The Handle itself never blocks;
+    // you wait on it through the multi::wait* functions.
     std::atomic<int> i(0);
-    multi::Handle jobHdl = multi::async([&]()
-    {
-        ++i;
-    });
+    auto jobHdl = multi::async([&]() { ++i; });
 
-    // Wait for job to complete
-    jobHdl.wait();
+    // Wait for it via multi::waitAll, which participates in work-stealing
+    // while it waits, so the calling thread helps drain the pool.
+    multi::waitAll(jobHdl);
 
-    // async will automatically wait if handle not captured
-    multi::async([&]()
-    {
-        ++i;
-    });
+    // A Handle you don't keep does NOT wait on destruction; the task still
+    // runs on the pool and is guaranteed done once stop() drains the workers.
+    multi::async([&]() { ++i; });
 
-    // Tasks that return a value: the Handle's template parameter is
-    // deduced from the functor's return type. get() blocks (rethrowing
-    // on failure) and returns the value.
-    multi::Handle<int> answer = multi::async([]() { return 42; });
-    int result = answer.get();
+    // Tasks that return a value: wait for completion, then read the result
+    // out with get(&out). get() returns true once the task is complete (and
+    // rethrows if the task threw). It never blocks on its own.
+    auto answer = multi::async([]() { return 42; });   // Handle<int>
+    multi::waitAll(answer);
+    int result = 0;
+    answer.get(&result);
 
-    // Bounded wait — useful for "check, then keep doing something else"
-    // loops. Returns std::future_status::ready or ::timeout.
-    auto slow = multi::async([]() { /* …long… */ });
-    if (slow.wait_for(std::chrono::milliseconds(5)) == std::future_status::timeout)
-    {
-        // come back later
-    }
-
-    // Handle::wait()/get()/wait_for blocks the calling thread plainly.
-    // If you want the caller to help drain the pool while waiting on a
-    // specific Handle — useful e.g. when the caller is a worker thread
-    // that submitted nested work — use waitAll:
-    auto child = multi::async([&]() { /* … */ });
-    multi::waitAll(child);   // participates in work-stealing until child completes
-    child.get();                // observe value/exception
-
-    // Wait on multiple handles at once. waitAll returns after every
-    // handle completes; waitAny returns the index of the first one
-    // to complete. Both participate in stealing internally.
+    // Wait on multiple handles at once. waitAll returns after every handle
+    // completes; waitAny returns the index of the first one to complete.
+    // Both participate in stealing internally.
     auto h1 = multi::async([]() { return 1; });
     auto h2 = multi::async([]() { return 2.0; });
     multi::waitAll(h1, h2);
@@ -120,7 +104,7 @@ int main()
     std::size_t firstDone = multi::waitAny(group);
 
     // Generalised primitive for waiting on arbitrary conditions with
-    // caller participation in the pool — `waitAll`/`waitAny` are all
+    // caller participation in the pool — `waitAll`/`waitAny` are
     // thin wrappers over it.
     std::atomic<int> remaining{N};
     multi::waitUntil([&]{ return remaining.load() == 0; });
@@ -154,17 +138,22 @@ void function()
 {
     // Fan out heterogeneous siblings — each functor gets its own
     // Handle<R>, packaged in a tuple. Use when you need per-task
-    // results, different return types, or per-handle wait_for.
+    // results or different return types.
     // Contrast with `parallel(a, b, ...)` which is fire-and-block.
     auto handles = multi::parallelAsync(
         []() { return 42; },
         []() { return std::string("hello"); },
         []() { return 3.14; });
 
+    // waitAll on the tuple (participates in stealing while waiting), then
+    // read each result with get(&out). get() returns true once complete and
+    // rethrows if that task threw.
+    multi::waitAll(handles);
     auto& [hInt, hStr, hDbl] = handles;
-    int i = hInt.get();          // blocks, rethrows on failure
-    std::string s = hStr.get();
-    double d = hDbl.get();
+    int i = 0; std::string s; double d = 0.0;
+    hInt.get(&i);
+    hStr.get(&s);
+    hDbl.get(&d);
 
     // Sibling exceptions are isolated per-handle (unlike `parallel`
     // which captures only the first across all siblings).
@@ -234,7 +223,7 @@ Headline numbers — AMD Ryzen 9 5950X (16 cores / 32 threads), Windows 11, MSVC
 | `imbalanced` / 200 (slow)     |   128 ms |  4.79 ms |  4.96 ms | 26×       |
 | `mandelbrot` (slow)           |   597 ms |  24.3 ms |  27.2 ms | 22×       |
 
-Per-dispatch latencies (no serial comparison): `async_latency` ≈ **5.5 µs** per serial `async` + `Handle::wait` round-trip; `parallel_pair` ≈ **1.5 µs** per `parallel(a, b)` call.
+Per-dispatch latencies (no serial comparison): `async_latency` ≈ **5.5 µs** per serial `async` + `waitAll` round-trip; `parallel_pair` ≈ **1.5 µs** per `parallel(a, b)` call.
 
 \* `empty_tasks` measures raw dispatch overhead — its speedup is overhead-vs-overhead, not work-throughput.
 
@@ -276,7 +265,7 @@ Workloads:
 | `each_iter` | fast | `each` over vector (random-access) vs map (bidirectional); 1k vs 50k items |
 | `parallel_pair` | fast | `parallel(a, b)` two-task dispatch on the hot path |
 | `nested` | fast | Fork-join tree via `parallel`; includes serial baseline |
-| `async_latency` | fast | Serial `async` + `Handle::wait` round-trip cost |
+| `async_latency` | fast | Serial `async` + `waitAll` round-trip cost |
 | `async_fanout` | fast | N concurrent `async` tasks, collected then waited |
 | `steal_contention` | fast | Multiple external driver threads issuing parallel work at once |
 | `mandelbrot` | slow | Uniform CPU-bound; the "well-behaved" case |
@@ -284,7 +273,7 @@ Workloads:
 
 ### Exception handling
 Tasks that throw propagate the exception to the caller:
-- `multi::async`: the first exception is stored on the returned `Handle`; calling `Handle::wait()` rethrows it.
+- `multi::async`: the exception is stored on the returned value-typed `Handle<T>`. Wait for completion (`multi::waitAll(h)`), then `h.get(&out)` rethrows it. Void tasks (`Handle<void>`) have no `get()` and so cannot surface a task exception — return a value if you need to observe failures.
 - `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled.
 
-`Handle`'s destructor swallows exceptions so dropping a Handle cannot call `std::terminate`; call `wait()` explicitly if you need to observe failures.
+A `Handle` never blocks on destruction and does not throw — dropping one cannot call `std::terminate`. To wait: `Handle::wait()` blocks plainly (no work-stealing), while `multi::waitAll` / `waitAny` / `waitUntil` block *and* help drain the pool. Observe results or exceptions with `Handle::get(&out)`.

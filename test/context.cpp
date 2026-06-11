@@ -42,22 +42,12 @@ TEST_CASE("Context: async wait observes side effects")
 		++a; });
 	if (context.threadCount() > 0)
 		CHECK(a == 0);
-	hdl.wait();
+	context.waitAll(hdl);
 	CHECK(a == 1);
 
+	// A completed handle still holds its (now-ready) state.
 	CHECK(hdl.valid() == true);
 	CHECK(hdl.complete() == true);
-	hdl = multi::Handle<>();
-	CHECK(hdl.valid() == false);
-	CHECK(hdl.complete() == true);
-
-	// Dropped handle still completes the task (RAII-wait or inline).
-	a = 1;
-	context.async([&]()
-				  {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		++a; });
-	CHECK(a == 2);
 
 	context.stop();
 }
@@ -66,9 +56,8 @@ TEST_CASE("Context: waitAll avoids self-deadlock with 1 worker")
 {
 	// With threadCount==1 the sole worker is the one running the outer task.
 	// The inner async submits a task that only the sole worker could run —
-	// but that worker is itself the one waiting on the inner Handle. Plain
-	// Handle::wait() blocks (and would deadlock here); waitAll lets the
-	// waiting thread drain pending work first.
+	// but that worker is itself the one waiting on the inner Handle. waitAll
+	// lets the waiting thread drain pending work first instead of deadlocking.
 	multi::Context context;
 	context.start(1);
 
@@ -78,9 +67,9 @@ TEST_CASE("Context: waitAll avoids self-deadlock with 1 worker")
 		context.waitAll(inner);  // explicit participation
 		counter++;
 	});
-	// Main thread isn't a worker — outer.wait() blocks plainly, which is
-	// fine: the sole worker will run `outer` once it unwinds inner.
-	outer.wait();
+	// Main thread isn't a worker; waitAll lets it participate in stealing so
+	// the sole worker isn't the only thread that can make progress.
+	context.waitAll(outer);
 
 	CHECK(counter == 2);
 	context.stop();
@@ -91,13 +80,15 @@ TEST_CASE("Context: async rethrows task exception and pool survives")
 	multi::Context context;
 	context.start(2);
 
-	auto thrower = context.async([]()
+	auto thrower = context.async([]() -> int
 								 { throw std::runtime_error("boom"); });
-	CHECK_THROWS_AS(thrower.wait(), std::runtime_error);
+	context.waitAll(thrower);
+	int v = 0;
+	CHECK_THROWS_AS(thrower.get(&v), std::runtime_error);
 
 	// Pool still accepts new work after a throwing task.
 	std::atomic<int> x(0);
-	context.async([&]() { x = 42; }).wait();
+	context.waitAll(context.async([&]() { x = 42; }));
 	CHECK(x == 42);
 
 	context.stop();

@@ -45,7 +45,8 @@ namespace multi
 		// than two.
 		if (count == 2)
 		{
-			m_workerPool.submit(details::Task([&job]() { job.run(0); }));
+			m_workerPool.submit(details::Task([&job]()
+											  { job.run(0); }));
 			job.run(1);
 			while (job.remaining() > 0)
 			{
@@ -61,7 +62,8 @@ namespace multi
 		// `&job` carries the JobT type, so the inner job.run(i) is a direct
 		// call resolved at compile time.
 		m_workerPool.submitBatch(count, [&job](std::size_t i)
-								 { return details::Task([&job, i]() { job.run(i); }); });
+								 { return details::Task([&job, i]()
+														{ job.run(i); }); });
 
 		// Caller participates by stealing while waiting. The release in
 		// runOne() pairs with the acquire in remaining(), so every task's
@@ -91,7 +93,8 @@ namespace multi
 		using R = std::invoke_result_t<DecayedF>;
 		auto job = std::make_shared<details::AsyncJob<DecayedF, R>>(std::forward<F>(f));
 		auto fut = job->getFuture();
-		m_workerPool.submit([job]() { job->run(0); });
+		m_workerPool.submit([job]()
+							{ job->run(0); });
 		return Handle<R>(std::move(fut));
 	}
 
@@ -119,20 +122,22 @@ namespace multi
 		// just a one-element fold. Every iteration re-evaluates all
 		// handles' .complete() — that's cheap (each is an atomic load) and
 		// avoids tracking per-handle state.
-		waitUntil([&]() -> bool { return (hs.complete() && ...); });
+		waitUntil([&]() -> bool
+				  { return (hs.complete() && ...); });
 	}
 
 	template <class... Ts>
 	void Context::waitAll(const std::tuple<Handle<Ts>...>& tup)
 	{
-		std::apply([this](const auto&... hs) { this->waitAll(hs...); }, tup);
+		std::apply([this](const auto&... hs)
+				   { this->waitAll(hs...); }, tup);
 	}
 
 	template <class... Hs>
 	std::size_t Context::waitAny(const Hs&... hs)
 	{
 		static_assert(sizeof...(Hs) > 0,
-		              "Context::waitAny requires at least one handle");
+					  "Context::waitAny requires at least one handle");
 
 		// `completed` sentinel = sizeof...(Hs) means "none observed yet".
 		// The fold over || short-circuits on the first complete handle,
@@ -142,19 +147,20 @@ namespace multi
 		// evaluates left-to-right so this counter tracks the source
 		// position exactly.
 		std::size_t completed = sizeof...(Hs);
-		waitUntil([&]() -> bool {
+		waitUntil([&]() -> bool
+				  {
 			std::size_t i = 0;
 			return ((hs.complete()
 			             ? (completed = i, true)
-			             : (++i, false)) || ...);
-		});
+			             : (++i, false)) || ...); });
 		return completed;
 	}
 
 	template <class... Ts>
 	std::size_t Context::waitAny(const std::tuple<Handle<Ts>...>& tup)
 	{
-		return std::apply([this](const auto&... hs) { return this->waitAny(hs...); }, tup);
+		return std::apply([this](const auto&... hs)
+						  { return this->waitAny(hs...); }, tup);
 	}
 
 	template <typename... TASKS>
@@ -167,15 +173,6 @@ namespace multi
 	template <typename... Fs>
 	auto Context::parallelAsync(Fs&&... fs)
 	{
-		// Each async() returns a prvalue Handle<R> which the tuple stores
-		// via move-construction (Handle is move-only, but std::make_tuple
-		// move-binds prvalues into its elements). Tuple positions follow
-		// source order; the *evaluation* order of the async() calls is
-		// unspecified per C++17 [expr.call], so the submission order may
-		// interleave — but that's already true of any sequence of async()
-		// calls on the same pool and not observable via the returned
-		// tuple (positions are bound to their corresponding `fs` slot,
-		// not to whichever submit completed first).
 		return std::make_tuple(async(std::forward<Fs>(fs))...);
 	}
 

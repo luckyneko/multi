@@ -135,10 +135,10 @@ TEST_CASE("steal_contention", "[bench][fast]")
 		{
 			for (int c = 0; c < callsPerDriver; ++c)
 			{
-				multi::async([&sink]()
+				multi::waitAll(multi::async([&sink]()
 				{
 					sink.fetch_add(1, std::memory_order_relaxed);
-				}).wait();
+				}));
 			}
 		};
 	};
