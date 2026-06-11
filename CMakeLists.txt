@@ -104,7 +104,17 @@ endif()
 if(MULTI_BUILD_BENCHMARK)
     add_executable(bench-${PROJECT_NAME}
         bench/main.cpp
-        bench/workloads.cpp
+        bench/empty_tasks.cpp
+        bench/mandelbrot.cpp
+        bench/tiny_tasks.cpp
+        bench/imbalanced.cpp
+        bench/nested.cpp
+        bench/async_latency.cpp
+        bench/async_fanout.cpp
+        bench/heavy_capture.cpp
+        bench/steal_contention.cpp
+        bench/each_iter.cpp
+        bench/parallel_pair.cpp
     )
     target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
 endif()

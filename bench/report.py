@@ -28,12 +28,49 @@ from typing import List, Optional, Tuple
 DEFAULT_EXEC = "./build/bench-multi"
 
 
+# ---------------------------------------------------------------------------
+# Executable resolution — cross-platform
+# ---------------------------------------------------------------------------
+
+def candidate_execs(exec_path: str) -> List[str]:
+    """Candidate locations to probe for the bench binary.
+
+    Covers two platform differences without the caller having to care:
+      * Windows appends a '.exe' suffix to executables.
+      * Multi-config generators (Visual Studio, Xcode) place the binary in
+        'build/<Config>/bench-multi' rather than 'build/bench-multi' that
+        single-config generators (Ninja, Unix Makefiles) produce.
+    """
+    head, tail = os.path.split(exec_path)
+    bases = [exec_path]
+    for config in ("Release", "RelWithDebInfo", "Debug"):
+        bases.append(os.path.join(head, config, tail))
+
+    suffixes = ["", ".exe"] if os.name == "nt" else [""]
+
+    seen = set()
+    out: List[str] = []
+    for base in bases:
+        for suffix in suffixes:
+            cand = base + suffix
+            if cand not in seen:
+                seen.add(cand)
+                out.append(cand)
+    return out
+
+
+def resolve_exec(exec_path: str) -> Optional[str]:
+    """Return the first existing candidate path, or None if none exist."""
+    for cand in candidate_execs(exec_path):
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
 def is_baseline(name: str) -> bool:
-    """Treat any benchmark whose name starts with 'serial' as the per-
-    group baseline. Catches both the canonical 'serial (baseline)' used
-    by tiny_tasks/mandelbrot/nested and the descriptive forms like
-    'serial std::sort' / 'serial std::accumulate' / 'serial
-    std::transform_reduce' used by the reduce/sort benches."""
+    """Treat any benchmark whose name starts with 'serial' as the per-group
+    baseline (the canonical label is 'serial(baseline)', used by
+    tiny_tasks/imbalanced/mandelbrot/nested)."""
     return name.startswith("serial")
 
 
@@ -81,11 +118,11 @@ def split_args(argv: List[str]) -> Tuple[str, List[str]]:
 # Run bench-multi, capturing XML output via an extra reporter
 # ---------------------------------------------------------------------------
 
-def run_bench(exec_path: str, bench_args: list[str], xml_path: str) -> None:
+def run_bench(exec_path: str, bench_args: List[str], xml_path: str) -> None:
     # Catch2 v3 multi-reporter syntax: each --reporter arg is independent;
     # xml::out=<file> routes only the XML output to our temp file without
     # disturbing any other reporters the user may have requested.
-    cmd = [exec_path] + bench_args + [f"--reporter", f"xml::out={xml_path}"]
+    cmd = [exec_path] + bench_args + ["--reporter", f"xml::out={xml_path}"]
     result = subprocess.run(cmd)
     # Catch2 exits 1 when there are test failures; still parse the XML.
     if result.returncode > 1:
@@ -189,14 +226,25 @@ def print_report(rows: List[Row]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # The report table uses a non-ASCII '±' in its header. Windows' default
+    # console codepage mangles it; force UTF-8 so it renders identically on
+    # Windows, Linux and macOS. No-op where stdout is already UTF-8.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
     exec_path, bench_args = split_args(sys.argv[1:])
 
-    if not os.path.isfile(exec_path):
+    resolved = resolve_exec(exec_path)
+    if resolved is None:
         sys.exit(
-            f"error: bench-multi not found at '{exec_path}'\n"
+            f"error: bench-multi not found at '{exec_path}'"
+            f"{' (also tried .exe)' if os.name == 'nt' else ''}\n"
             f"  Build with:    cmake --build build\n"
-            f"  Or specify:    python3 bench/report.py --exec <path>"
+            f"  Or specify:    python bench/report.py --exec <path>"
         )
+    exec_path = resolved
 
     with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as f:
         xml_path = f.name

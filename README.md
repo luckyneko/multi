@@ -51,7 +51,6 @@ cmake -B build
 cmake --build build
 ./build/example-hello          # basic start/stop + async
 ./build/example-parallel_for   # each + range, with and without taskCount
-./build/example-reduce         # reduce + transformReduce (sum, sum-of-squares)
 ./build/example-fanout         # parallelAsync + waitAll/waitAny
 ./build/example-nested         # recursive divide-and-conquer with waitAll
 ```
@@ -119,8 +118,8 @@ int main()
     std::size_t firstDone = multi::waitAny(group);
 
     // Generalised primitive for waiting on arbitrary conditions with
-    // caller participation in the pool — `waitAll`/`waitAll`/
-    // `waitAny` are all thin wrappers over it.
+    // caller participation in the pool — `waitAll`/`waitAny` are all
+    // thin wrappers over it.
     std::atomic<int> remaining{N};
     multi::waitUntil([&]{ return remaining.load() == 0; });
 
@@ -190,76 +189,6 @@ void function()
 }
 ```
 
-### Parallel sort
-``` C++
-#include <multi/multi.h>
-#include <vector>
-
-void function()
-{
-    std::vector<int> v = /* … */;
-
-    // In-place parallel sort; random-access iterators only (matches
-    // std::sort). Picks one of three strategies based on input size:
-    //   - tiny ranges punt to std::sort directly
-    //   - mid ranges use a recursive median-of-three + 3-way partition
-    //     quicksort that parallelises the top-level partition
-    //   - large ranges (~500k+) use a chunked sort: K = workerCount*4
-    //     std::sort chunks in parallel, then log2(K) parallel-merge stages
-    multi::sort(v.begin(), v.end());
-
-    // With a custom comparator (descending order).
-    multi::sort(v.begin(), v.end(), std::greater<>{});
-}
-```
-
-### Parallel merge
-``` C++
-#include <multi/multi.h>
-#include <vector>
-
-void function()
-{
-    std::vector<int> a = /* sorted */, b = /* sorted */;
-    std::vector<int> out(a.size() + b.size());
-
-    // Merge two sorted ranges into a third. Matches std::merge's
-    // contract: stable, equivalent elements from A come first. Output
-    // must have room for a.size() + b.size() and must not overlap
-    // either input. Co-rank binary search picks K balanced split
-    // points; below ~8k total it delegates to std::merge.
-    multi::merge(a.begin(), a.end(),
-                 b.begin(), b.end(),
-                 out.begin());
-}
-```
-
-### Parallel reduce / transformReduce
-``` C++
-#include <functional>
-#include <multi/multi.h>
-#include <vector>
-
-void function()
-{
-    std::vector<int> v(1000);
-    // ... populate v ...
-
-    // Parallel sum. op must be associative and commutative (partials are
-    // combined in unspecified order). init contributes exactly once.
-    int total = multi::reduce(v.begin(), v.end(), 0, std::plus<>{});
-
-    // Square-then-sum in one pass — transform_op is called once per element.
-    int sumSq = multi::transformReduce(
-        v.begin(), v.end(), 0,
-        std::plus<>{},
-        [](int x) { return x * x; });
-
-    // Explicit chunk count, e.g. for oversubscription with imbalanced work.
-    int total2 = multi::reduce(32, v.begin(), v.end(), 0, std::plus<>{});
-}
-```
-
 ### Run function on range of numbers with step
 ``` C++
 void function()
@@ -288,33 +217,35 @@ void function()
 
 ## Benchmarks
 
-Headline numbers — Apple M4 Pro (14 cores), macOS, Release, 20 samples. Times are mean per iteration; `chunks` uses `(threadCount+1)*8` chunks unless noted.
+Headline numbers — AMD Ryzen 9 5950X (16 cores / 32 threads), Windows 11, MSVC Release, 20 samples. The pool runs `hardware_concurrency()-1 = 31` workers plus the calling thread; `chunks`-mode uses `(threadCount+1)*CHUNK_FACTOR = 128` chunks (`CHUNK_FACTOR = 4`). Times are mean per iteration.
 
-| Workload                  | serial   | items     | chunks   | chunks speedup |
-|---------------------------|---------:|----------:|---------:|---------------:|
-| `tiny_tasks` / 1k         |   403 µs |    144 µs |    79 µs |  **5.1×**      |
-| `tiny_tasks` / 5k         |  2016 µs |    588 µs |   266 µs |  **7.6×**      |
-| `tiny_tasks` / 50k        | 20157 µs |   5163 µs |  2084 µs |  **9.7×**      |
-| `nested` (fork-join tree) | 11472 µs |     —     |  1111 µs |  **10.3×**     |
-| `empty_tasks` / 1k        |    —     |    113 µs |    32 µs |    3.5× *      |
-| `empty_tasks` / 5k        |    —     |    402 µs |    39 µs |   10.3× *      |
-| `each` / 10k random-access|    —     |   1009 µs |   445 µs |    2.3×        |
-| `each` / 10k map (bidi)   |    —     |   1020 µs |   518 µs |    2.0×        |
-| `sort_random` / 500k      |  6.86 ms |        —  |  1.81 ms |  **3.8×**      |
-| `sort_random` / 1M        | 14.06 ms |        —  |  3.11 ms |  **4.5×**      |
-| `sort_random` / 10M       |   155 ms |        —  | 25.64 ms |  **6.0×**      |
-| `async_latency`           |    —     |     ~2 µs/round (single-task round-trip) |       —     |
+| Workload                      | serial   | items    | chunks   | speedup   |
+|-------------------------------|---------:|---------:|---------:|----------:|
+| `tiny_tasks` / 1k             |   387 µs |   114 µs |    74 µs | **5.3×**  |
+| `tiny_tasks` / 50k            |  19.4 ms |  2.78 ms |   771 µs | **25×**   |
+| `nested` (fork-join tree)     |  10.3 ms |    —     |   491 µs | **21×**   |
+| `heavy_capture` / 50k         |    —     |  2.09 ms |   173 µs | 12× †     |
+| `each_iter` / 50k vec (RA)    |    —     |  2.07 ms |   753 µs | 2.8× †    |
+| `each_iter` / 50k map (bidi)  |    —     |  3.14 ms |  2.05 ms | 1.5× †    |
+| `empty_tasks` / 1k            |    —     |   118 µs |    15 µs | 7.9× *    |
+| `empty_tasks` / 50k           |    —     |  2.68 ms |    65 µs | 41× *     |
+| `imbalanced` / 200 (slow)     |   128 ms |  4.79 ms |  4.96 ms | 26×       |
+| `mandelbrot` (slow)           |   597 ms |  24.3 ms |  27.2 ms | 22×       |
 
-\* `empty_tasks` measures raw dispatch overhead — the "chunks speedup" is overhead-vs-overhead, not work-throughput.
+Per-dispatch latencies (no serial comparison): `async_latency` ≈ **5.5 µs** per serial `async` + `Handle::wait` round-trip; `parallel_pair` ≈ **1.5 µs** per `parallel(a, b)` call.
 
-`tiny_tasks` is the most representative CPU-bound microbench: items-mode hits per-task wrapper + push/steal cost; chunks-mode amortises that to ~`(N_workers+1)·K` dispatches and approaches the serial limit / N_cores. Numbers shift across hardware (especially core count and memory subsystem) — re-run locally before drawing conclusions for your target.
+\* `empty_tasks` measures raw dispatch overhead — its speedup is overhead-vs-overhead, not work-throughput.
+
+† No serial baseline (these benches contrast the two parallel paths); the speedup is chunked dispatch vs one-task-per-item.
+
+`tiny_tasks` is the most representative CPU-bound microbench: items-mode pays per-task wrapper + push/steal cost on every element, while chunks-mode amortises that to ~`(N_workers+1)·CHUNK_FACTOR` dispatches and approaches the serial-time / N_cores limit. For the irregular workloads (`imbalanced`, `mandelbrot`) items-mode actually edges out chunks — one task per item gives the finest steal granularity. Numbers shift across hardware (especially core count and memory subsystem) — re-run locally before drawing conclusions for your target.
 
 Build and run:
 ```sh
 cmake -B build -DMULTI_BUILD_BENCHMARK=ON
 cmake --build build
 ./build/bench-multi          # all workloads
-./build/bench-multi "[fast]" # quick subset (~10s): empty_tasks, tiny_tasks, nested, async_*
+./build/bench-multi "[fast]" # quick subset: everything except mandelbrot / imbalanced
 ./build/bench-multi "[slow]" # longer subset: mandelbrot, imbalanced
 ```
 
@@ -337,14 +268,15 @@ Common options:
 Workloads:
 | Test case | Tag | Measures |
 |---|---|---|
-| `empty_tasks` | fast | Raw dispatch overhead (no work per task) |
-| `tiny_tasks` | fast | Overhead relative to task duration; scales over 1k–50k tasks |
-| `nested` | fast | Fork-join tree via `parallel_invoke`; includes serial baseline |
-| `async_latency` | fast | `async` + `Handle::wait` round-trip cost |
-| `async_fanout` | fast | N concurrent `async` tasks vs `range`-based dispatch |
-| `reduce_sum` | fast | Parallel `reduce` (sum of N doubles) vs `std::accumulate`; shows the N at which parallel overtakes serial |
-| `transformReduce_sumOfSquares` | fast | Parallel `transformReduce` (x*x + sum) vs `std::transform_reduce` |
-| `sort_random` | fast | Parallel `sort` of a random-shuffled int vector vs `std::sort`; fresh copy per sample |
+| `empty_tasks` | fast | Raw dispatch overhead (≈no work per task); 1k vs 50k tasks |
+| `tiny_tasks` | fast | Overhead relative to task duration; 1k vs 50k tasks |
+| `heavy_capture` | fast | Chunked-dispatch cost when the user functor's capture exceeds `std::function` SBO |
+| `each_iter` | fast | `each` over vector (random-access) vs map (bidirectional); 1k vs 50k items |
+| `parallel_pair` | fast | `parallel(a, b)` two-task dispatch on the hot path |
+| `nested` | fast | Fork-join tree via `parallel`; includes serial baseline |
+| `async_latency` | fast | Serial `async` + `Handle::wait` round-trip cost |
+| `async_fanout` | fast | N concurrent `async` tasks, collected then waited |
+| `steal_contention` | fast | Multiple external driver threads issuing parallel work at once |
 | `mandelbrot` | slow | Uniform CPU-bound; the "well-behaved" case |
 | `imbalanced` | slow | O(i) work per task; measures steal quality |
 
