@@ -178,7 +178,7 @@ namespace multi::details
 
 		try
 		{
-			for (size_t i = 0; i < threadCount; ++i)
+			for (int i = 0; i < threadCount; ++i)
 			{
 #ifdef MULTI_ENABLE_TEST_HOOKS
 				if (shouldFailThreadCreationForTest())
