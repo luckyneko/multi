@@ -26,12 +26,10 @@ namespace multi::details
 {
 	namespace
 	{
-		// Set at the top of workerMain; readable by any thread to identify
-		// itself as worker N (or as "not a worker" via SIZE_MAX). Used by
-		// submit/submitBatch to route nested-spawn pushes through the local
-		// Chase-Lev fast path instead of the MPMC overflow ring. Exposed via
-		// WorkerPool::currentWorkerIndex() so the templated submitBatch
-		// overload (defined in the header) can read it too.
+		// Set at the top of workerMain; identifies the calling thread as worker
+		// N (or SIZE_MAX for non-workers). Lets submit/submitBatch route
+		// nested-spawn pushes through the local Chase-Lev fast path. Exposed via
+		// currentWorkerIndex() for the templated submitBatch in the header.
 		thread_local std::size_t g_workerIndex = std::numeric_limits<std::size_t>::max();
 
 #ifdef MULTI_ENABLE_TEST_HOOKS
@@ -61,42 +59,24 @@ namespace multi::details
 		}
 #endif
 
-		// Set the calling thread's name so debuggers/profilers can identify
-		// it. Best-effort: failures (unsupported platform, security policy,
-		// over-long name) are silently ignored — the name is purely for
-		// developer ergonomics, never load-bearing.
-		//
-		// Each backend either takes a thread handle or operates on the
-		// caller — the macOS variant only sets the *current* thread. To
-		// keep behaviour uniform we always call from inside workerMain.
-		//
-		// Name length: Linux/glibc caps at 16 bytes including nul (15 chars
-		// usable). macOS allows ~64 chars. Windows has no formal limit but
-		// most tools display ~32. The "multi-N" format fits 16 bytes for any
-		// plausible worker count (up to "multi-1234567890" = 16 bytes incl.
-		// nul); callers are responsible for keeping it short.
+		// Best-effort thread naming for debuggers/profilers; failures are
+		// silently ignored. Always called from workerMain because the macOS
+		// backend only names the *current* thread. Keep names short: the
+		// "multi-N" format fits Linux's 16-byte limit for any worker count.
 		void setCurrentThreadName(const char* name)
 		{
 #if defined(_WIN32)
-			// SetThreadDescription wants UTF-16. Worker names are ASCII so
-			// a byte-to-wchar copy is sufficient; no MultiByteToWideChar.
+			// SetThreadDescription wants UTF-16; worker names are ASCII so a
+			// byte-to-wchar copy suffices. Available since Windows 10 1607.
 			wchar_t wname[32];
 			std::size_t i = 0;
 			for (; i + 1 < sizeof(wname) / sizeof(wname[0]) && name[i] != '\0'; ++i)
 				wname[i] = static_cast<wchar_t>(static_cast<unsigned char>(name[i]));
 			wname[i] = L'\0';
-			// Available since Windows 10 1607. CI's windows-2022/-2025
-			// runners support it; older Windows silently fails to link if
-			// it doesn't — accept that as a non-issue for our supported
-			// matrix.
 			SetThreadDescription(GetCurrentThread(), wname);
 #elif defined(__APPLE__)
-			// macOS / iOS form has no thread argument — it sets the
-			// *current* thread only. Hence calling from workerMain.
 			pthread_setname_np(name);
 #elif defined(__linux__) || defined(__ANDROID__)
-			// glibc / bionic. Takes a handle so could be called externally,
-			// but we stay uniform with the macOS path.
 			pthread_setname_np(pthread_self(), name);
 #else
 			(void)name;
@@ -129,8 +109,8 @@ namespace multi::details
 
 	WorkerPool::~WorkerPool()
 	{
-		// Debug builds assert the user called stop() explicitly. Release builds
-		// fall back to stopping here so OS threads don't leak on user error.
+		// Debug asserts stop() was called explicitly; release stops defensively
+		// so OS threads don't leak on user error.
 		assert(m_threads.empty());
 		assert(m_workerCount == 0);
 		if (!m_threads.empty())
@@ -147,24 +127,20 @@ namespace multi::details
 
 	void WorkerPool::start(int threadCount)
 	{
-		// Surface double-start in both debug and release. Silently no-op'ing
-		// would let users keep submitting against a pool that doesn't match
-		// the threadCount they just requested.
+		// Surface double-start rather than silently no-op'ing against a pool
+		// that doesn't match the requested threadCount.
 		if (m_active.load(std::memory_order_relaxed))
 			throw std::logic_error("multi::details::WorkerPool::start called while pool is already active");
 
-		// Negative Values set HW threadcount - 1;
+		// Negative threadCount means hardware concurrency minus the caller.
 		if (threadCount < 0)
 			threadCount = std::thread::hardware_concurrency() - 1;
 
-		// Exit if threadCount is still less thatn or smaller than 0
 		if (threadCount <= 0)
 			return;
 
-		// One heap allocation for the whole array — each Worker is
-		// default-constructed in place. Worker is alignas(CACHE_LINE_SIZE)
-		// so `new Worker[N]` requests aligned storage (C++17 over-aligned
-		// new), which keeps the cache-line discipline intact.
+		// One over-aligned allocation for the whole array (Worker is
+		// alignas(CACHE_LINE_SIZE)), keeping the cache-line discipline intact.
 		auto workers = std::make_unique<Worker[]>(threadCount);
 		std::vector<std::thread> threads;
 		threads.reserve(threadCount);
@@ -216,33 +192,27 @@ namespace multi::details
 
 	void WorkerPool::stop()
 	{
-		// Flip m_active then wait for any concurrent public operation that's
-		// already past its isActive() check to leave the worker-storage region.
-		// Pair: operations fetch_add m_opsInFlight before re-checking m_active;
-		// the seq_cst on both sides gives a Dekker-style total order, so either
-		// the operation observes !m_active and bails, or we observe its
-		// increment and spin.
+		// Flip m_active, then wait for any operation already past its
+		// isActive() check to leave the worker-storage region. Operations
+		// fetch_add m_opsInFlight before re-checking m_active; the seq_cst on
+		// both sides gives a Dekker-style order, so either they observe
+		// !m_active and bail, or we observe their increment and spin.
 		m_active.store(false, std::memory_order_seq_cst);
 		while (m_opsInFlight.load(std::memory_order_seq_cst) > 0)
 			std::this_thread::yield();
 
-		// Now safe: no public submitter/stealer can touch m_workers. Wake
-		// workers (do-while drain in workerMain runs anything pushed before
-		// m_active flipped) and tear down.
+		// Safe now: no submitter/stealer can touch m_workers. Wake workers (the
+		// do-while drain in workerMain runs anything pushed before the flip).
 		for (size_t i = 0; i < m_workerCount; ++i)
 			fencedNotify(m_workers[i]);
 
 		for (auto& thread : m_threads)
 			thread.join();
 
-		// A worker can exit its predicate via !m_active with an empty-deque
-		// snapshot (predicate's tryGetTask short-circuits), then a late
-		// submitter inside the push region pushes a task into that worker's
-		// deque before its own fetch_sub. The in-flight counter keeps stop()
-		// waiting until that submitter is done, but the worker is already
-		// gone — so the task is still in the deque. Drain it on the
-		// stopping thread before clearing m_workers; m_opsInFlight == 0
-		// guarantees the deques are stable.
+		// A worker can exit on !m_active with an empty-deque snapshot just
+		// before a late submitter pushes into its deque. The in-flight counter
+		// waits for that submitter, but the worker is already gone — so drain
+		// any leftover task here (m_opsInFlight == 0 makes the deques stable).
 		Task leftover;
 		for (size_t i = 0; i < m_workerCount; ++i)
 		{
@@ -285,11 +255,9 @@ namespace multi::details
 
 	bool WorkerPool::pushWithRetry(size_t idx, Task& task)
 	{
-		// Caller must hold a slot in m_opsInFlight before getting here. That slot
-		// is what keeps m_workers[idx] alive against a concurrent stop() —
-		// stop() spins on m_opsInFlight reaching zero before clearing m_workers.
-		// Without it, the lock-free deque internals don't help: the Worker
-		// storage itself could vanish under us.
+		// Caller must already hold an m_opsInFlight slot — that's what keeps
+		// m_workers[idx] alive against a concurrent stop() (which spins on the
+		// counter before clearing m_workers).
 		Worker* worker = &m_workers[idx];
 		const bool isSelf = (idx == currentWorkerIndex());
 		for (;;)
@@ -299,10 +267,8 @@ namespace multi::details
 									: worker->deque.tryPushRemote(std::move(task));
 			if (pushed)
 				return true;
-			// Overflow ring is full. If shutdown started while we were spinning,
-			// stop() is waiting on m_opsInFlight — bail to inline so the post-stop
-			// drain doesn't deadlock on us. Tasks ending up here run on the
-			// submitter rather than a worker.
+			// Overflow ring full. If shutdown started while spinning, bail to
+			// inline so the post-stop drain doesn't deadlock on us.
 			if (!isActive())
 			{
 				task();
@@ -349,13 +315,9 @@ namespace multi::details
 			pushWithRetry(idx, tasks[i]);
 		}
 
-		// With round-robin starting at `base`, the first min(count, workerCount)
-		// slots cover each distinct worker that received at least one task.
-		// Anything beyond that just repeats workers already in the wake set, so
-		// notifying those first slots covers every pushed task without a mask.
-		// A spurious notify for a worker that took a shutdown-inline bail in
-		// pushWithRetry is harmless (worker wakes, sees empty deque and
-		// !m_active, exits; or has already exited and notify_one is a no-op).
+		// Round-robin from `base` means the first min(count, workerCount) slots
+		// cover every distinct worker that got a task. A spurious notify (e.g.
+		// to a worker that bailed inline on shutdown) is harmless.
 		const size_t wakeCount = tasks.size() < workerCount ? tasks.size() : workerCount;
 		for (size_t i = 0; i < wakeCount; ++i)
 		{
@@ -375,11 +337,8 @@ namespace multi::details
 		if (workerCount == 0)
 			return false;
 
-		// Rotate the scan start across calls so multiple concurrent stealers
-		// (e.g. several threads inside Handle::wait or runQueueJob) don't all
-		// hammer worker 0's deque mutex first. Per-worker steal-from-victim
-		// scans in tryGetTask are already self-rotating; this aligns the
-		// caller-side scan with that strategy.
+		// Rotate the scan start across calls so concurrent stealers don't all
+		// hammer worker 0 first, matching tryGetTask's self-rotating scan.
 		const size_t base = m_nextVictim.fetch_add(1, std::memory_order_relaxed) % workerCount;
 		for (size_t i = 0; i < workerCount; ++i)
 		{
@@ -393,32 +352,27 @@ namespace multi::details
 	{
 		g_workerIndex = workerIndex;
 
-		// Name the thread for debugger/profiler ergonomics. "multi-N" stays
-		// under 16 bytes (Linux pthread limit) for any plausible worker
-		// count, and is greppable in `top -H` / Activity Monitor.
+		// Name the thread for debugger/profiler ergonomics; "multi-N" fits
+		// Linux's 16-byte limit and is greppable in top -H / Activity Monitor.
 		char name[16];
 		std::snprintf(name, sizeof(name), "multi-%zu", workerIndex);
 		setCurrentThreadName(name);
 
 		Worker* self = &m_workers[workerIndex];
 		Task task;
-		// do-while, not while: if start() returns and stop() is called before
-		// this thread is scheduled, m_active is already false on first entry.
-		// We must still run the wait/drain block once so the worker pops any
-		// tasks that were submitted before stop() — that's the contract
-		// stop() relies on to drain pending work.
+		// do-while, not while: if stop() runs before this thread is scheduled,
+		// m_active is already false, but we must still run the wait/drain block
+		// once to pop tasks submitted before stop() — stop()'s drain contract.
 		do
 		{
-			// Sleep
 			{
 				std::unique_lock<std::mutex> lk(self->mutex);
 				self->cv.wait(lk, [&]()
 							  { return tryGetTask(workerIndex, &task) || !m_active.load(std::memory_order_relaxed); });
 			}
 
-			// Run all tasks. A throwing task must not kill the worker —
-			// async/batch wrappers installed by the submitter capture the
-			// exception; raw submits that throw are swallowed here.
+			// A throwing task must not kill the worker — async/batch wrappers
+			// capture their own exceptions; raw submits are swallowed here.
 			while (task)
 			{
 				try
@@ -436,11 +390,11 @@ namespace multi::details
 
 	bool WorkerPool::tryGetTask(size_t workerIndex, Task* task)
 	{
-		// 1. Try own deque first (LIFO - temporal locality)
+		// Own deque first (LIFO, temporal locality).
 		if (m_workers[workerIndex].deque.pop(task))
 			return true;
 
-		// 2. Try stealing from other workers (starting after self to spread contention)
+		// Then steal from others, starting after self to spread contention.
 		size_t workerCount = m_workerCount;
 		for (size_t i = 1; i < workerCount; ++i)
 		{

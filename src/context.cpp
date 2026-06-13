@@ -44,8 +44,4 @@ namespace multi
 		}
 		return false;
 	}
-
-	// runQueueJob is defined in include/multi/details/context.inl as a
-	// template — the JobT parameter resolves the run(i) call statically and
-	// avoids a vtable hop on Job. Other Context methods stay here.
 } // namespace multi

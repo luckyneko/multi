@@ -12,11 +12,9 @@ namespace multi::details
 {
 	bool WorkStealDeque::tryPushLocal(Task&& task)
 	{
-		// Both push entry points take Task by lvalue reference and move
-		// only on success — see the comments on ChaseLevDeque::tryPushBottom
-		// and MpmcQueue::tryPush. That's what lets this cascade work: if
-		// the local ring is full, `task` is still intact and the overflow
-		// fallback can move it.
+		// Both pushes move only on success, so if local is full `task` is still
+		// intact for the overflow fallback to move (see ChaseLevDeque /
+		// MpmcQueue).
 		if (m_local.tryPushBottom(task))
 			return true;
 		return m_overflow.tryPush(task);
@@ -61,9 +59,8 @@ namespace multi::details
 		for (std::size_t i = 0; i < REFILL_BATCH; ++i)
 		{
 			// Owner is the sole writer to local's bottom and stealers only
-			// shrink local. If we observe space here, the subsequent
-			// tryPushBottom is guaranteed to succeed — no risk of popping a
-			// task we then can't place.
+			// shrink it, so observing space here guarantees the tryPushBottom
+			// below succeeds — no risk of popping a task we can't place.
 			if (m_local.sizeHint() >= LOCAL_CAP)
 				return;
 			if (!m_overflow.tryPop(&t))

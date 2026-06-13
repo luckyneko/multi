@@ -22,30 +22,22 @@ namespace multi::details
 {
 	/*
 	 * ChaseLevDeque
-	 * Fixed-capacity SPMC deque (Chase-Lev). Owner pushes/pops at the bottom;
-	 * any thread may steal from the top. Lock-free in the common case.
+	 * Fixed-capacity SPMC deque (Chase-Lev), lock-free in the common case. The
+	 * owner pushes/pops at the bottom; any thread may steal from the top.
+	 * Bottom ops (tryPushBottom/tryPopBottom) are single-owner only — calling
+	 * them concurrently is undefined.
 	 *
-	 * Bottom-end ops (tryPushBottom/tryPopBottom) MUST be called by a single
-	 * owner thread. Calling them concurrently from multiple threads is undefined.
-	 *
-	 * Move-only T support: the canonical Chase-Lev reads the slot before CAS and
-	 * discards on failure — that requires a copy. For move-only T we instead
-	 * claim the slot via CAS first and *then* move out. That's only safe if the
-	 * owner cannot overwrite the slot between a stealer's CAS and read, which can
-	 * happen under wraparound (Capacity push/pops can reuse the same slot).
-	 *
-	 * Per-slot sequence atomics close that window: a slot at index i is writable
-	 * when seq == i and readable when seq == i + 1. After a stealer reads, it
-	 * advances seq to i + Capacity, releasing the slot for the *next* round of
-	 * writes. The owner's push spins on seq == b before writing — bounded by how
-	 * long the slowest stealer takes to release its claim (effectively a few
-	 * memory ops in practice).
+	 * For move-only T we claim a slot by CAS before moving out (the canonical
+	 * read-before-CAS algorithm needs a copy). Per-slot sequence atomics make
+	 * that safe under wraparound: slot i is writable when seq == i, readable
+	 * when seq == i + 1; a reader advances seq to i + CAPACITY to release the
+	 * slot for the next round. The owner's push spins on seq == b before writing.
 	 */
-	template <typename T, std::size_t Capacity>
+	template <typename T, std::size_t CAPACITY>
 	class ChaseLevDeque
 	{
-		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
-		static_assert(Capacity >= 2, "Capacity must be >= 2");
+		static_assert((CAPACITY & (CAPACITY - 1)) == 0, "CAPACITY must be a power of two");
+		static_assert(CAPACITY >= 2, "CAPACITY must be >= 2");
 		static_assert(std::is_nothrow_move_assignable_v<T>, "T must be nothrow move-assignable");
 		static_assert(std::is_nothrow_move_constructible_v<T>, "T must be nothrow move-constructible");
 		static_assert(std::is_default_constructible_v<T>, "T must be default-constructible");
@@ -55,38 +47,32 @@ namespace multi::details
 			: m_top(0)
 			, m_bottom(0)
 		{
-			for (std::size_t i = 0; i < Capacity; ++i)
+			for (std::size_t i = 0; i < CAPACITY; ++i)
 				m_buffer[i].sequence.store(static_cast<int64_t>(i), std::memory_order_relaxed);
 		}
 
 		ChaseLevDeque(const ChaseLevDeque&) = delete;
 		ChaseLevDeque& operator=(const ChaseLevDeque&) = delete;
 
-		// Convenience overload for rvalue callers (`tryPushBottom(99)`,
-		// `tryPushBottom(int(i))`). Named rvalue-ref is an lvalue inside, so
-		// it routes through the primary overload below — identical
-		// move-on-success semantics either way.
+		// Convenience overload for rvalue callers; routes through the lvalue
+		// overload, so move-on-success semantics are identical.
 		bool tryPushBottom(T&& v) { return tryPushBottom(v); }
 
-		// Pass by lvalue reference, not by value or rvalue-reference, so the
-		// caller's storage is left intact on the early-return (full) path.
-		// WorkStealDeque::tryPushLocal relies on this: it cascades to the
-		// overflow ring with `std::move(task)` after this returns false, and
-		// that fallback would push an empty (moved-from) Task if the param
-		// signature consumed `v` regardless of outcome. The move only
-		// happens on the success path below.
+		// By lvalue reference (not value/rvalue-ref) so the caller's storage is
+		// intact on the full path — the move happens only on success. Lets
+		// WorkStealDeque::tryPushLocal cascade to overflow with std::move(task)
+		// after this returns false.
 		bool tryPushBottom(T& v)
 		{
 			const int64_t b = m_bottom.load(std::memory_order_relaxed);
 			const int64_t t = m_top.load(std::memory_order_acquire);
-			if (b - t >= static_cast<int64_t>(Capacity))
+			if (b - t >= static_cast<int64_t>(CAPACITY))
 				return false;
 
 			Slot& slot = m_buffer[static_cast<std::size_t>(b) & MASK];
-			// Wait for a previous stealer/popper at position (b - Capacity) to
-			// finish releasing this slot. Without the test on (b - t < Capacity)
-			// this could be unbounded, but fullness has been ruled out above so
-			// the only thing we wait on is a slow stealer's release-store.
+			// Wait for a previous stealer at (b - CAPACITY) to release this slot.
+			// Fullness was ruled out above, so this only waits on a slow
+			// stealer's release-store, not unboundedly.
 			while (slot.sequence.load(std::memory_order_acquire) != b)
 				std::this_thread::yield();
 
@@ -113,8 +99,7 @@ namespace multi::details
 			{
 				Slot& slot = m_buffer[static_cast<std::size_t>(b) & MASK];
 				*out = std::move(slot.storage);
-				// After pop, bottom is decremented — the next push at this
-				// slot will reuse position b, not b + Capacity. Release to b.
+				// Pop reuses position b on the next push (not b + CAPACITY).
 				slot.sequence.store(b, std::memory_order_release);
 				return true;
 			}
@@ -129,9 +114,8 @@ namespace multi::details
 
 			Slot& slot = m_buffer[static_cast<std::size_t>(b) & MASK];
 			*out = std::move(slot.storage);
-			// We won the CAS, so logically a steal at position b happened.
-			// Release to b + Capacity — same as a stealer would.
-			slot.sequence.store(b + static_cast<int64_t>(Capacity), std::memory_order_release);
+			// Won the CAS — logically a steal at b, so release to b + CAPACITY.
+			slot.sequence.store(b + static_cast<int64_t>(CAPACITY), std::memory_order_release);
 			return true;
 		}
 
@@ -148,13 +132,12 @@ namespace multi::details
 											   std::memory_order_relaxed))
 				return false;
 
-			// CAS won — slot t is logically ours. The owner's push at position
-			// t + Capacity is gated by sequence == t + Capacity, which we set
-			// after moving out below, so the slot can't be overwritten beneath
-			// us even if we get preempted between CAS and the move.
+			// CAS won — slot t is ours. The owner's next push there is gated on
+			// seq == t + CAPACITY, which we set only after moving out, so the
+			// slot can't be overwritten even if we're preempted before the move.
 			Slot& slot = m_buffer[static_cast<std::size_t>(t) & MASK];
 			*out = std::move(slot.storage);
-			slot.sequence.store(t + static_cast<int64_t>(Capacity), std::memory_order_release);
+			slot.sequence.store(t + static_cast<int64_t>(CAPACITY), std::memory_order_release);
 			return true;
 		}
 
@@ -166,7 +149,7 @@ namespace multi::details
 			return diff > 0 ? static_cast<std::size_t>(diff) : 0;
 		}
 
-		static constexpr std::size_t capacity() { return Capacity; }
+		static constexpr std::size_t capacity() { return CAPACITY; }
 
 	private:
 		struct Slot
@@ -175,10 +158,10 @@ namespace multi::details
 			T storage;
 		};
 
-		static constexpr std::size_t MASK = Capacity - 1;
+		static constexpr std::size_t MASK = CAPACITY - 1;
 
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_top;
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_bottom;
-		alignas(CACHE_LINE_SIZE) std::array<Slot, Capacity> m_buffer;
+		alignas(CACHE_LINE_SIZE) std::array<Slot, CAPACITY> m_buffer;
 	};
 } // namespace multi::details

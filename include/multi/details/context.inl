@@ -13,11 +13,8 @@
 
 namespace multi
 {
-	// JobT must expose `taskCount()` (initial size_t), `remaining()` (atomic
-	// size_t load), `run(size_t)` (non-virtual, noexcept), and
-	// `rethrowIfFailed()`. The Job base provides all of these except run(),
-	// which subclasses define directly. Templating on JobT keeps `job.run(i)`
-	// a direct call inside the wrapper Task lambda — no virtual dispatch.
+	// Templated on the concrete JobT so job.run(i) is a direct call inside the
+	// wrapper Task lambda — no virtual dispatch.
 	template <class JobT>
 	void Context::runQueueJob(JobT& job)
 	{
@@ -25,10 +22,8 @@ namespace multi
 		if (count == 0)
 			return;
 
-		// Single-task fast path: run inline on the caller and skip submit/
-		// wait entirely. Covers both the historical taskCount<=1 serial
-		// fallback (ChunkedRangeJob/ChunkedEachJob normalise that to count=1)
-		// and any other Job that happens to dispatch a single task.
+		// Single task: run inline on the caller, no submit/wait. Also the
+		// chunked-job serial fallback (count normalised to 1).
 		if (count == 1)
 		{
 			job.run(0);
@@ -36,13 +31,9 @@ namespace multi
 			return;
 		}
 
-		// Two-task fast path (parallel(a, b) hits this every call): submit
-		// task 0 to a worker so it can start in parallel, then run task 1
-		// inline on the caller. Saves one push + fencedNotify + steal-loop
-		// iteration vs the generic two-task submitBatch path. The spin
-		// below still runs because we still need to wait for task 0 to
-		// finish, but it has only one outstanding task to drain rather
-		// than two.
+		// Two-task fast path (every parallel(a, b)): submit task 0 to a worker,
+		// run task 1 inline, then drain the single outstanding task. Saves a
+		// push + fencedNotify + steal-loop iteration vs the batch path.
 		if (count == 2)
 		{
 			m_workerPool.submit(details::Task([&job]()
@@ -57,17 +48,14 @@ namespace multi
 			return;
 		}
 
-		// Generator-based submitBatch constructs each wrapper Task at push
-		// time, no intermediate vector. Wrapper is [&job, i] = 16 B (SBO fit).
-		// `&job` carries the JobT type, so the inner job.run(i) is a direct
-		// call resolved at compile time.
+		// Generator-based submitBatch builds each wrapper Task at push time, no
+		// intermediate vector. The caller then steals while waiting; the release
+		// in runOne() pairs with the acquire in remaining(), so every task's
+		// stores (incl. m_firstException) are visible once the loop exits.
 		m_workerPool.submitBatch(count, [&job](std::size_t i)
 								 { return details::Task([&job, i]()
 														{ job.run(i); }); });
 
-		// Caller participates by stealing while waiting. The release in
-		// runOne() pairs with the acquire in remaining(), so every task's
-		// stores (including m_firstException) are visible once the loop exits.
 		while (job.remaining() > 0)
 		{
 			if (!tryRunSteal())
@@ -77,15 +65,8 @@ namespace multi
 		job.rethrowIfFailed();
 	}
 
-	// AsyncJob is heap-allocated via shared_ptr so its lifetime extends past
-	// this call's stack frame (the wrapper Task captures the shared_ptr by
-	// value, 16 B SBO fit). Doesn't go through runQueueJob — the caller
-	// observes completion via the future on Handle, not by blocking here.
-	//
-	// Return type is deduced as Handle<R> where R = invoke_result_t<F>; the
-	// `auto` lets the caller see `Handle<int>` from
-	// `async([]{ return 42; })` and `Handle<void>` (a.k.a. `Handle<>`) from
-	// `async([]{ ... })`.
+	// Heap-allocated via shared_ptr so its lifetime outlasts this stack frame;
+	// completion is observed via the Handle's future, not by blocking here.
 	template <class F>
 	auto Context::async(F&& f)
 	{
@@ -101,12 +82,9 @@ namespace multi
 	template <class Pred>
 	void Context::waitUntil(Pred&& pred)
 	{
-		// Drain pending pool work while pred() reports "not yet". The
-		// caller-side spin matches runQueueJob's wait loop, so a worker
-		// thread sitting in waitUntil is indistinguishable from one
-		// processing its own deque — useful when waiting on conditions
-		// that aren't a single Handle (counter thresholds, batches of
-		// async results, external events).
+		// Drain pending pool work while pred() reports "not yet"; matches
+		// runQueueJob's wait loop, so a worker sitting here is indistinguishable
+		// from one processing its own deque.
 		while (!pred())
 		{
 			if (!tryRunSteal())
@@ -117,11 +95,9 @@ namespace multi
 	template <class... Hs>
 	void Context::waitAll(const Hs&... hs)
 	{
-		// Fold over &&: identity element is `true`, so the no-arg case
-		// short-circuits to a no-op. Single-handle case (`waitAll(h)`) is
-		// just a one-element fold. Every iteration re-evaluates all
-		// handles' .complete() — that's cheap (each is an atomic load) and
-		// avoids tracking per-handle state.
+		// Fold over &&: the no-arg case short-circuits to a no-op (identity
+		// `true`). Re-evaluating every handle's complete() each iteration is
+		// cheap (an atomic load) and avoids tracking per-handle state.
 		waitUntil([&]() -> bool
 				  { return (hs.complete() && ...); });
 	}
@@ -139,13 +115,10 @@ namespace multi
 		static_assert(sizeof...(Hs) > 0,
 					  "Context::waitAny requires at least one handle");
 
-		// `completed` sentinel = sizeof...(Hs) means "none observed yet".
-		// The fold over || short-circuits on the first complete handle,
-		// recording its index in `completed`. `i` is a manual counter
-		// re-initialised each predicate call — the fold expression
-		// doesn't give us pack indices directly, but each pack element
-		// evaluates left-to-right so this counter tracks the source
-		// position exactly.
+		// `completed` == sizeof...(Hs) means "none observed yet". The fold over
+		// || short-circuits on the first complete handle; `i` is a manual
+		// counter that tracks source position since pack elements evaluate
+		// left-to-right.
 		std::size_t completed = sizeof...(Hs);
 		waitUntil([&]() -> bool
 				  {

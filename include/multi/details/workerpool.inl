@@ -36,12 +36,9 @@ namespace multi::details
 			pushWithRetry(idx, t);
 		}
 
-		// With round-robin starting at `base`, the first min(count, workerCount)
-		// slots cover each distinct worker that received at least one task.
-		// Notifying those slots covers every pushed task without a mask. A
-		// spurious notify for a worker that took a shutdown-inline bail in
-		// pushWithRetry is harmless (worker wakes, sees empty deque + !m_active,
-		// exits; or has already exited and notify_one is a no-op).
+		// Round-robin from `base` means the first min(count, workerCount) slots
+		// cover every distinct worker that got a task. A spurious notify (e.g.
+		// to a worker that bailed inline on shutdown) is harmless.
 		const size_t wakeCount = count < workerCount ? count : workerCount;
 		for (size_t i = 0; i < wakeCount; ++i)
 		{

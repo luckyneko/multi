@@ -21,21 +21,18 @@ namespace multi
 		a.m_handle = std::shared_future<T>();
 	}
 
-	// Check if job is complete
 	template <class T>
 	bool Handle<T>::complete() const
 	{
 		return !valid() || m_handle.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 	}
 
-	// Check if handle has assigned job
 	template <class T>
 	bool Handle<T>::valid() const
 	{
 		return m_handle.valid();
 	}
 
-	// Block (without participating in work-stealing) until the task completes.
 	template <class T>
 	void Handle<T>::wait() const
 	{

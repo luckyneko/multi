@@ -23,9 +23,9 @@ namespace multi::details
 {
 	/*
 	 * WorkerPool
-	 * Thread pool with per-worker steal deques.
-	 * Tasks are distributed round-robin on submit and workers steal
-	 * from each other when their local deque is empty.
+	 * Thread pool with per-worker steal deques. Tasks are distributed
+	 * round-robin on submit; an idle worker steals from others when its own
+	 * deque is empty.
 	 */
 	class WorkerPool
 	{
@@ -37,36 +37,33 @@ namespace multi::details
 		void start(int threadCount);
 		void stop();
 
-		// Submit a single task (round-robin to a worker deque)
+		// Submit a single task (round-robin to a worker deque).
 		void submit(Task&& task);
 
-		// Submit a batch of tasks, distributing across worker deques
+		// Submit a batch of tasks, distributing across worker deques.
 		void submitBatch(std::vector<Task>&& tasks);
 
-		// Generator-based submitBatch: gen(i) is invoked count times to produce
-		// each Task, immediately pushed without an intermediate vector. Used by
-		// Context::runQueueJob to skip materialising a wrapper vector. Gen must
-		// be invocable as Task(size_t).
+		// Generator-based overload: gen(i) is invoked count times to produce
+		// each Task, pushed directly without an intermediate vector. Gen must be
+		// invocable as Task(size_t).
 		template <class Gen>
 		void submitBatch(size_t count, Gen&& gen);
 
-		// Try to steal a task from any worker deque (for external caller participation)
-		// Returns true if a task was obtained
+		// Steal a task from any worker deque (external caller participation).
+		// Returns true if a task was obtained.
 		bool tryStealAny(Task* task);
 
 		bool isActive() const { return m_active.load(std::memory_order_relaxed); }
 		size_t threadCount() const { return m_threads.size(); }
 
 #ifdef MULTI_ENABLE_TEST_HOOKS
-		// Test-only hook: fail the next start() after this many successful
-		// worker thread creations, then clear the hook.
+		// Test hook: fail the next start() after this many successful worker
+		// thread creations, then clear the hook.
 		static void failNextStartAfterThreadCreations(size_t successfulCreations);
 #endif
 
-		// Observability: read-only access to a worker's deque. Used by tests
-		// and benchmarks to probe local-vs-overflow routing decisions.
-		// Internal/diagnostics-only — the assert catches a stray test passing
-		// an out-of-range index, which would otherwise UB silently in release.
+		// Read-only access to a worker's deque, for tests/benchmarks probing
+		// local-vs-overflow routing. The assert catches an out-of-range index.
 		const WorkStealDeque& dequeOf(size_t idx) const
 		{
 			assert(idx < m_workerCount && "WorkerPool::dequeOf: idx out of range");
@@ -118,39 +115,32 @@ namespace multi::details
 		};
 
 		// Spin-yield until the task is pushed onto worker idx's deque, or until
-		// shutdown is observed — in which case the task is run inline. Returns
-		// true if pushed (caller should notify), false if ran inline.
+		// shutdown is observed — in which case the task runs inline. Returns
+		// true if pushed (caller should notify), false if it ran inline.
 		bool pushWithRetry(size_t idx, Task& task);
 
-		// Lock then immediately unlock the worker's mutex before notifying its
-		// condvar. The lock/unlock acts as a barrier: it ensures the worker has
-		// either already entered wait() (and will be woken by notify_one) or
-		// has not yet checked its predicate (and will see the new state when it
-		// does). Without this, a notify sent between the predicate check and
-		// the wait() call would be lost.
+		// Lock/unlock the worker's mutex before notifying its condvar. The
+		// barrier ensures the worker has either already entered wait() (and is
+		// woken) or hasn't yet checked its predicate (and will see the new
+		// state) — without it a notify in that window would be lost.
 		static void fencedNotify(Worker& w);
 
 	private:
-		// Workers live in a single heap-allocated array (one allocation
-		// regardless of N). The previous vector<unique_ptr<Worker>>
-		// added a per-element pointer chase on every access; this gives
-		// direct indexing into one contiguous block. Worker is non-movable
-		// (it holds a std::mutex / std::condition_variable), so we don't
-		// use std::vector<Worker> — vector would risk a reseat on resize.
-		// Capacity is fixed at start() time; m_workerCount tracks it.
+		// One heap-allocated array (one allocation regardless of N), directly
+		// indexed. Worker is non-movable (holds a mutex/condvar), so this isn't
+		// a std::vector<Worker>; capacity is fixed at start(), tracked by
+		// m_workerCount.
 		std::unique_ptr<Worker[]> m_workers;
 		size_t m_workerCount = 0;
 		std::vector<std::thread> m_threads;
 
-		// Align 'Hot' Variables
+		// Hot, cache-line-isolated atomics.
 		alignas(CACHE_LINE_SIZE) std::atomic<bool> m_active;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextVictim;
-		// Count of public operations currently touching worker storage
-		// (submitters and external stealers). stop() flips m_active and then
-		// spins on this counter reaching zero before joining/clearing
-		// m_workers, so concurrent public operations cannot UAF the worker
-		// storage.
+		// Public operations currently touching worker storage (submitters and
+		// external stealers). stop() flips m_active then spins on this reaching
+		// zero before clearing m_workers, so concurrent ops cannot UAF it.
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_opsInFlight;
 	};
 } // namespace multi::details

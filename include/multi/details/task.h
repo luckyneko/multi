@@ -18,17 +18,10 @@ namespace multi::details
 {
 	/*
 	 * Task
-	 * Move-only type-erased callable for void(). Uses a 24-byte inline buffer
-	 * (SBO) to avoid heap allocation for small lambdas; falls back to a single
-	 * heap allocation for larger functors.
-	 *
-	 * All lambda captures in the library fit within the SBO:
-	 *   [&job, i]                        16 B  (ref + size_t)
-	 *   [&func, item]                    16 B  (ref + ptr)
-	 *   [innerBegin, innerEnd, &func]    24 B  (ptr + ptr + ref)
-	 *   [state = shared_ptr]             16 B  (shared_ptr)
-	 *   [innerBegin, innerEnd, step, &func] with int IDX: 20 B — SBO
-	 *                                    with int64_t IDX: 32 B — heap path
+	 * Move-only, type-erased callable for void(). Uses a 24-byte inline buffer
+	 * (SBO) to avoid heap allocation for small lambdas; larger functors fall
+	 * back to a single heap allocation. 24 B is sized to fit the library's own
+	 * captures, the largest being [innerBegin, innerEnd, &func].
 	 */
 	class Task
 	{
@@ -70,7 +63,7 @@ namespace multi::details
 			static constexpr Vtable vtable = {invoke, destroy, move_to};
 		};
 
-		static constexpr std::size_t SBO_SIZE  = 24;
+		static constexpr std::size_t SBO_SIZE = 24;
 		static constexpr std::size_t SBO_ALIGN = alignof(void*);
 
 		template <class F>
@@ -88,7 +81,7 @@ namespace multi::details
 				m_vtable->destroy(m_buf);
 		}
 
-		Task(const Task&)            = delete;
+		Task(const Task&) = delete;
 		Task& operator=(const Task&) = delete;
 
 		Task(Task&& other) noexcept
@@ -96,7 +89,7 @@ namespace multi::details
 			if (other.m_vtable)
 			{
 				other.m_vtable->move_to(other.m_buf, m_buf);
-				m_vtable       = other.m_vtable;
+				m_vtable = other.m_vtable;
 				other.m_vtable = nullptr;
 			}
 		}
@@ -111,7 +104,7 @@ namespace multi::details
 				if (other.m_vtable)
 				{
 					other.m_vtable->move_to(other.m_buf, m_buf);
-					m_vtable       = other.m_vtable;
+					m_vtable = other.m_vtable;
 					other.m_vtable = nullptr;
 				}
 			}
@@ -119,10 +112,10 @@ namespace multi::details
 		}
 
 		template <class F,
-		          std::enable_if_t<
-		              !std::is_same_v<std::decay_t<F>, Task> &&
-		              std::is_invocable_v<std::decay_t<F>>,
-		          int> = 0>
+				  std::enable_if_t<
+					  !std::is_same_v<std::decay_t<F>, Task> &&
+						  std::is_invocable_v<std::decay_t<F>>,
+					  int> = 0>
 		Task(F&& f)
 		{
 			using FD = std::decay_t<F>;

@@ -14,12 +14,13 @@
 
 namespace multi
 {
-	/*
-	 * Handle<T>
-	 * Tracks state of an async task. Does not block on destruction.
+	/**
+	 * @brief Tracks the state of an async task; does not block on destruction.
 	 *
-	 * The Handle itself offers only a plain, NON-stealing wait(); to wait
-	 * while helping drain the pool, use multi::waitAll / waitAny / waitUntil.
+	 * @tparam T Result type produced by the task (void by default).
+	 *
+	 * Offers only a plain, non-stealing wait(). To wait while helping drain the
+	 * pool, use multi::waitAll / waitAny / waitUntil.
 	 */
 	template <class T = void>
 	class Handle
@@ -31,18 +32,21 @@ namespace multi
 		Handle(Handle&& a) noexcept;
 		~Handle() = default;
 
-		// Check if job is complete
+		/// @return True if the task has completed, or the handle is empty.
 		bool complete() const;
 
-		// Check if handle has assigned job
+		/// @return True if this handle refers to a task.
 		bool valid() const;
 
-		// Block (without participating in work-stealing) until the task
-		// completes. A default-constructed Handle returns immediately. Does
-		// not rethrow — observe a task exception via get().
+		/// Block (without work-stealing) until the task completes. A
+		/// default-constructed handle returns immediately. Does not rethrow;
+		/// observe a task exception via get().
 		void wait() const;
 
-		// Returns value if complete
+		/// Non-blocking result fetch.
+		/// @param value Destination, written only on success.
+		/// @return True (and writes @p value) if complete; false otherwise.
+		///         Rethrows a stored task exception.
 		bool get(T* value);
 
 	private:

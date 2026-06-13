@@ -20,19 +20,16 @@ namespace multi::details
 {
 	/*
 	 * MpmcQueue
-	 * Bounded multi-producer multi-consumer ring buffer (Vyukov). Each cell
-	 * carries a sequence number that gates push/pop access, so producers and
-	 * consumers never block each other beyond a single CAS.
-	 *
-	 * Push to cell at sequence == enqueuePos; pop from cell at sequence ==
-	 * dequeuePos + 1. After successful push, sequence becomes pos + 1; after
-	 * successful pop, sequence becomes pos + Capacity (the next round).
+	 * Bounded MPMC ring buffer (Vyukov). Each cell carries a sequence number
+	 * gating push/pop, so producers and consumers never block beyond a single
+	 * CAS. Push at seq == enqueuePos, pop at seq == dequeuePos + 1; a successful
+	 * push sets seq = pos + 1, a successful pop sets seq = pos + CAPACITY.
 	 */
-	template <typename T, std::size_t Capacity>
+	template <typename T, std::size_t CAPACITY>
 	class MpmcQueue
 	{
-		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
-		static_assert(Capacity >= 2, "Capacity must be >= 2");
+		static_assert((CAPACITY & (CAPACITY - 1)) == 0, "CAPACITY must be a power of two");
+		static_assert(CAPACITY >= 2, "CAPACITY must be >= 2");
 		static_assert(std::is_nothrow_move_assignable_v<T>, "T must be nothrow move-assignable");
 		static_assert(std::is_nothrow_move_constructible_v<T>, "T must be nothrow move-constructible");
 		static_assert(std::is_default_constructible_v<T>, "T must be default-constructible");
@@ -42,22 +39,19 @@ namespace multi::details
 			: m_enqueuePos(0)
 			, m_dequeuePos(0)
 		{
-			for (std::size_t i = 0; i < Capacity; ++i)
+			for (std::size_t i = 0; i < CAPACITY; ++i)
 				m_cells[i].sequence.store(i, std::memory_order_relaxed);
 		}
 
 		MpmcQueue(const MpmcQueue&) = delete;
 		MpmcQueue& operator=(const MpmcQueue&) = delete;
 
-		// Convenience overload for rvalue callers (literals, temporaries).
-		// Named rvalue-ref is an lvalue inside, so it routes through the
-		// primary overload below.
+		// Convenience overload for rvalue callers; routes through the lvalue one.
 		bool tryPush(T&& v) { return tryPush(v); }
 
-		// Pass by lvalue reference: the move into the cell only happens on
-		// the success path, so callers that cascade from a sibling deque
-		// (see WorkStealDeque::tryPushLocal) can safely fall through with
-		// `std::move(task)` after a previous attempt returned false.
+		// By lvalue reference: the move happens only on success, so callers can
+		// cascade with std::move(task) after a previous attempt returned false
+		// (see WorkStealDeque::tryPushLocal).
 		bool tryPush(T& v)
 		{
 			Cell* cell;
@@ -70,7 +64,7 @@ namespace multi::details
 				if (diff == 0)
 				{
 					if (m_enqueuePos.compare_exchange_weak(pos, pos + 1,
-					                                       std::memory_order_relaxed))
+														   std::memory_order_relaxed))
 						break;
 				}
 				else if (diff < 0)
@@ -99,7 +93,7 @@ namespace multi::details
 				if (diff == 0)
 				{
 					if (m_dequeuePos.compare_exchange_weak(pos, pos + 1,
-					                                       std::memory_order_relaxed))
+														   std::memory_order_relaxed))
 						break;
 				}
 				else if (diff < 0)
@@ -112,7 +106,7 @@ namespace multi::details
 				}
 			}
 			*out = std::move(cell->storage);
-			cell->sequence.store(pos + Capacity, std::memory_order_release);
+			cell->sequence.store(pos + CAPACITY, std::memory_order_release);
 			return true;
 		}
 
@@ -124,7 +118,7 @@ namespace multi::details
 			return e > d ? e - d : 0;
 		}
 
-		static constexpr std::size_t capacity() { return Capacity; }
+		static constexpr std::size_t capacity() { return CAPACITY; }
 
 	private:
 		struct Cell
@@ -133,10 +127,10 @@ namespace multi::details
 			T storage;
 		};
 
-		static constexpr std::size_t MASK = Capacity - 1;
+		static constexpr std::size_t MASK = CAPACITY - 1;
 
 		alignas(CACHE_LINE_SIZE) std::atomic<std::size_t> m_enqueuePos;
 		alignas(CACHE_LINE_SIZE) std::atomic<std::size_t> m_dequeuePos;
-		alignas(CACHE_LINE_SIZE) std::array<Cell, Capacity> m_cells;
+		alignas(CACHE_LINE_SIZE) std::array<Cell, CAPACITY> m_cells;
 	};
 } // namespace multi::details

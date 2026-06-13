@@ -18,19 +18,15 @@ namespace multi::details
 {
 	/*
 	 * WorkStealDeque
-	 * Per-worker deque composed of two lock-free primitives:
-	 *  - a fixed-capacity Chase-Lev SPMC deque (LOCAL_CAP) for the owner's
-	 *    LIFO fast path,
-	 *  - a bounded MPMC ring (OVERFLOW_CAP) for spillover and external submits.
+	 * Per-worker deque of two lock-free primitives: a Chase-Lev SPMC deque
+	 * (LOCAL_CAP) for the owner's LIFO fast path, plus a bounded MPMC ring
+	 * (OVERFLOW_CAP) for spillover and external submits.
 	 *
-	 * Push routing is split: the owner uses tryPushLocal to spawn nested work
-	 * (Chase-Lev fast path, no MPMC contention); any other thread uses
-	 * tryPushRemote to land work on the overflow ring where stealers can also
-	 * see it. The owner periodically refills its local Chase-Lev from overflow
-	 * when running low so stealers always see fresh stealable work.
-	 *
-	 * All push/pop entry points are non-blocking (tryX). Caller policy decides
-	 * whether to spin, fall back, or run inline on a full ring.
+	 * Push routing is split: the owner uses tryPushLocal for nested work; any
+	 * other thread uses tryPushRemote to land work on the overflow ring where
+	 * stealers can see it. The owner refills local from overflow when low. All
+	 * entry points are non-blocking (tryX); caller policy decides whether to
+	 * spin, fall back, or run inline on a full ring.
 	 */
 	class WorkStealDeque
 	{
@@ -59,15 +55,15 @@ namespace multi::details
 		std::size_t overflowSizeHint() const { return m_overflow.sizeHint(); }
 
 	private:
-		static constexpr std::size_t LOCAL_CAP    = 256;
+		static constexpr std::size_t LOCAL_CAP = 256;
 		static constexpr std::size_t OVERFLOW_CAP = 4096;
-		static constexpr std::size_t REFILL_LOW   = 16;
+		static constexpr std::size_t REFILL_LOW = 16;
 		static constexpr std::size_t REFILL_BATCH = 32;
 
 		// Owner-only.
 		void refillFromOverflow();
 
 		ChaseLevDeque<Task, LOCAL_CAP> m_local;
-		MpmcQueue<Task, OVERFLOW_CAP>  m_overflow;
+		MpmcQueue<Task, OVERFLOW_CAP> m_overflow;
 	};
 } // namespace multi::details
