@@ -51,7 +51,7 @@ cmake -B build
 cmake --build build
 ./build/example-hello          # basic start/stop + async
 ./build/example-parallel_for   # each + range, with and without taskCount
-./build/example-fanout         # parallelAsync + waitAll/waitAny
+./build/example-fanout         # variadic async + waitAll/waitAny
 ./build/example-nested         # recursive divide-and-conquer with waitAll
 ```
 
@@ -98,8 +98,8 @@ int main()
     auto h1 = multi::async([]() { return 1; });
     auto h2 = multi::async([]() { return 2.0; });
     multi::waitAll(h1, h2);
-    // ... or fanned out from parallelAsync:
-    auto group = multi::parallelAsync([]{ return 'a'; }, []{ return 7; });
+    // ... or fanned out from a variadic async:
+    auto group = multi::async([]{ return 'a'; }, []{ return 7; });
     multi::waitAll(group);
     std::size_t firstDone = multi::waitAny(group);
 
@@ -140,7 +140,7 @@ void function()
     // Handle<R>, packaged in a tuple. Use when you need per-task
     // results or different return types.
     // Contrast with `parallel(a, b, ...)` which is fire-and-block.
-    auto handles = multi::parallelAsync(
+    auto handles = multi::async(
         []() { return 42; },
         []() { return std::string("hello"); },
         []() { return 3.14; });
@@ -166,14 +166,20 @@ void function()
 {
     std::vector<Item> items;
 
-    // Run task per item
+    // Whole container, one task per item — mirrors `for (auto& item : items)`
+    multi::each(items, [](Item& item)
+    {
+        item.setValue();
+    });
+
+    // ... or pass an explicit [begin, end) pair
     multi::each(items.begin(), items.end(), [](Item& item)
     {
         item.setValue();
     });
 
-    // Run over all items, using 32 tasks
-    multi::each(32, items.begin(), items.end(), [](Item& item)
+    // Run over all items, using 32 tasks (container or iterator-pair form)
+    multi::each(32, items, [](Item& item)
     {
         item.setValue();
     });

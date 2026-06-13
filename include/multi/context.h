@@ -50,17 +50,18 @@ namespace multi
 		template <class F>
 		auto async(F&& f);
 
+		/// Variadic fan-out: launch a heterogeneous pack of functors (two or
+		/// more), each dispatched via the single-arg async(), returning their
+		/// Handles as a tuple (element i typed on fs[i]'s invoke_result). Use
+		/// when you need per-task observation; prefer parallel() for
+		/// fire-and-block siblings with no result. Each task lives in its own
+		/// AsyncJob, so sibling exceptions are isolated per handle.
+		template <typename F0, typename F1, typename... Fs>
+		auto async(F0&& f0, F1&& f1, Fs&&... fs);
+
 		/// Run a pack of tasks in parallel and block until all complete.
 		template <typename... TASKS>
 		void parallel(TASKS&&... tasks);
-
-		/// Fan out a heterogeneous pack of functors, each dispatched via async(),
-		/// returning their Handles as a tuple (element i typed on fs[i]'s
-		/// invoke_result). Use when you need per-task observation; prefer
-		/// parallel() for fire-and-block siblings with no result. Each task lives
-		/// in its own AsyncJob, so sibling exceptions are isolated per handle.
-		template <typename... Fs>
-		auto parallelAsync(Fs&&... fs);
 
 		/// Launch one task per item in [begin, end).
 		/// @tparam FUNC Callable as void(T) or void(T&).
@@ -70,6 +71,16 @@ namespace multi
 		/// Chunked overload: distribute the items across @p taskCount tasks.
 		template <typename ITER, typename FUNC>
 		void each(size_t taskCount, ITER begin, ITER end, FUNC&& func);
+
+		/// Range-based overload: iterate a whole container, one task per item.
+		/// Equivalent to each(std::begin(c), std::end(c), func) and mirrors the
+		/// `for (auto item : c)` shape.
+		template <typename CONTAINER, typename FUNC>
+		void each(CONTAINER&& c, FUNC&& func);
+
+		/// Chunked range-based overload: distribute @p c across @p taskCount tasks.
+		template <typename CONTAINER, typename FUNC>
+		void each(size_t taskCount, CONTAINER&& c, FUNC&& func);
 
 		/// Launch one task per index in [begin, end), stepping by 1.
 		/// @tparam IDX Signed arithmetic type.
@@ -85,20 +96,13 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
 
-		/// Block the calling thread until @p pred returns true, helping drain the
-		/// pool via work-stealing meanwhile. The primitive behind waitAll /
-		/// waitAny; also useful directly when the condition isn't a Handle
-		/// (atomic counters, external events).
-		template <class Pred>
-		void waitUntil(Pred&& pred);
-
 		/// Block (participating in stealing) until every handle in the pack
 		/// completes. Each Hs is a Handle<T> (types may differ). Does not
 		/// rethrow — observe each handle afterwards. Empty pack is a no-op.
 		template <class... Hs>
 		void waitAll(const Hs&... hs);
 
-		/// Tuple overload, pairing with parallelAsync()'s return.
+		/// Tuple overload, pairing with the variadic async()'s return.
 		template <class... Ts>
 		void waitAll(const std::tuple<Handle<Ts>...>& tup);
 
@@ -111,6 +115,13 @@ namespace multi
 		/// Tuple overload.
 		template <class... Ts>
 		std::size_t waitAny(const std::tuple<Handle<Ts>...>& tup);
+
+		/// Block the calling thread until @p pred returns true, helping drain the
+		/// pool via work-stealing meanwhile. The primitive behind waitAll /
+		/// waitAny; also useful directly when the condition isn't a Handle
+		/// (atomic counters, external events).
+		template <class Pred>
+		void waitUntil(Pred&& pred);
 
 	private:
 		/// Dispatch a Job, blocking until done and rethrowing the first captured

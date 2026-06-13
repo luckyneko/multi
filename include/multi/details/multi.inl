@@ -31,10 +31,57 @@ namespace multi
 		return context().async(std::forward<F>(f));
 	}
 
-	template <class Pred>
-	void waitUntil(Pred&& pred)
+	template <typename F0, typename F1, typename... Fs>
+	auto async(F0&& f0, F1&& f1, Fs&&... fs)
 	{
-		context().waitUntil(std::forward<Pred>(pred));
+		return context().async(std::forward<F0>(f0), std::forward<F1>(f1),
+							   std::forward<Fs>(fs)...);
+	}
+
+	template <typename... TASKS>
+	void parallel(TASKS&&... tasks)
+	{
+		context().parallel(std::forward<TASKS>(tasks)...);
+	}
+
+	template <typename ITER, typename FUNC>
+	void each(ITER begin, ITER end, FUNC&& func)
+	{
+		context().each(begin, end, std::forward<FUNC>(func));
+	}
+	template <typename ITER, typename FUNC>
+	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
+	{
+		context().each(taskCount, begin, end, std::forward<FUNC>(func));
+	}
+
+	template <typename CONTAINER, typename FUNC>
+	void each(CONTAINER&& c, FUNC&& func)
+	{
+		context().each(std::forward<CONTAINER>(c), std::forward<FUNC>(func));
+	}
+
+	template <typename CONTAINER, typename FUNC>
+	void each(size_t taskCount, CONTAINER&& c, FUNC&& func)
+	{
+		context().each(taskCount, std::forward<CONTAINER>(c), std::forward<FUNC>(func));
+	}
+
+	template <typename IDX, typename FUNC>
+	void range(IDX begin, IDX end, FUNC&& func)
+	{
+		context().range(begin, end, std::forward<FUNC>(func));
+	}
+
+	template <typename IDX, typename FUNC>
+	void range(IDX begin, IDX end, IDX step, FUNC&& func)
+	{
+		context().range(begin, end, step, std::forward<FUNC>(func));
+	}
+	template <typename IDX, typename FUNC>
+	void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
+	{
+		context().range(taskCount, begin, end, step, std::forward<FUNC>(func));
 	}
 
 	template <class... Hs>
@@ -59,44 +106,10 @@ namespace multi
 		return context().waitAny(tup);
 	}
 
-	template <typename... TASKS>
-	void parallel(TASKS&&... tasks)
+	template <class Pred>
+	void waitUntil(Pred&& pred)
 	{
-		context().parallel(std::forward<TASKS>(tasks)...);
-	}
-
-	template <typename... Fs>
-	auto parallelAsync(Fs&&... fs)
-	{
-		return context().parallelAsync(std::forward<Fs>(fs)...);
-	}
-
-	template <typename ITER, typename FUNC>
-	void each(ITER begin, ITER end, FUNC&& func)
-	{
-		context().each(begin, end, std::forward<FUNC>(func));
-	}
-	template <typename ITER, typename FUNC>
-	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
-	{
-		context().each(taskCount, begin, end, std::forward<FUNC>(func));
-	}
-
-	template <typename IDX, typename FUNC>
-	void range(IDX begin, IDX end, FUNC&& func)
-	{
-		context().range(begin, end, std::forward<FUNC>(func));
-	}
-
-	template <typename IDX, typename FUNC>
-	void range(IDX begin, IDX end, IDX step, FUNC&& func)
-	{
-		context().range(begin, end, step, std::forward<FUNC>(func));
-	}
-	template <typename IDX, typename FUNC>
-	void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
-	{
-		context().range(taskCount, begin, end, step, std::forward<FUNC>(func));
+		context().waitUntil(std::forward<Pred>(pred));
 	}
 
 } // namespace multi

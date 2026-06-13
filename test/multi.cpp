@@ -85,11 +85,11 @@ TEST_CASE("multi: waitUntil free function blocks on a custom predicate")
 	multi::stop();
 }
 
-TEST_CASE("multi: parallelAsync free function routes through global context")
+TEST_CASE("multi: variadic async free function routes through global context")
 {
 	multi::start(2);
 
-	auto handles = multi::parallelAsync(
+	auto handles = multi::async(
 		[]()
 		{ return 1; },
 		[]()
@@ -173,6 +173,39 @@ TEST_CASE("multi: each over vector")
 	multi::each(v.begin(), v.end(), [&](int x)
 				{ sum += x; });
 	CHECK(sum == 90); // 2*(0+1+...+9)
+
+	multi::stop();
+}
+
+TEST_CASE("multi: each over a container (range-based overload)")
+{
+	multi::start(2);
+
+	std::vector<int> v(10);
+	for (int i = 0; i < 10; ++i)
+		v[static_cast<std::size_t>(i)] = i;
+
+	// 2-arg form: whole-container, one task per item — mirrors for(auto& x : v).
+	multi::each(v, [](int& x)
+				{ x *= 2; });
+
+	std::atomic<int> sum(0);
+	multi::each(v, [&](int x)
+				{ sum += x; });
+	CHECK(sum == 90); // 2*(0+1+...+9)
+
+	// 3-arg chunked form: taskCount disambiguates from each(begin, end, func).
+	std::atomic<int> chunkSum(0);
+	multi::each(size_t(4), v, [&](int x)
+				{ chunkSum += x; });
+	CHECK(chunkSum == 90);
+
+	// A const container binds through the forwarding reference too.
+	const std::vector<int>& cv = v;
+	std::atomic<int> constSum(0);
+	multi::each(cv, [&](int x)
+				{ constSum += x; });
+	CHECK(constSum == 90);
 
 	multi::stop();
 }

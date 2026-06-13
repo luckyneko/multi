@@ -1,7 +1,7 @@
-// fanout.cpp — multi::parallelAsync + multi::waitAll / waitAny.
+// fanout.cpp — variadic multi::async + multi::waitAll / waitAny.
 //
 // Covers:
-//   - parallelAsync for heterogeneous typed tasks → tuple<Handle<R>...>
+//   - async(f, g, ...) for heterogeneous typed tasks → tuple<Handle<R>...>
 //   - waitAll on a tuple (participates in stealing while waiting)
 //   - waitAny returning the index of the first complete handle
 //   - Homogeneous fanout via std::vector<Handle<T>>
@@ -21,7 +21,7 @@ int main()
 
 	// Heterogeneous fan-out: each lambda has its own return type. The
 	// tuple's element types are deduced from invoke_result of each.
-	auto group = multi::parallelAsync(
+	auto group = multi::async(
 		[]() { return 7; },
 		[]() { return 3.14; },
 		[]() { return std::string("multi"); });
@@ -38,7 +38,7 @@ int main()
 	hInt.get(&gi);
 	hDbl.get(&gd);
 	hStr.get(&gs);
-	std::printf("parallelAsync results: %d, %f, %s\n", gi, gd, gs.c_str());
+	std::printf("async fan-out results: %d, %f, %s\n", gi, gd, gs.c_str());
 	const bool tupleOk = (gi == 7) && (gs == "multi");
 
 	// Homogeneous fanout via vector of Handle<int>. waitAll on each (which

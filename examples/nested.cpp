@@ -2,7 +2,7 @@
 //
 // Covers:
 //   - Submitting tasks from inside a worker task (nested dispatch)
-//   - Using parallelAsync to spawn sibling tasks that return values
+//   - Using variadic async to spawn sibling tasks that return values
 //   - waitAll to block (with steal participation) until siblings done
 //   - Recursion-depth control with a serial fallback below a threshold
 
@@ -16,7 +16,7 @@ namespace
 {
 	// Parallel sum via divide-and-conquer. Below the cutoff we fall back
 	// to serial std::accumulate; otherwise split the range in half and
-	// spawn two sibling tasks via parallelAsync, then waitAll on the
+	// spawn two sibling tasks via variadic async, then waitAll on the
 	// tuple. waitAll lets the calling worker drain the pool while
 	// waiting on its children — important because the caller IS a
 	// worker thread here.
@@ -27,7 +27,7 @@ namespace
 			return std::accumulate(v.begin() + lo, v.begin() + hi, 0LL);
 
 		const std::size_t mid = lo + (hi - lo) / 2;
-		auto children = multi::parallelAsync(
+		auto children = multi::async(
 			[&]() { return parallelSum(v, lo, mid); },
 			[&]() { return parallelSum(v, mid, hi); });
 		multi::waitAll(children);
