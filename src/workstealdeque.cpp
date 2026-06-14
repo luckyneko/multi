@@ -8,6 +8,8 @@
 
 #include "multi/details/workstealdeque.h"
 
+#include <cassert>
+
 namespace multi::details
 {
 	bool WorkStealDeque::tryPushLocal(Task&& task)
@@ -65,7 +67,8 @@ namespace multi::details
 				return;
 			if (!m_overflow.tryPop(&t))
 				return;
-			m_local.tryPushBottom(t);
+			[[maybe_unused]] const bool pushed = m_local.tryPushBottom(t);
+			assert(pushed && "owner observed space, so local push cannot fail");
 		}
 	}
 } // namespace multi::details

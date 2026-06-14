@@ -29,9 +29,10 @@ namespace multi::details
 	 *
 	 * For move-only T we claim a slot by CAS before moving out (the canonical
 	 * read-before-CAS algorithm needs a copy). Per-slot sequence atomics make
-	 * that safe under wraparound: slot i is writable when seq == i, readable
-	 * when seq == i + 1; a reader advances seq to i + CAPACITY to release the
-	 * slot for the next round. The owner's push spins on seq == b before writing.
+	 * that safe under wraparound: slot i is writable when seq == i, readable when
+	 * seq == i + 1. A steal releases to seq == i + CAPACITY (next use is a lap
+	 * away); an owner pop releases to seq == i (it reuses the slot on its next
+	 * push). The owner's push spins on seq == b before writing.
 	 */
 	template <typename T, std::size_t CAPACITY>
 	class ChaseLevDeque
@@ -53,6 +54,11 @@ namespace multi::details
 
 		ChaseLevDeque(const ChaseLevDeque&) = delete;
 		ChaseLevDeque& operator=(const ChaseLevDeque&) = delete;
+
+		// No explicit destructor: storage is a value member, so ~array destroys
+		// every T (live, moved-from, or default) exactly once. Items left in the
+		// deque at teardown are destroyed but not run — draining is the caller's
+		// job (see WorkerPool::stop).
 
 		// Convenience overload for rvalue callers; routes through the lvalue
 		// overload, so move-on-success semantics are identical.
@@ -86,6 +92,8 @@ namespace multi::details
 		{
 			const int64_t b = m_bottom.load(std::memory_order_relaxed) - 1;
 			m_bottom.store(b, std::memory_order_relaxed);
+			// seq_cst fence: publish the decremented bottom before reading top, so
+			// a concurrent steal and this pop can't both claim the last element.
 			std::atomic_thread_fence(std::memory_order_seq_cst);
 			int64_t t = m_top.load(std::memory_order_relaxed);
 
@@ -122,6 +130,7 @@ namespace multi::details
 		bool tryStealTop(T* out)
 		{
 			int64_t t = m_top.load(std::memory_order_acquire);
+			// seq_cst fence: read top before bottom — the mirror of tryPopBottom.
 			std::atomic_thread_fence(std::memory_order_seq_cst);
 			const int64_t b = m_bottom.load(std::memory_order_acquire);
 			if (t >= b)
@@ -141,6 +150,7 @@ namespace multi::details
 			return true;
 		}
 
+		// Racy.
 		std::size_t sizeHint() const
 		{
 			const int64_t b = m_bottom.load(std::memory_order_relaxed);
@@ -160,6 +170,9 @@ namespace multi::details
 
 		static constexpr std::size_t MASK = CAPACITY - 1;
 
+		// Signed: tryPopBottom speculatively decrements m_bottom to b - 1, which
+		// transiently reaches -1 on an empty deque, and the b - t math must stay
+		// correct across that. (MpmcQueue instead keeps size_t positions.)
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_top;
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_bottom;
 		alignas(CACHE_LINE_SIZE) std::array<Slot, CAPACITY> m_buffer;

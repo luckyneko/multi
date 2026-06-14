@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <catch2/catch_all.hpp>
+#include <memory>
 #include <multi/details/chaselevdeque.h>
 #include <thread>
 #include <vector>
@@ -87,6 +88,58 @@ TEST_CASE("ChaseLevDeque: pop drains down to last element via CAS")
 	REQUIRE(d.tryPopBottom(&v));
 	CHECK(v == 42);
 	CHECK(d.sizeHint() == 0);
+}
+
+TEST_CASE("ChaseLevDeque: move-only type LIFO pop preserves ownership")
+{
+	multi::details::ChaseLevDeque<std::unique_ptr<int>, 8> d;
+	for (int i = 0; i < 5; ++i)
+		REQUIRE(d.tryPushBottom(std::make_unique<int>(i)));
+
+	std::unique_ptr<int> out;
+	for (int i = 4; i >= 0; --i)
+	{
+		REQUIRE(d.tryPopBottom(&out));
+		REQUIRE(out != nullptr);
+		CHECK(*out == i);
+	}
+	CHECK_FALSE(d.tryPopBottom(&out));
+}
+
+TEST_CASE("ChaseLevDeque: move-only type FIFO steal preserves ownership")
+{
+	multi::details::ChaseLevDeque<std::unique_ptr<int>, 8> d;
+	for (int i = 0; i < 5; ++i)
+		REQUIRE(d.tryPushBottom(std::make_unique<int>(i)));
+
+	std::unique_ptr<int> out;
+	for (int i = 0; i < 5; ++i)
+	{
+		REQUIRE(d.tryStealTop(&out));
+		REQUIRE(out != nullptr);
+		CHECK(*out == i);
+	}
+	CHECK_FALSE(d.tryStealTop(&out));
+}
+
+TEST_CASE("ChaseLevDeque: failed push leaves the value intact for cascading")
+{
+	multi::details::ChaseLevDeque<std::unique_ptr<int>, 4> d;
+	for (int i = 0; i < 4; ++i)
+		REQUIRE(d.tryPushBottom(std::make_unique<int>(i)));
+
+	// Full: the push must fail without consuming the lvalue, so the owner can
+	// cascade it to overflow (WorkStealDeque::tryPushLocal relies on this).
+	auto item = std::make_unique<int>(99);
+	REQUIRE_FALSE(d.tryPushBottom(item));
+	REQUIRE(item != nullptr);
+	CHECK(*item == 99);
+
+	// Make room; the retried push now succeeds and moves the value out.
+	std::unique_ptr<int> out;
+	REQUIRE(d.tryPopBottom(&out));
+	REQUIRE(d.tryPushBottom(item));
+	CHECK(item == nullptr);
 }
 
 TEST_CASE("ChaseLevDeque: concurrent steal stress", "[stress]")

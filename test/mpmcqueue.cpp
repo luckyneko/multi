@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <catch2/catch_all.hpp>
+#include <memory>
 #include <multi/details/mpmcqueue.h>
 #include <thread>
 #include <vector>
@@ -60,6 +61,42 @@ TEST_CASE("MpmcQueue: wraparound past capacity")
 		REQUIRE(q.tryPop(&v));
 		CHECK(v == round);
 	}
+}
+
+TEST_CASE("MpmcQueue: move-only type preserves FIFO and ownership")
+{
+	multi::details::MpmcQueue<std::unique_ptr<int>, 8> q;
+	for (int i = 0; i < 5; ++i)
+		REQUIRE(q.tryPush(std::make_unique<int>(i)));
+
+	std::unique_ptr<int> out;
+	for (int i = 0; i < 5; ++i)
+	{
+		REQUIRE(q.tryPop(&out));
+		REQUIRE(out != nullptr);
+		CHECK(*out == i);
+	}
+	CHECK_FALSE(q.tryPop(&out));
+}
+
+TEST_CASE("MpmcQueue: failed push leaves the value intact for cascading")
+{
+	multi::details::MpmcQueue<std::unique_ptr<int>, 4> q;
+	for (int i = 0; i < 4; ++i)
+		REQUIRE(q.tryPush(std::make_unique<int>(i)));
+
+	// Ring full: the push must fail without consuming the lvalue, so the caller
+	// can cascade it elsewhere (WorkStealDeque::tryPushLocal relies on this).
+	auto item = std::make_unique<int>(99);
+	REQUIRE_FALSE(q.tryPush(item));
+	REQUIRE(item != nullptr);
+	CHECK(*item == 99);
+
+	// Make room; the retried push now succeeds and moves the value out.
+	std::unique_ptr<int> out;
+	REQUIRE(q.tryPop(&out));
+	REQUIRE(q.tryPush(item));
+	CHECK(item == nullptr);
 }
 
 TEST_CASE("MpmcQueue: concurrent producers and consumers stress", "[stress]")

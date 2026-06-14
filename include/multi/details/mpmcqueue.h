@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -23,7 +24,9 @@ namespace multi::details
 	 * Bounded MPMC ring buffer (Vyukov). Each cell carries a sequence number
 	 * gating push/pop, so producers and consumers never block beyond a single
 	 * CAS. Push at seq == enqueuePos, pop at seq == dequeuePos + 1; a successful
-	 * push sets seq = pos + 1, a successful pop sets seq = pos + CAPACITY.
+	 * push sets seq = pos + 1, a successful pop sets seq = pos + CAPACITY. The
+	 * cell sequence's acquire-load / release-store carries the data hand-off, so
+	 * the position CAS only arbitrates ownership (relaxed).
 	 */
 	template <typename T, std::size_t CAPACITY>
 	class MpmcQueue
@@ -45,6 +48,11 @@ namespace multi::details
 
 		MpmcQueue(const MpmcQueue&) = delete;
 		MpmcQueue& operator=(const MpmcQueue&) = delete;
+
+		// No explicit destructor: storage is a value member, so ~array destroys
+		// every T (occupied, moved-from, or default) exactly once. Items left in
+		// the ring at teardown are destroyed but not run — draining is the
+		// caller's job (see WorkerPool::stop).
 
 		// Convenience overload for rvalue callers; routes through the lvalue one.
 		bool tryPush(T&& v) { return tryPush(v); }
@@ -121,6 +129,8 @@ namespace multi::details
 		static constexpr std::size_t capacity() { return CAPACITY; }
 
 	private:
+		// Cell is intentionally not cache-line padded: for a spillover ring the
+		// memory cost outweighs the false-sharing win (an accepted Vyukov trade-off).
 		struct Cell
 		{
 			std::atomic<std::size_t> sequence;
