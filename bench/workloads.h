@@ -17,7 +17,7 @@
  *  Benchmark naming — every BENCHMARK label is "impl(variant)", no space:
  *    serial(baseline)  – pure serial reference (report.py keys the speedup
  *                        column off the leading "serial")
- *    multi(items)      – one task per element (range / each, non-chunked)
+ *    multi(items)      – one task per element (PerItem range / each)
  *    multi(chunks)     – chunked dispatch, CHUNK_FACTOR oversubscription
  *    multi(parallel)   – fork/join via multi::parallel
  *    multi(async)      – multi::async

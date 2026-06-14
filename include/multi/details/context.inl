@@ -46,38 +46,26 @@ namespace multi
 	template <typename ITER, typename FUNC>
 	void Context::each(ITER begin, ITER end, FUNC&& func)
 	{
-		details::EachJob<ITER, std::remove_reference_t<FUNC>> job(begin, end, func);
-		runQueueJob(job);
+		each(PerItem, begin, end, std::forward<FUNC>(func));
 	}
 
 	template <typename ITER, typename FUNC>
 	void Context::each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func)
 	{
-		// PerItem is a true alias of the per-item fast path (EachJob), not a
-		// ChunkedEachJob of one-item chunks.
-		if (chunkPolicy.isPerItem())
-		{
-			each(begin, end, std::forward<FUNC>(func));
-			return;
-		}
-		details::ChunkedEachJob<ITER, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, func);
+		details::EachJob<ITER, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, func);
 		runQueueJob(job);
 	}
 
 	template <typename CONTAINER, typename FUNC>
 	void Context::each(CONTAINER&& c, FUNC&& func)
 	{
-		using std::begin;
-		using std::end;
-		each(begin(c), end(c), std::forward<FUNC>(func));
+		each(std::begin(c), std::end(c), std::forward<FUNC>(func));
 	}
 
 	template <typename CONTAINER, typename FUNC>
 	void Context::each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func)
 	{
-		using std::begin;
-		using std::end;
-		each(chunkPolicy, begin(c), end(c), std::forward<FUNC>(func));
+		each(chunkPolicy, std::begin(c), std::end(c), std::forward<FUNC>(func));
 	}
 
 	template <typename IDX, typename FUNC>
@@ -89,20 +77,13 @@ namespace multi
 	template <typename IDX, typename FUNC>
 	void Context::range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		details::RangeJob<IDX, std::remove_reference_t<FUNC>> job(begin, end, step, func);
-		runQueueJob(job);
+		range(PerItem, begin, end, step, std::forward<FUNC>(func));
 	}
 
 	template <typename IDX, typename FUNC>
 	void Context::range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		// PerItem is a true alias of the per-index fast path (RangeJob).
-		if (chunkPolicy.isPerItem())
-		{
-			range(begin, end, step, std::forward<FUNC>(func));
-			return;
-		}
-		details::ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, step, func);
+		details::RangeJob<IDX, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, step, func);
 		runQueueJob(job);
 	}
 

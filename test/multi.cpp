@@ -47,8 +47,10 @@ TEST_CASE("multi: waitAll / waitAny free functions route through global context"
 	multi::start(2);
 
 	// waitAll: both handles are complete once it returns.
-	auto h0 = multi::async([]() { return 1; });
-	auto h1 = multi::async([]() { return 2; });
+	auto h0 = multi::async([]()
+						   { return 1; });
+	auto h1 = multi::async([]()
+						   { return 2; });
 	multi::waitAll(h0, h1);
 	CHECK(h0.complete());
 	CHECK(h1.complete());
@@ -60,12 +62,13 @@ TEST_CASE("multi: waitAll / waitAny free functions route through global context"
 						  {
 		std::this_thread::sleep_for(std::chrono::milliseconds(40));
 		return 1; });
-	auto b = multi::async([]() { return 2; });
+	auto b = multi::async([]()
+						  { return 2; });
 	b.wait();
 	const std::size_t idx = multi::waitAny(a, b);
 	CHECK(idx == 1);
 
-	multi::waitAll(a, b);  // drain the slow sibling before stop()
+	multi::waitAll(a, b); // drain the slow sibling before stop()
 
 	multi::stop();
 }
@@ -246,16 +249,13 @@ TEST_CASE("multi: ChunkPolicy resolves the three policies")
 
 	// PerItem: one task per item.
 	CHECK(multi::PerItem.resolve(37, 8) == 37);
-	CHECK(multi::PerItem.isPerItem());
-	CHECK_FALSE(ChunkPolicy(4).isPerItem());
-	CHECK_FALSE(multi::Auto.isPerItem());
 
 	// Auto: clamp((workers+1)*CHUNK_FACTOR, 2, total).
 	const std::size_t k = multi::CHUNK_FACTOR;
 	CHECK(multi::Auto.resolve(1000, 7) == (7 + 1) * k); // below total
 	CHECK(multi::Auto.resolve(10, 7) == 10);			// clamped to total
 	CHECK(multi::Auto.resolve(100, 0) == std::max<std::size_t>(k, 2));
-	CHECK(multi::Auto.resolve(0, 7) == 0);				// empty
+	CHECK(multi::Auto.resolve(0, 7) == 0); // empty
 }
 
 TEST_CASE("multi: each/range accept ChunkPolicy policies")

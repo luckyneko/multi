@@ -48,11 +48,6 @@ namespace multi
 		{
 		}
 
-		constexpr bool isPerItem() const noexcept
-		{
-			return m_policy == Policy::PerItem;
-		}
-
 		// Concrete task count for `total` items across `workers` worker threads.
 		// Clamps mirror the historical makeSetup: Exact >= 1, Auto >= 2, all <= total;
 		// total == 0 yields 0 (empty dispatch).

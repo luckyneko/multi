@@ -175,87 +175,25 @@ namespace multi::details
 	};
 
 	/*
-	 * EachJob — one task per item in [begin, end); mirrors Context::each.
-	 * Random-access iterators are stored directly (no allocation); other
-	 * categories materialise a std::vector<T*> at construction so dispatch
-	 * stays O(1) per task.
+	 * EachJob — chunkPolicy tasks, each over a slice of the items; mirrors
+	 * Context::each. Same distribution and chunk-count normalisation as
+	 * RangeJob. Iterator-category split via if constexpr: random-access
+	 * iterators store the begin iterator directly (no allocation); other
+	 * categories materialise a std::vector<T*> pointer table at construction.
+	 * Per-item each() resolves to PerItem here (one chunk per item).
 	 */
 	template <class ITER, class FUNC>
 	class EachJob : public Job
 	{
-		using ItemT = std::remove_reference_t<decltype(*std::declval<ITER>())>;
 		static constexpr bool isRandomAccess = std::is_base_of_v<
 			std::random_access_iterator_tag,
 			typename std::iterator_traits<ITER>::iterator_category>;
-		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
-
-	public:
-		EachJob(ITER begin, ITER end, FUNC& func)
-			: EachJob(makeStorage(begin, end), countOf(begin, end), func)
-		{
-		}
-
-		void run(std::size_t i) noexcept
-		{
-			runOne([&]()
-				   {
-				if constexpr (isRandomAccess)
-					(*m_func)(m_storage[static_cast<typename std::iterator_traits<ITER>::difference_type>(i)]);
-				else
-					(*m_func)(*m_storage[i]); });
-		}
-
-	private:
-		static Storage makeStorage(ITER begin, ITER end)
-		{
-			if constexpr (isRandomAccess)
-			{
-				(void)end;
-				return begin;
-			}
-			else
-			{
-				std::vector<ItemT*> v;
-				for (ITER it = begin; it != end; ++it)
-					v.push_back(&(*it));
-				return v;
-			}
-		}
-
-		static std::size_t countOf(ITER begin, ITER end)
-		{
-			const auto d = std::distance(begin, end);
-			return d > 0 ? static_cast<std::size_t>(d) : 0;
-		}
-
-		EachJob(Storage&& s, std::size_t count, FUNC& func)
-			: Job(count)
-			, m_storage(std::move(s))
-			, m_func(&func)
-		{
-		}
-
-		Storage m_storage;
-		FUNC* m_func;
-	};
-
-	/*
-	 * ChunkedEachJob — chunkPolicy tasks, each over a slice of the items; mirrors
-	 * the chunked Context::each. Same distribution and chunk-count normalisation
-	 * as ChunkedRangeJob, and the same iterator-category split as EachJob.
-	 */
-	template <class ITER, class FUNC>
-	class ChunkedEachJob : public Job
-	{
 		using ItemT = std::remove_reference_t<decltype(*std::declval<ITER>())>;
-		static constexpr bool isRandomAccess = std::is_base_of_v<
-			std::random_access_iterator_tag,
-			typename std::iterator_traits<ITER>::iterator_category>;
 		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
 
 	public:
-		ChunkedEachJob(ChunkPolicy chunkPolicy, std::size_t workers, ITER begin, ITER end, FUNC& func)
-			: ChunkedEachJob(makeSetup(chunkPolicy, workers, begin, end), func)
+		EachJob(ChunkPolicy chunkPolicy, std::size_t workers, ITER begin, ITER end, FUNC& func)
+			: EachJob(makeSetup(chunkPolicy, workers, begin, end), func)
 		{
 		}
 
@@ -305,7 +243,7 @@ namespace multi::details
 			return s;
 		}
 
-		ChunkedEachJob(Setup&& s, FUNC& func)
+		EachJob(Setup&& s, FUNC& func)
 			: Job(s.effective)
 			, m_storage(std::move(s.storage))
 			, m_base(s.effective == 0 ? 0 : s.total / s.effective)
@@ -321,12 +259,10 @@ namespace multi::details
 	};
 
 	/*
-	 * RangeJob — one task per index of [begin, end) with the given step; mirrors
-	 * Context::range. count==0 for invalid inputs (step==0 or end<=begin).
-	 *
-	 * Integer count is O(1); floating-point count uses an additive loop so it
-	 * matches a serial loop. Dispatched values use begin + i*step regardless, so
-	 * for floats the last value may differ by fp rounding.
+	 * RangeJob — chunkPolicy tasks, each over a slice of [begin, end);
+	 * mirrors the chunked Context::range. Normalises an exact 0 to 1 and clamps
+	 * to total. First m_extra tasks get m_base+1 items, the rest m_base — not
+	 * ceiling division (total=15, N=14 would collapse to fewer chunks).
 	 */
 	template <class IDX, class FUNC>
 	class RangeJob : public Job
@@ -334,57 +270,8 @@ namespace multi::details
 		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
 
 	public:
-		RangeJob(IDX begin, IDX end, IDX step, FUNC& func) noexcept
-			: Job(computeCount(begin, end, step))
-			, m_begin(begin)
-			, m_step(step)
-			, m_func(&func)
-		{
-		}
-
-		void run(std::size_t i) noexcept
-		{
-			runOne([&]()
-				   { (*m_func)(m_begin + static_cast<IDX>(i) * m_step); });
-		}
-
-	private:
-		static std::size_t computeCount(IDX begin, IDX end, IDX step) noexcept
-		{
-			if (step == 0 || end <= begin)
-				return 0;
-			if constexpr (std::is_integral_v<IDX>)
-			{
-				return static_cast<std::size_t>((end - begin + step - 1) / step);
-			}
-			else
-			{
-				std::size_t c = 0;
-				for (IDX i = begin; i < end; i += step)
-					++c;
-				return c;
-			}
-		}
-
-		IDX m_begin;
-		IDX m_step;
-		FUNC* m_func;
-	};
-
-	/*
-	 * ChunkedRangeJob — chunkPolicy tasks, each over a slice of [begin, end);
-	 * mirrors the chunked Context::range. Normalises an exact 0 to 1 and clamps
-	 * to total. First m_extra tasks get m_base+1 items, the rest m_base — not
-	 * ceiling division (total=15, N=14 would collapse to fewer chunks).
-	 */
-	template <class IDX, class FUNC>
-	class ChunkedRangeJob : public Job
-	{
-		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
-
-	public:
-		ChunkedRangeJob(ChunkPolicy chunkPolicy, std::size_t workers, IDX begin, IDX end, IDX step, FUNC& func) noexcept
-			: ChunkedRangeJob(makeSetup(chunkPolicy, workers, begin, end, step), func)
+		RangeJob(ChunkPolicy chunkPolicy, std::size_t workers, IDX begin, IDX end, IDX step, FUNC& func) noexcept
+			: RangeJob(makeSetup(chunkPolicy, workers, begin, end, step), func)
 		{
 		}
 
@@ -435,7 +322,7 @@ namespace multi::details
 			return Setup{begin, step, total, effective};
 		}
 
-		ChunkedRangeJob(Setup s, FUNC& func) noexcept
+		RangeJob(Setup s, FUNC& func) noexcept
 			: Job(s.effective)
 			, m_begin(s.begin)
 			, m_step(s.step)

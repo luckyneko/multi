@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 // each_iter — exercises multi::each over std::vector (random-access iterator)
 // and std::map (bidirectional iterator). These hit two different code paths
-// in EachJob / ChunkedEachJob: random-access stores the iterator directly,
+// in EachJob: random-access stores the iterator directly,
 // bidirectional materialises a std::vector<T*> pointer table at construction.
 // Per-item work matches tiny_tasks's workPerTask so per-task dispatch cost
 // is visible against the actual work.
