@@ -13,9 +13,9 @@
 
 namespace multi
 {
-	void Context::start(int threadCount)
+	bool Context::start(int threadCount)
 	{
-		m_workerPool.start(threadCount);
+		return m_workerPool.start(threadCount);
 	}
 
 	void Context::stop()

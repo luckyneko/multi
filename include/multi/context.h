@@ -34,7 +34,7 @@ namespace multi
 		/// dispatch primitive runs inline on the caller.
 		/// @param threadCount Worker count; -1 (default) uses
 		///        hardware_concurrency() - 1.
-		void start(int threadCount = -1);
+		bool start(int threadCount = -1);
 
 		/// Stop all workers, draining in-flight tasks first. Blocks until every
 		/// worker has exited. No-op on an inactive pool; the pool can be

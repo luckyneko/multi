@@ -164,7 +164,7 @@ namespace multi
 
 		// Two-task fast path (every parallel(a, b)): submit task 0 to a worker,
 		// run task 1 inline, then drain the single outstanding task. Saves a
-		// push + fencedNotify + steal-loop iteration vs the batch path.
+		// push + workerNotify + steal-loop iteration vs the batch path.
 		if (count == 2)
 		{
 			m_workerPool.submit(details::Task([&job]()

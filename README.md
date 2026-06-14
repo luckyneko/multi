@@ -64,10 +64,9 @@ For deeper API coverage see [test/context.cpp](test/context.cpp).
 
 int main()
 {
-    // Start the worker pool. With no argument it defaults to
-    // hardware_concurrency()-1 workers, leaving a core for the calling
-    // thread (which also participates in work-stealing). Pass an explicit
-    // count to override, e.g. multi::start(4).
+    // Start the worker pool. Returns true on success, false if already active
+    // (programming error — asserted in debug builds). Defaults to
+    // hardware_concurrency()-1 workers; pass an explicit count to override.
     multi::start();
 
     // Fire off a task. async returns a Handle<T> (T is deduced from the

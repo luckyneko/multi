@@ -10,9 +10,9 @@
 
 namespace multi
 {
-	inline void start(int threadCount)
+	inline bool start(int threadCount)
 	{
-		context().start(threadCount);
+		return context().start(threadCount);
 	}
 
 	inline void stop()

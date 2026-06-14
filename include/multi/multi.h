@@ -17,7 +17,7 @@ namespace multi
 	Context& context();
 
 	/// Start the global pool's worker threads. @see Context::start
-	inline void start(int threadCount = -1);
+	inline bool start(int threadCount = -1);
 
 	/// Stop the global pool. @see Context::stop
 	inline void stop();

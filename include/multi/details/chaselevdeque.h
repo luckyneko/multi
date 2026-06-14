@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "multi/details/constants.h"
+#include "multi/details/platform.h"
 
 #include <array>
 #include <atomic>

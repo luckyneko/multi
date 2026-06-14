@@ -23,10 +23,8 @@ TEST_CASE("WorkerPool: submit runs inline when not started")
 	pool.submit([&value]() { value = 42; });
 	CHECK(value == 42);
 
-	std::vector<multi::details::Task> batch;
-	batch.emplace_back([&value]() { value += 1; });
-	batch.emplace_back([&value]() { value += 2; });
-	pool.submitBatch(std::move(batch));
+	pool.submit([&value]() { value += 1; });
+	pool.submit([&value]() { value += 2; });
 	CHECK(value == 45);
 }
 
@@ -41,10 +39,8 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 	pool.submit([&value]() { value = 42; });
 	CHECK(value == 42);
 
-	std::vector<multi::details::Task> batch;
-	batch.emplace_back([&value]() { value += 1; });
-	batch.emplace_back([&value]() { value += 2; });
-	pool.submitBatch(std::move(batch));
+	pool.submit([&value]() { value += 1; });
+	pool.submit([&value]() { value += 2; });
 	CHECK(value == 45);
 }
 
@@ -86,15 +82,12 @@ TEST_CASE("WorkerPool: submitBatch distributes work")
 	auto done = std::make_shared<std::promise<void>>();
 	auto doneHandle = done->get_future();
 
-	std::vector<multi::details::Task> tasks;
-	for (int i = 0; i < numTasks; ++i)
-	{
-		tasks.emplace_back([&counter, numTasks, done]()
-						   {
+	pool.submitBatch(numTasks, [&counter, numTasks, done](size_t) {
+		return multi::details::Task([&counter, numTasks, done]() {
 			if (++counter == numTasks)
-				done->set_value(); });
-	}
-	pool.submitBatch(std::move(tasks));
+				done->set_value();
+		});
+	});
 
 	doneHandle.wait();
 	CHECK(counter == numTasks);
@@ -106,8 +99,7 @@ TEST_CASE("WorkerPool: empty batch is a no-op")
 	multi::details::WorkerPool pool;
 	pool.start(2);
 
-	std::vector<multi::details::Task> empty;
-	pool.submitBatch(std::move(empty));
+	pool.submitBatch(0, [](size_t) { return multi::details::Task{}; });
 
 	pool.stop();
 }
@@ -149,10 +141,9 @@ TEST_CASE("WorkerPool: tryStealAny lets caller participate")
 	const int numTasks = 50;
 	std::atomic<int> counter(0);
 
-	std::vector<multi::details::Task> tasks;
-	for (int i = 0; i < numTasks; ++i)
-		tasks.emplace_back([&counter]() { counter++; });
-	pool.submitBatch(std::move(tasks));
+	pool.submitBatch(numTasks, [&counter](size_t) {
+		return multi::details::Task([&counter]() { counter++; });
+	});
 
 	multi::details::Task stolen;
 	while (pool.tryStealAny(&stolen))
@@ -183,15 +174,12 @@ TEST_CASE("WorkerPool: high contention batch")
 
 	for (int b = 0; b < numBatches; ++b)
 	{
-		std::vector<multi::details::Task> tasks;
-		for (int i = 0; i < batchSize; ++i)
-		{
-			tasks.emplace_back([&counter, totalTasks, allDone]()
-							   {
+		pool.submitBatch(batchSize, [&counter, totalTasks, allDone](size_t) {
+			return multi::details::Task([&counter, totalTasks, allDone]() {
 				if (++counter == totalTasks)
-					allDone->set_value(); });
-		}
-		pool.submitBatch(std::move(tasks));
+					allDone->set_value();
+			});
+		});
 	}
 
 	allDoneHandle.wait();
@@ -199,34 +187,34 @@ TEST_CASE("WorkerPool: high contention batch")
 	pool.stop();
 }
 
-TEST_CASE("WorkerPool: start throws when already active")
+TEST_CASE("WorkerPool: start returns false when already active")
 {
 	multi::details::WorkerPool pool;
 	pool.start(2);
-	CHECK_THROWS_AS(pool.start(2), std::logic_error);
-	CHECK_THROWS_AS(pool.start(0), std::logic_error);
+	CHECK_FALSE(pool.start(2));
+	CHECK_FALSE(pool.start(0));
 	pool.stop();
 
 	// Stopping clears the active flag; starting again must succeed.
-	CHECK_NOTHROW(pool.start(1));
+	CHECK(pool.start(1));
 	pool.stop();
 }
 
-#ifdef MULTI_ENABLE_TEST_HOOKS
 TEST_CASE("WorkerPool: failed start rolls back created workers")
 {
 	multi::details::WorkerPool pool;
-	multi::details::WorkerPool::failNextStartAfterThreadCreations(1);
-
-	CHECK_THROWS_AS(pool.start(4), std::runtime_error);
+	size_t created = 0;
+	CHECK_FALSE(pool.start(4, [&](size_t) {
+		if (created++ >= 1)
+			throw std::runtime_error("test-injected thread creation failure");
+	}));
 	CHECK(pool.threadCount() == 0);
 	CHECK_FALSE(pool.isActive());
 
-	CHECK_NOTHROW(pool.start(2));
+	CHECK(pool.start(2));
 	CHECK(pool.threadCount() == 2);
 	pool.stop();
 }
-#endif
 
 #ifdef NDEBUG
 // Release only: debug builds assert in ~WorkerPool when stop() was skipped.
@@ -255,12 +243,9 @@ TEST_CASE("WorkerPool: stop drains pending tasks")
 	std::atomic<int> counter(0);
 	const int numTasks = 2000;
 
-	std::vector<multi::details::Task> tasks;
-	tasks.reserve(numTasks);
-	for (int i = 0; i < numTasks; ++i)
-		tasks.emplace_back([&counter]()
-						   { counter.fetch_add(1, std::memory_order_relaxed); });
-	pool.submitBatch(std::move(tasks));
+	pool.submitBatch(numTasks, [&counter](size_t) {
+		return multi::details::Task([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
+	});
 
 	pool.stop();
 
@@ -298,11 +283,9 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 		{
 			while (shouldRun.load(std::memory_order_relaxed))
 			{
-				std::vector<multi::details::Task> batch;
-				for (int i = 0; i < 8; ++i)
-					batch.emplace_back([&totalRun]()
-									   { totalRun.fetch_add(1, std::memory_order_relaxed); });
-				pool.submitBatch(std::move(batch));
+				pool.submitBatch(8, [&totalRun](size_t) {
+					return multi::details::Task([&totalRun]() { totalRun.fetch_add(1, std::memory_order_relaxed); });
+				});
 				totalSubmitted.fetch_add(8, std::memory_order_relaxed);
 			}
 		};
@@ -338,12 +321,9 @@ TEST_CASE("WorkerPool: external steal and stop race without touching freed worke
 		std::atomic<int> totalRun(0);
 		std::atomic<bool> keepStealing(true);
 
-		std::vector<multi::details::Task> tasks;
-		tasks.reserve(numTasks);
-		for (int i = 0; i < numTasks; ++i)
-			tasks.emplace_back([&totalRun]()
-							   { totalRun.fetch_add(1, std::memory_order_relaxed); });
-		pool.submitBatch(std::move(tasks));
+		pool.submitBatch(numTasks, [&totalRun](size_t) {
+			return multi::details::Task([&totalRun]() { totalRun.fetch_add(1, std::memory_order_relaxed); });
+		});
 
 		auto stealerMain = [&pool, &keepStealing]()
 		{

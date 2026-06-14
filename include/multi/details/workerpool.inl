@@ -14,8 +14,8 @@ namespace multi::details
 		if (count == 0)
 			return;
 
-		OperationGuard op(*this);
-		if (!op.entered())
+		std::unique_lock<OperationLock> op(m_opLock, std::try_to_lock);
+		if (!op)
 		{
 			for (size_t i = 0; i < count; ++i)
 			{
@@ -25,26 +25,25 @@ namespace multi::details
 			return;
 		}
 
-		const size_t workerCount = m_workerCount;
+		// Claim count consecutive round-robin slots in one atomic step.
 		const size_t base = m_nextWorker.fetch_add(count, std::memory_order_relaxed);
-		const size_t self = currentWorkerIndex();
+		const std::thread::id callerId = std::this_thread::get_id();
 
 		for (size_t i = 0; i < count; ++i)
 		{
 			Task t = gen(i);
-			const size_t idx = (base + i) % workerCount;
-			pushWithRetry(idx, t);
+			const size_t idx = (base + i) % m_workerCount;
+			pushOrRun(idx, t);
 		}
 
-		// Round-robin from `base` means the first min(count, workerCount) slots
-		// cover every distinct worker that got a task. A spurious notify (e.g.
-		// to a worker that bailed inline on shutdown) is harmless.
-		const size_t wakeCount = count < workerCount ? count : workerCount;
+		// Notify at most one worker per unique slot; round-robin wraps after
+		// workerCount steps so min(count, workerCount) covers all recipients.
+		const size_t wakeCount = count < m_workerCount ? count : m_workerCount;
 		for (size_t i = 0; i < wakeCount; ++i)
 		{
-			const size_t idx = (base + i) % workerCount;
-			if (idx != self)
-				fencedNotify(m_workers[idx]);
+			const size_t idx = (base + i) % m_workerCount;
+			if (m_workers[idx].thread.get_id() != callerId)
+				workerNotify(idx);
 		}
 	}
 } // namespace multi::details
