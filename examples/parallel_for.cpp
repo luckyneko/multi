@@ -2,9 +2,9 @@
 //
 // Covers:
 //   - multi::each(begin, end, fn)            (per-item dispatch)
-//   - multi::each(taskCount, begin, end, fn) (chunked)
+//   - multi::each(chunkPolicy, begin, end, fn) (chunked)
 //   - multi::range(begin, end, fn)           (index range)
-//   - multi::range(taskCount, b, e, step, fn) (chunked index range)
+//   - multi::range(chunkPolicy, b, e, step, fn) (chunked index range)
 
 #include <multi/multi.h>
 
@@ -24,7 +24,7 @@ int main()
 	std::printf("each: every element scaled by 3 (front=%d, back=%d) -> %s\n",
 	            v.front(), v.back(), eachOk ? "ok" : "FAIL");
 
-	// each with taskCount — explicit chunk count for granularity control.
+	// each with a ChunkPolicy — explicit chunk count for granularity control.
 	// For 10k items + 16 chunks, each chunk processes ~625 items.
 	std::vector<int> w(10000, 0);
 	multi::each(16, w.begin(), w.end(), [](int& x) { x = 7; });
@@ -39,7 +39,7 @@ int main()
 	std::printf("range(0,100) sum = %d (expected 4950) -> %s\n",
 	            sum.load(), rangeOk ? "ok" : "FAIL");
 
-	// range with taskCount + step
+	// range with a ChunkPolicy + step
 	std::atomic<int> even(0);
 	multi::range(8, 0, 100, 2, [&](int i) { even += i; });  // 0, 2, 4, …, 98
 	const bool rangeStepOk = (even.load() == 2450);

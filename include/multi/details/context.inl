@@ -51,9 +51,16 @@ namespace multi
 	}
 
 	template <typename ITER, typename FUNC>
-	void Context::each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
+	void Context::each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func)
 	{
-		details::ChunkedEachJob<ITER, std::remove_reference_t<FUNC>> job(taskCount, begin, end, func);
+		// PerItem is a true alias of the per-item fast path (EachJob), not a
+		// ChunkedEachJob of one-item chunks.
+		if (chunkPolicy.isPerItem())
+		{
+			each(begin, end, std::forward<FUNC>(func));
+			return;
+		}
+		details::ChunkedEachJob<ITER, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, func);
 		runQueueJob(job);
 	}
 
@@ -66,11 +73,11 @@ namespace multi
 	}
 
 	template <typename CONTAINER, typename FUNC>
-	void Context::each(size_t taskCount, CONTAINER&& c, FUNC&& func)
+	void Context::each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func)
 	{
 		using std::begin;
 		using std::end;
-		each(taskCount, begin(c), end(c), std::forward<FUNC>(func));
+		each(chunkPolicy, begin(c), end(c), std::forward<FUNC>(func));
 	}
 
 	template <typename IDX, typename FUNC>
@@ -87,9 +94,15 @@ namespace multi
 	}
 
 	template <typename IDX, typename FUNC>
-	void Context::range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
+	void Context::range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		details::ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(taskCount, begin, end, step, func);
+		// PerItem is a true alias of the per-index fast path (RangeJob).
+		if (chunkPolicy.isPerItem())
+		{
+			range(begin, end, step, std::forward<FUNC>(func));
+			return;
+		}
+		details::ChunkedRangeJob<IDX, std::remove_reference_t<FUNC>> job(chunkPolicy, threadCount(), begin, end, step, func);
 		runQueueJob(job);
 	}
 

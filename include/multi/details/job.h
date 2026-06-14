@@ -20,6 +20,8 @@
 #include <utility>
 #include <vector>
 
+#include "multi/chunkpolicy.h"
+
 namespace multi::details
 {
 	/*
@@ -238,8 +240,8 @@ namespace multi::details
 	};
 
 	/*
-	 * ChunkedEachJob — taskCount tasks, each over a slice of the items; mirrors
-	 * the chunked Context::each. Same distribution and taskCount normalisation
+	 * ChunkedEachJob — chunkPolicy tasks, each over a slice of the items; mirrors
+	 * the chunked Context::each. Same distribution and chunk-count normalisation
 	 * as ChunkedRangeJob, and the same iterator-category split as EachJob.
 	 */
 	template <class ITER, class FUNC>
@@ -252,8 +254,8 @@ namespace multi::details
 		using Storage = std::conditional_t<isRandomAccess, ITER, std::vector<ItemT*>>;
 
 	public:
-		ChunkedEachJob(std::size_t taskCount, ITER begin, ITER end, FUNC& func)
-			: ChunkedEachJob(makeSetup(taskCount, begin, end), func)
+		ChunkedEachJob(ChunkPolicy chunkPolicy, std::size_t workers, ITER begin, ITER end, FUNC& func)
+			: ChunkedEachJob(makeSetup(chunkPolicy, workers, begin, end), func)
 		{
 		}
 
@@ -282,7 +284,7 @@ namespace multi::details
 			std::size_t effective;
 		};
 
-		static Setup makeSetup(std::size_t taskCount, ITER begin, ITER end)
+		static Setup makeSetup(ChunkPolicy chunkPolicy, std::size_t workers, ITER begin, ITER end)
 		{
 			Setup s;
 			std::size_t total;
@@ -299,9 +301,7 @@ namespace multi::details
 				total = s.storage.size();
 			}
 			s.total = total;
-			s.effective = (total == 0)
-							  ? 0
-							  : std::min(std::max<std::size_t>(taskCount, 1), total);
+			s.effective = chunkPolicy.resolve(total, workers);
 			return s;
 		}
 
@@ -372,8 +372,8 @@ namespace multi::details
 	};
 
 	/*
-	 * ChunkedRangeJob — taskCount tasks, each over a slice of [begin, end);
-	 * mirrors the chunked Context::range. Normalises taskCount=0 to 1 and clamps
+	 * ChunkedRangeJob — chunkPolicy tasks, each over a slice of [begin, end);
+	 * mirrors the chunked Context::range. Normalises an exact 0 to 1 and clamps
 	 * to total. First m_extra tasks get m_base+1 items, the rest m_base — not
 	 * ceiling division (total=15, N=14 would collapse to fewer chunks).
 	 */
@@ -383,8 +383,8 @@ namespace multi::details
 		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
 
 	public:
-		ChunkedRangeJob(std::size_t taskCount, IDX begin, IDX end, IDX step, FUNC& func) noexcept
-			: ChunkedRangeJob(makeSetup(taskCount, begin, end, step), func)
+		ChunkedRangeJob(ChunkPolicy chunkPolicy, std::size_t workers, IDX begin, IDX end, IDX step, FUNC& func) noexcept
+			: ChunkedRangeJob(makeSetup(chunkPolicy, workers, begin, end, step), func)
 		{
 		}
 
@@ -428,12 +428,10 @@ namespace multi::details
 			}
 		}
 
-		static Setup makeSetup(std::size_t taskCount, IDX begin, IDX end, IDX step) noexcept
+		static Setup makeSetup(ChunkPolicy chunkPolicy, std::size_t workers, IDX begin, IDX end, IDX step) noexcept
 		{
 			const std::size_t total = computeTotal(begin, end, step);
-			const std::size_t effective = (total == 0)
-											  ? 0
-											  : std::min(std::max<std::size_t>(taskCount, 1), total);
+			const std::size_t effective = chunkPolicy.resolve(total, workers);
 			return Setup{begin, step, total, effective};
 		}
 

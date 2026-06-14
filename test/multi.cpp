@@ -6,9 +6,11 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <cstddef>
 #include <multi/multi.h>
 #include <stdexcept>
 #include <thread>
@@ -228,6 +230,73 @@ TEST_CASE("multi: range over integers")
 	multi::range(std::size_t(3), 0, 10, 1, [&](int i)
 				 { chunkedSum += i; });
 	CHECK(chunkedSum == 45);
+
+	multi::stop();
+}
+
+TEST_CASE("multi: ChunkPolicy resolves the three policies")
+{
+	using multi::ChunkPolicy;
+
+	// Exact: clamped to [1, total]; 0 normalises to 1; total 0 stays 0.
+	CHECK(ChunkPolicy(4).resolve(100, 8) == 4);
+	CHECK(ChunkPolicy(0).resolve(100, 8) == 1);
+	CHECK(ChunkPolicy(999).resolve(10, 8) == 10);
+	CHECK(ChunkPolicy(4).resolve(0, 8) == 0);
+
+	// PerItem: one task per item.
+	CHECK(multi::PerItem.resolve(37, 8) == 37);
+	CHECK(multi::PerItem.isPerItem());
+	CHECK_FALSE(ChunkPolicy(4).isPerItem());
+	CHECK_FALSE(multi::Auto.isPerItem());
+
+	// Auto: clamp((workers+1)*CHUNK_FACTOR, 2, total).
+	const std::size_t k = multi::CHUNK_FACTOR;
+	CHECK(multi::Auto.resolve(1000, 7) == (7 + 1) * k); // below total
+	CHECK(multi::Auto.resolve(10, 7) == 10);			// clamped to total
+	CHECK(multi::Auto.resolve(100, 0) == std::max<std::size_t>(k, 2));
+	CHECK(multi::Auto.resolve(0, 7) == 0);				// empty
+}
+
+TEST_CASE("multi: each/range accept ChunkPolicy policies")
+{
+	multi::start(2);
+
+	std::vector<int> v(100);
+	for (int i = 0; i < 100; ++i)
+		v[static_cast<std::size_t>(i)] = i;
+	const int expected = 4950; // sum 0..99
+
+	{
+		std::atomic<int> s(0);
+		multi::each(multi::Auto, v, [&](int x)
+					{ s += x; });
+		CHECK(s == expected);
+	}
+	{
+		std::atomic<int> s(0);
+		multi::each(multi::PerItem, v, [&](int x)
+					{ s += x; });
+		CHECK(s == expected);
+	}
+	{
+		std::atomic<int> s(0);
+		multi::each(8, v, [&](int x) // bare int -> ChunkPolicy
+					{ s += x; });
+		CHECK(s == expected);
+	}
+	{
+		std::atomic<int> s(0);
+		multi::range(multi::Auto, 0, 100, 1, [&](int i)
+					 { s += i; });
+		CHECK(s == expected);
+	}
+	{
+		std::atomic<int> s(0);
+		multi::range(multi::PerItem, 0, 100, 1, [&](int i)
+					 { s += i; });
+		CHECK(s == expected);
+	}
 
 	multi::stop();
 }

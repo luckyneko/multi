@@ -12,6 +12,7 @@
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
 #include "multi/handle.h"
+#include "multi/chunkpolicy.h"
 
 namespace multi
 {
@@ -68,9 +69,10 @@ namespace multi
 		template <typename ITER, typename FUNC>
 		void each(ITER begin, ITER end, FUNC&& func);
 
-		/// Chunked overload: distribute the items across @p taskCount tasks.
+		/// Chunked overload: distribute the items across @p chunkPolicy tasks
+		/// (an exact count, or multi::Auto / multi::PerItem).
 		template <typename ITER, typename FUNC>
-		void each(size_t taskCount, ITER begin, ITER end, FUNC&& func);
+		void each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func);
 
 		/// Range-based overload: iterate a whole container, one task per item.
 		/// Equivalent to each(std::begin(c), std::end(c), func) and mirrors the
@@ -78,9 +80,10 @@ namespace multi
 		template <typename CONTAINER, typename FUNC>
 		void each(CONTAINER&& c, FUNC&& func);
 
-		/// Chunked range-based overload: distribute @p c across @p taskCount tasks.
+		/// Chunked range-based overload: distribute @p c across @p chunkPolicy tasks
+		/// (an exact count, or multi::Auto / multi::PerItem).
 		template <typename CONTAINER, typename FUNC>
-		void each(size_t taskCount, CONTAINER&& c, FUNC&& func);
+		void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
 		/// Launch one task per index in [begin, end), stepping by 1.
 		/// @tparam IDX Signed arithmetic type.
@@ -92,9 +95,10 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 
-		/// Chunked overload: distribute the indices across @p taskCount tasks.
+		/// Chunked overload: distribute the indices across @p chunkPolicy tasks
+		/// (an exact count, or multi::Auto / multi::PerItem).
 		template <typename IDX, typename FUNC>
-		void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
+		void range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func);
 
 		/// Block (participating in stealing) until every handle in the pack
 		/// completes. Each Hs is a Handle<T> (types may differ). Does not

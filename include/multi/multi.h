@@ -42,12 +42,12 @@ namespace multi
 	template <typename ITER, typename FUNC>
 	void each(ITER begin, ITER end, FUNC&& func);
 	template <typename ITER, typename FUNC>
-	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func);
+	void each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func);
 	/// Range-based overloads — iterate a whole container. @see Context::each
 	template <typename CONTAINER, typename FUNC>
 	void each(CONTAINER&& c, FUNC&& func);
 	template <typename CONTAINER, typename FUNC>
-	void each(size_t taskCount, CONTAINER&& c, FUNC&& func);
+	void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
 	/// Launch one task per index. @see Context::range
 	template <typename IDX, typename FUNC>
@@ -55,7 +55,7 @@ namespace multi
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, IDX step, FUNC&& func);
 	template <typename IDX, typename FUNC>
-	void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func);
+	void range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func);
 
 	/// Block (work-stealing) until every handle completes. @see Context::waitAll
 	template <class... Hs>

@@ -50,9 +50,9 @@ namespace multi
 		context().each(begin, end, std::forward<FUNC>(func));
 	}
 	template <typename ITER, typename FUNC>
-	void each(size_t taskCount, ITER begin, ITER end, FUNC&& func)
+	void each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func)
 	{
-		context().each(taskCount, begin, end, std::forward<FUNC>(func));
+		context().each(chunkPolicy, begin, end, std::forward<FUNC>(func));
 	}
 
 	template <typename CONTAINER, typename FUNC>
@@ -62,9 +62,9 @@ namespace multi
 	}
 
 	template <typename CONTAINER, typename FUNC>
-	void each(size_t taskCount, CONTAINER&& c, FUNC&& func)
+	void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func)
 	{
-		context().each(taskCount, std::forward<CONTAINER>(c), std::forward<FUNC>(func));
+		context().each(chunkPolicy, std::forward<CONTAINER>(c), std::forward<FUNC>(func));
 	}
 
 	template <typename IDX, typename FUNC>
@@ -79,9 +79,9 @@ namespace multi
 		context().range(begin, end, step, std::forward<FUNC>(func));
 	}
 	template <typename IDX, typename FUNC>
-	void range(size_t taskCount, IDX begin, IDX end, IDX step, FUNC&& func)
+	void range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		context().range(taskCount, begin, end, step, std::forward<FUNC>(func));
+		context().range(chunkPolicy, begin, end, step, std::forward<FUNC>(func));
 	}
 
 	template <class... Hs>

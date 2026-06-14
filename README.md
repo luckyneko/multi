@@ -178,11 +178,11 @@ void function()
         item.setValue();
     });
 
-    // Run over all items, using 32 tasks (container or iterator-pair form)
-    multi::each(32, items, [](Item& item)
-    {
-        item.setValue();
-    });
+    // The leading argument is a `multi::ChunkPolicy` — how many tasks to split
+    // the work into. Three spellings:
+    multi::each(32, items, fn);             // exact: 32 tasks (bare int)
+    multi::each(multi::Auto, items, fn);    // (workers+1)*CHUNK_FACTOR, clamped
+    multi::each(multi::PerItem, items, fn); // one task per item (== no count)
 }
 ```
 
@@ -204,11 +204,13 @@ void function()
         out += idx;
     });
 
-    // Run task per step, using 32 tasks
+    // Chunked: the leading multi::ChunkPolicy picks how many tasks (exact count,
+    // multi::Auto, or multi::PerItem).
     multi::range(32, 0, 100, 2, [&](int idx)
     {
         out += idx;
     });
+    multi::range(multi::Auto, 0, 100, 2, [&](int idx) { out += idx; });
 }
 ```
 

@@ -282,6 +282,33 @@ TEST_CASE("Context: each with taskCount over map")
 	context.stop();
 }
 
+TEST_CASE("Context: each/range ChunkPolicy policies on a local pool")
+{
+	// Auto resolves against THIS context's worker count, not the global one.
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	auto policy = GENERATE(multi::Auto, multi::PerItem);
+	multi::Context context;
+	context.start(threadCount);
+
+	std::vector<int> v(50);
+	int expected = 0;
+	for (int i = 0; i < 50; ++i)
+	{
+		v[static_cast<std::size_t>(i)] = i;
+		expected += i;
+	}
+
+	std::atomic<int> eachSum(0);
+	context.each(policy, v, [&](int x) { eachSum += x; });
+	CHECK(eachSum == expected);
+
+	std::atomic<int> rangeSum(0);
+	context.range(policy, 0, 50, 1, [&](int i) { rangeSum += i; });
+	CHECK(rangeSum == expected);
+
+	context.stop();
+}
+
 TEST_CASE("Context: range int")
 {
 	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));

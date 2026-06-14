@@ -124,13 +124,11 @@ namespace bench
 		}
 	};
 
-	// K — chunk oversubscription factor: chunks = (workers + caller) * CHUNK_FACTOR.
-	inline constexpr std::size_t CHUNK_FACTOR = 4;
-
 	// Target chunk count for a parallel-for over `count` items, clamped to [2, count].
+	// Mirrors multi::Auto; CHUNK_FACTOR is the single source of truth in multi/chunkpolicy.h.
 	inline std::size_t chunkCount(int count)
 	{
-		std::size_t chunks = (multi::threadCount() + 1) * CHUNK_FACTOR;
+		std::size_t chunks = (multi::threadCount() + 1) * multi::CHUNK_FACTOR;
 		if (chunks < 2)
 			chunks = 2;
 		if (static_cast<int>(chunks) > count)
