@@ -76,8 +76,6 @@ namespace multi::details
 
 	bool WorkerPool::start(int threadCount, std::function<void(size_t)> onCreate)
 	{
-		// Double-start is a programming error: assert in debug, return false in release.
-		assert(!m_opLock.isActive());
 		if (m_opLock.isActive())
 			return false;
 
