@@ -88,6 +88,7 @@ if(MULTI_BUILD_TESTING)
     add_executable(test-${PROJECT_NAME}
         test/multi.cpp
         test/chaselevdeque.cpp
+        test/chunkpolicy.cpp
         test/context.cpp
         test/handle.cpp
         test/mpmcqueue.cpp
