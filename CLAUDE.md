@@ -32,9 +32,20 @@ cmake --build build
 # Run + speedup summary table (forwards filters/flags to bench-multi).
 # Cross-platform: resolves the .exe suffix and multi-config build/<Config>/ paths.
 python bench/report.py "[fast]"
+
+# Record a run to JSON, or append it to a rolling history file.
+python bench/report.py "[fast]" --json-out build/bench-latest.json
+python bench/report.py "[fast]" --json-append build/bench-history.json
+
+# Compare this run against the latest values in a history/run JSON, then
+# extend that history in the same invocation (regression tracking).
+python bench/report.py "[fast]" --compare build/bench-history.json \
+                                --json-append build/bench-history.json
 ```
 
 **Benchmark layout**: each workload is its own translation unit under [bench/](bench/) — `empty_tasks` / `mandelbrot` / `tiny_tasks` / `imbalanced` / `nested` / `async_latency` / `async_fanout` / `heavy_capture` / `steal_contention` / `each_iter` / `parallel_pair`, each listed explicitly in [CMakeLists.txt](CMakeLists.txt) and sharing [bench/workloads.h](bench/workloads.h). The header holds the `bench::` dispatch adaptors (`baseline` / `items` / `chunks` / `invoke_multi`), the `Graph` helper for mandelbrot, and the `chunkCount(count)` helper that mirrors `multi::Auto`. The `CHUNK_FACTOR` (= 4) oversubscription constant lives in [include/multi/chunkpolicy.h](include/multi/chunkpolicy.h) (the single source of truth); `chunkCount` consumes `multi::CHUNK_FACTOR`. When adding a workload, add a new `.cpp` plus its CMakeLists entry; don't reintroduce a monolithic `workloads.cpp`. Conventions to preserve: BENCHMARK labels are `impl(variant)` with no space (`serial(baseline)`, `multi(items)`, `multi(chunks)`, `multi(parallel)`, `multi(async)`, `multi(range)`) and size/shape lives in the TEST_CASE/SECTION name; [bench/report.py](bench/report.py) keys its speedup column off the leading `serial` in baseline rows, so baselines must stay named `serial…`. Keep thread creation out of timed `BENCHMARK` bodies — `steal_contention` spawns its driver threads once via a persistent `DriverPool` released per sample, so OS thread-lifecycle cost doesn't swamp the measurement.
+
+**`bench/report.py` JSON + comparison**: beyond the plain speedup table, `report.py` takes `--json-out <path>` (writes this run as a single-run snapshot — git metadata + flattened `benchmarks[]` at top level), `--json-append <path>` (appends the run to a `{schema_version, runs:[…]}` history file, creating it if absent), and `--compare <path>` (diffs the current run against the latest value per `(workload, section, variant)` key in a history/run JSON). The three combine — `--compare … --json-append …` is the regression-tracking loop. Each run captures git `commit`/`short_commit`/`branch`/`dirty`. The comparison table adds `PREV`/`DELTA%`/`SIGNAL` columns alongside the same speedup column, where `SIGNAL` is a σ estimate (`|Δmean| / hypot(sd, prev_sd)`) bucketed `noise (<1) / weak (<2) / clear (<3) / strong (≥3)` and ANSI-colored red=slower / green=faster (color gated on tty, suppressed by `NO_COLOR` or `TERM=dumb`). Rows are sorted deterministically, baseline-first within each group. This mirrors the equivalent tooling in the sibling `archimedes` repo, minus that repo's baseline-less layout — multi keeps the speedup column throughout.
 
 CMake options (all default ON when `multi` is top-level, OFF when consumed via `add_subdirectory`):
 - `MULTI_BUILD_TESTING` — builds [test-multi](test/)
