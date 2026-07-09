@@ -44,6 +44,7 @@ configure_file(
 add_library(${PROJECT_NAME} STATIC 
     src/context.cpp
     src/multi.cpp
+    src/recipe.cpp
     src/workstealdeque.cpp
     src/workerpool.cpp
 )
@@ -92,6 +93,7 @@ if(MULTI_BUILD_TESTING)
         test/context.cpp
         test/handle.cpp
         test/mpmcqueue.cpp
+        test/recipe.cpp
         test/workstealdeque.cpp
         test/workerpool.cpp
     )
