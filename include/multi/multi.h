@@ -10,6 +10,7 @@
 
 #include "multi/context.h"
 #include "multi/recipe.h"
+#include "multi/recipehandle.h"
 #include "multi/version.h"
 
 namespace multi
@@ -35,7 +36,7 @@ namespace multi
 	template <typename F0, typename F1, typename... Fs>
 	auto async(F0&& f0, F1&& f1, Fs&&... fs);
 	/// Launch a Recipe on the global pool. @see Context::async
-	inline Handle<> async(Recipe&& recipe);
+	inline RecipeHandle async(Recipe&& recipe);
 
 	/// Run tasks in parallel on the global pool. @see Context::parallel
 	template <typename... TASKS>

@@ -45,6 +45,7 @@ add_library(${PROJECT_NAME} STATIC
     src/context.cpp
     src/multi.cpp
     src/recipe.cpp
+    src/recipehandle.cpp
     src/recipejob.cpp
     src/workstealdeque.cpp
     src/workerpool.cpp

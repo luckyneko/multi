@@ -9,6 +9,7 @@
 #include <atomic>
 #include <multi/multi.h>
 #include <multi/recipe.h>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 
@@ -108,6 +109,18 @@ TEST_CASE("Recipe: is move-only")
 				  "Recipe is consumed by async");
 }
 
+TEST_CASE("RecipeHandle: is move-only")
+{
+	static_assert(!std::is_copy_constructible_v<multi::RecipeHandle>,
+				  "RecipeHandle owns the run observation handle");
+	static_assert(!std::is_copy_assignable_v<multi::RecipeHandle>,
+				  "RecipeHandle owns the run observation handle");
+	static_assert(std::is_move_constructible_v<multi::RecipeHandle>,
+				  "RecipeHandle can transfer run observation");
+	static_assert(!std::is_move_assignable_v<multi::RecipeHandle>,
+				  "RecipeHandle follows Handle assignment rules");
+}
+
 TEST_CASE("Recipe: empty async succeeds")
 {
 	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2));
@@ -118,6 +131,78 @@ TEST_CASE("Recipe: empty async succeeds")
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());
 	context.waitAll(h);
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: handle reports run progress")
+{
+	multi::Context context;
+	context.start(1);
+
+	std::atomic<bool> entered{false};
+	std::atomic<bool> release{false};
+	std::atomic<int> ran{0};
+
+	multi::Recipe recipe;
+	auto first = recipe.step([&]()
+	{
+		entered.store(true, std::memory_order_release);
+		while (!release.load(std::memory_order_acquire))
+			std::this_thread::yield();
+		ran.fetch_add(1, std::memory_order_relaxed);
+	});
+	auto second = recipe.step([&]()
+	{
+		ran.fetch_add(1, std::memory_order_relaxed);
+	});
+	REQUIRE(first.before(second) == multi::RecipeResult::Ok);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	CHECK(h.stepCount() == 2);
+
+	while (!entered.load(std::memory_order_acquire))
+		std::this_thread::yield();
+
+	CHECK(h.finishedCount() == 0);
+	CHECK(h.progress() == Catch::Approx(0.0f));
+
+	release.store(true, std::memory_order_release);
+	context.waitAll(h);
+	CHECK(h.finishedCount() == 2);
+	CHECK(h.progress() == Catch::Approx(1.0f));
+	CHECK(ran.load(std::memory_order_relaxed) == 2);
+	CHECK(h.get());
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: handle rethrows failed step and counts skipped successors")
+{
+	multi::Context context;
+	context.start(0);
+
+	std::atomic<int> dependentRan{0};
+	multi::Recipe recipe;
+	auto failing = recipe.step([]()
+	{
+		throw std::runtime_error("recipe step failed");
+	});
+	auto dependent = recipe.step([&]()
+	{
+		dependentRan.store(1, std::memory_order_release);
+	});
+	REQUIRE(failing.before(dependent) == multi::RecipeResult::Ok);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	CHECK(h.complete());
+	CHECK(h.stepCount() == 2);
+	CHECK(h.finishedCount() == 2);
+	CHECK(h.progress() == Catch::Approx(1.0f));
+	CHECK(dependentRan.load(std::memory_order_acquire) == 0);
+	CHECK_THROWS_AS(h.get(), std::runtime_error);
 
 	context.stop();
 }

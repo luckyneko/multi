@@ -38,7 +38,7 @@ namespace multi
 							   std::forward<Fs>(fs)...);
 	}
 
-	inline Handle<> async(Recipe&& recipe)
+	inline RecipeHandle async(Recipe&& recipe)
 	{
 		return context().async(std::move(recipe));
 	}

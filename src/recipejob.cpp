@@ -88,6 +88,26 @@ namespace multi::details
 		}
 	}
 
+	std::size_t RecipeJob::stepCount() const noexcept
+	{
+		return m_state.size();
+	}
+
+	std::size_t RecipeJob::finishedCount() const noexcept
+	{
+		const std::size_t total = stepCount();
+		const std::size_t remaining = m_remaining.load(std::memory_order_acquire);
+		return remaining < total ? total - remaining : 0;
+	}
+
+	float RecipeJob::progress() const noexcept
+	{
+		const std::size_t total = stepCount();
+		if (total == 0)
+			return 1.0f;
+		return static_cast<float>(finishedCount()) / static_cast<float>(total);
+	}
+
 	void RecipeJob::skip(std::size_t index) noexcept
 	{
 		int expected = Pending;

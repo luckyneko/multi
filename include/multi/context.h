@@ -13,6 +13,7 @@
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
 #include "multi/handle.h"
+#include "multi/recipehandle.h"
 
 namespace multi
 {
@@ -63,7 +64,7 @@ namespace multi
 		auto async(F0&& f0, F1&& f1, Fs&&... fs);
 
 		/// Launch a Recipe, consuming its steps.
-		Handle<> async(Recipe&& recipe);
+		RecipeHandle async(Recipe&& recipe);
 
 		/// Run a pack of tasks in parallel and block until all complete.
 		template <typename... TASKS>

@@ -31,7 +31,7 @@ namespace multi
 		return m_workerPool.threadCount();
 	}
 
-	Handle<> Context::async(Recipe&& recipe)
+	RecipeHandle Context::async(Recipe&& recipe)
 	{
 		auto job = std::make_shared<details::RecipeJob>(
 			std::move(recipe),
@@ -39,7 +39,7 @@ namespace multi
 			{ m_workerPool.submit(std::move(task)); });
 		auto future = job->getFuture();
 		job->start();
-		return Handle<>(std::move(future));
+		return RecipeHandle(Handle<>(std::move(future)), std::move(job));
 	}
 
 	bool Context::tryRunSteal()

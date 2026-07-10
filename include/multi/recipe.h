@@ -8,7 +8,6 @@
 #pragma once
 
 #include "multi/details/task.h"
-
 #include <cstddef>
 #include <utility>
 #include <vector>

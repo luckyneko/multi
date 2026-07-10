@@ -47,7 +47,14 @@ namespace multi
 		/// @param value Destination, written only on success.
 		/// @return True (and writes @p value) if complete; false otherwise.
 		///         Rethrows a stored task exception.
-		bool get(T* value);
+		template <class U = T, std::enable_if_t<!std::is_void_v<U>, int> = 0>
+		bool get(U* value);
+
+		/// Non-blocking completion fetch for void handles.
+		/// @return True if complete; false otherwise.
+		///         Rethrows a stored task exception.
+		template <class U = T, std::enable_if_t<std::is_same_v<U, T> && std::is_void_v<U>, int> = 0>
+		bool get();
 
 	private:
 		std::shared_future<T> m_handle;

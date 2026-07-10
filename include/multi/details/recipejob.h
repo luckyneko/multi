@@ -32,6 +32,9 @@ namespace multi::details
 
 		void start();
 		void runStep(std::size_t index) noexcept;
+		std::size_t stepCount() const noexcept;
+		std::size_t finishedCount() const noexcept;
+		float progress() const noexcept;
 
 	private:
 		void schedule(std::size_t index);

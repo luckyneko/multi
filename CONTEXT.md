@@ -37,15 +37,19 @@ A Step whose callable threw a user exception during a run. Its dependent success
 _Avoid_: Cancelled task, setup failure
 
 **Recipe Progress**:
-A future observable for a launched Recipe run, not state owned by Recipe itself.
+A completion ratio for a launched Recipe run, exposed through RecipeHandle as finished steps over total steps. Finished includes successful, failed, and skipped steps so progress reaches completion after failures.
 _Avoid_: Synchronization primitive, recipe state, per-node progress
 
 **Single-Use Recipe**:
-A Recipe whose task graph is consumed by `async(std::move(recipe))`. Ownership moves into the launched job, so callers should only destroy or assign the moved-from Recipe and the returned handle owns the run lifetime.
+A Recipe whose task graph is consumed by `async(std::move(recipe))`. Ownership moves into the launched job, so callers should only destroy or assign the moved-from Recipe and the returned RecipeHandle owns run observation.
 _Avoid_: Reusable recipe, borrowed recipe run
 
+**Recipe Handle**:
+A handle returned from launching a Recipe. It observes completion like a task Handle and additionally exposes recipe run progress.
+_Avoid_: Recipe state, graph owner
+
 **Recipe Run State**:
-The lifecycle of a launched recipe job. This is not currently exposed on Recipe itself because Recipe launches transfer ownership into the job.
+The lifecycle of a launched recipe job. This is exposed through RecipeHandle rather than Recipe because Recipe launches transfer ownership into the job.
 _Avoid_: Recipe mutation state, task state
 
 **Recipe Mutation**:

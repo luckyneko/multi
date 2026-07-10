@@ -144,6 +144,27 @@ TEST_CASE("Handle: get() returns false before the task completes")
 	context.stop();
 }
 
+TEST_CASE("Handle: void get() returns false before completion")
+{
+	multi::Context context;
+	context.start(1);
+
+	std::atomic<bool> gate(false);
+	auto h = context.async([&]()
+	{
+		while (!gate.load(std::memory_order_acquire))
+			std::this_thread::yield();
+	});
+
+	CHECK_FALSE(h.get());
+
+	gate.store(true, std::memory_order_release);
+	context.waitAll(h);
+	CHECK(h.get());
+
+	context.stop();
+}
+
 TEST_CASE("Handle: get() rethrows and is idempotent")
 {
 	multi::Context context;

@@ -41,11 +41,22 @@ namespace multi
 	}
 
 	template <class T>
-	bool Handle<T>::get(T* value)
+	template <class U, std::enable_if_t<!std::is_void_v<U>, int>>
+	bool Handle<T>::get(U* value)
 	{
 		if (!complete())
 			return false;
 		*value = m_handle.get();
+		return true;
+	}
+
+	template <class T>
+	template <class U, std::enable_if_t<std::is_same_v<U, T> && std::is_void_v<U>, int>>
+	bool Handle<T>::get()
+	{
+		if (!valid() || !complete())
+			return false;
+		m_handle.get();
 		return true;
 	}
 
