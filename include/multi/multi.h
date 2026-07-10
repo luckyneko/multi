@@ -34,6 +34,8 @@ namespace multi
 	/// @see Context::async
 	template <typename F0, typename F1, typename... Fs>
 	auto async(F0&& f0, F1&& f1, Fs&&... fs);
+	/// Launch a Recipe on the global pool. @see Context::async
+	inline Handle<> async(Recipe&& recipe);
 
 	/// Run tasks in parallel on the global pool. @see Context::parallel
 	template <typename... TASKS>

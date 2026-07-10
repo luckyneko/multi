@@ -7,7 +7,10 @@
  */
 
 #include "multi/context.h"
+#include "multi/details/recipejob.h"
+#include "multi/recipe.h"
 
+#include <memory>
 #include <thread>
 #include <utility>
 
@@ -26,6 +29,17 @@ namespace multi
 	size_t Context::threadCount() const
 	{
 		return m_workerPool.threadCount();
+	}
+
+	Handle<> Context::async(Recipe&& recipe)
+	{
+		auto job = std::make_shared<details::RecipeJob>(
+			std::move(recipe),
+			[this](details::Task&& task)
+			{ m_workerPool.submit(std::move(task)); });
+		auto future = job->getFuture();
+		job->start();
+		return Handle<>(std::move(future));
 	}
 
 	bool Context::tryRunSteal()

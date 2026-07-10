@@ -17,7 +17,7 @@ A value that observes one asynchronous task's completion and result.
 _Avoid_: Future, job
 
 **Recipe**:
-A reusable DAG of executable steps connected by ordering edges, used as another way to thread work through `multi`.
+A single-use DAG of executable steps connected by ordering edges, used as another way to thread work through `multi`.
 _Avoid_: Flow, schedule, node graph, TaskFlow
 
 **Step**:
@@ -37,19 +37,19 @@ A Step whose callable threw a user exception during a run. Its dependent success
 _Avoid_: Cancelled task, setup failure
 
 **Recipe Progress**:
-A snapshot of finished Steps over total Steps for the active or most recent run. Finished includes successful, failed, and skipped steps so progress reaches completion after failures.
-_Avoid_: Synchronization primitive, per-node progress
+A future observable for a launched Recipe run, not state owned by Recipe itself.
+_Avoid_: Synchronization primitive, recipe state, per-node progress
 
-**Reusable Recipe**:
-A Recipe whose task graph can be run repeatedly, as long as only one run of that recipe is active at a time.
-_Avoid_: Concurrent recipe, one-shot recipe
+**Single-Use Recipe**:
+A Recipe whose task graph is consumed by `async(std::move(recipe))`. Ownership moves into the launched job, so callers should only destroy or assign the moved-from Recipe and the returned handle owns the run lifetime.
+_Avoid_: Reusable recipe, borrowed recipe run
 
 **Recipe Run State**:
-The observable lifecycle of a Reusable Recipe, initially idle or running. It is useful for diagnostics, but a state read is only a snapshot and does not reserve the recipe for a run.
-_Avoid_: Completion result, task state
+The lifecycle of a launched recipe job. This is not currently exposed on Recipe itself because Recipe launches transfer ownership into the job.
+_Avoid_: Recipe mutation state, task state
 
 **Recipe Mutation**:
-Changing a Recipe's structure while it is idle. The initial model allows adding steps, adding before edges, and clearing the whole recipe; removing individual steps is outside the first version.
+Changing a Recipe's structure before launch. The initial model allows adding steps and adding before edges; removing individual steps is outside the first version.
 _Avoid_: Live graph editing, task cancellation
 
 **Recipe Result**:

@@ -38,6 +38,11 @@ namespace multi
 							   std::forward<Fs>(fs)...);
 	}
 
+	inline Handle<> async(Recipe&& recipe)
+	{
+		return context().async(std::move(recipe));
+	}
+
 	template <typename... TASKS>
 	void parallel(TASKS&&... tasks)
 	{

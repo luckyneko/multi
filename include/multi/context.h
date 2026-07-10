@@ -8,14 +8,16 @@
 
 #pragma once
 
+#include "multi/chunkpolicy.h"
 #include "multi/details/job.h"
 #include "multi/details/task.h"
 #include "multi/details/workerpool.h"
 #include "multi/handle.h"
-#include "multi/chunkpolicy.h"
 
 namespace multi
 {
+	class Recipe;
+
 	/**
 	 * @brief Owns a worker pool and implements the dispatch primitives.
 	 *
@@ -59,6 +61,9 @@ namespace multi
 		/// AsyncJob, so sibling exceptions are isolated per handle.
 		template <typename F0, typename F1, typename... Fs>
 		auto async(F0&& f0, F1&& f1, Fs&&... fs);
+
+		/// Launch a Recipe, consuming its steps.
+		Handle<> async(Recipe&& recipe);
 
 		/// Run a pack of tasks in parallel and block until all complete.
 		template <typename... TASKS>

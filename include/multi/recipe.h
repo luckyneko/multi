@@ -9,13 +9,17 @@
 
 #include "multi/details/task.h"
 
-#include <atomic>
 #include <cstddef>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace multi
 {
+	namespace details
+	{
+		class RecipeJob;
+	}
+
 	class Recipe;
 
 	enum class RecipeResult
@@ -25,13 +29,6 @@ namespace multi
 		DifferentRecipe,
 		WouldCycle,
 		DuplicateEdge,
-		Running,
-	};
-
-	enum class RecipeState
-	{
-		Idle,
-		Running,
 	};
 
 	/// Light handle to one callable inside a Recipe.
@@ -48,42 +45,34 @@ namespace multi
 
 	private:
 		friend class Recipe;
-		Step(Recipe* recipe, std::size_t index, std::size_t generation) noexcept;
+		Step(Recipe* recipe, std::size_t index) noexcept;
 
 		Recipe* m_recipe = nullptr;
 		std::size_t m_index = 0;
-		std::size_t m_generation = 0;
 	};
 
-	/// Reusable DAG of void callables connected by Step::before edges.
+	/// Single-use DAG of void callables connected by Step::before edges.
 	class Recipe
 	{
 	public:
 		Recipe() = default;
 		Recipe(const Recipe&) = delete;
 		Recipe& operator=(const Recipe&) = delete;
-		Recipe(Recipe&&) = delete;
-		Recipe& operator=(Recipe&&) = delete;
+		Recipe(Recipe&&) noexcept = default;
+		Recipe& operator=(Recipe&&) noexcept = default;
 
-		/// Add a void() callable. Returns an invalid Step if the recipe is running.
-		template <class F,
-				  class D = std::decay_t<F>,
-				  std::enable_if_t<std::is_invocable_v<D> &&
-									   std::is_void_v<std::invoke_result_t<D>>,
-								   int> = 0>
-		Step step(F&& f);
-
-		/// Remove every step and edge. Existing Step handles become invalid.
-		RecipeResult clear() noexcept;
-
-		RecipeState state() const noexcept;
-		bool running() const noexcept;
+		/// Add a void() callable.
+		template <class F>
+		Step step(F&& f)
+		{
+			m_steps.push_back(Entry{details::Task(std::forward<F>(f)), {}, 0});
+			return Step(this, m_steps.size() - 1);
+		}
 
 		std::size_t stepCount() const noexcept;
-		std::size_t finishedCount() const noexcept;
-		float progress() const noexcept;
 
 	private:
+		friend class details::RecipeJob;
 		friend class Step;
 		struct Entry
 		{
@@ -95,13 +84,11 @@ namespace multi
 		bool validStep(const Step& step) const noexcept;
 		RecipeResult before(Step predecessor, Step successor) noexcept;
 		bool reaches(std::size_t start, std::size_t target) const;
+		std::size_t recipeStepCount() const noexcept;
+		Entry& recipeStep(std::size_t index) noexcept;
+		const Entry& recipeStep(std::size_t index) const noexcept;
 
 		std::vector<Entry> m_steps;
-		std::size_t m_generation = 1;
-		std::atomic<bool> m_running{false};
-		std::atomic<std::size_t> m_finished{0};
 	};
 
 } // namespace multi
-
-#include "multi/details/recipe.inl"

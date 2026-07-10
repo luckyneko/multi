@@ -11,10 +11,9 @@
 
 namespace multi
 {
-	Step::Step(Recipe* recipe, std::size_t index, std::size_t generation) noexcept
+	Step::Step(Recipe* recipe, std::size_t index) noexcept
 		: m_recipe(recipe)
 		, m_index(index)
-		, m_generation(generation)
 	{
 	}
 
@@ -30,51 +29,14 @@ namespace multi
 		return m_recipe->before(*this, successor);
 	}
 
-	RecipeResult Recipe::clear() noexcept
-	{
-		if (running())
-			return RecipeResult::Running;
-
-		m_steps.clear();
-		++m_generation;
-		if (m_generation == 0)
-			m_generation = 1;
-		m_finished.store(0, std::memory_order_relaxed);
-		return RecipeResult::Ok;
-	}
-
-	RecipeState Recipe::state() const noexcept
-	{
-		return running() ? RecipeState::Running : RecipeState::Idle;
-	}
-
-	bool Recipe::running() const noexcept
-	{
-		return m_running.load(std::memory_order_acquire);
-	}
-
 	std::size_t Recipe::stepCount() const noexcept
 	{
 		return m_steps.size();
 	}
 
-	std::size_t Recipe::finishedCount() const noexcept
-	{
-		return m_finished.load(std::memory_order_acquire);
-	}
-
-	float Recipe::progress() const noexcept
-	{
-		const std::size_t total = stepCount();
-		if (total == 0)
-			return 1.0f;
-		return static_cast<float>(finishedCount()) / static_cast<float>(total);
-	}
-
 	bool Recipe::validStep(const Step& step) const noexcept
 	{
 		return step.m_recipe == this &&
-			   step.m_generation == m_generation &&
 			   step.m_index < m_steps.size();
 	}
 
@@ -84,8 +46,6 @@ namespace multi
 			return RecipeResult::InvalidStep;
 		if (successor.m_recipe != this)
 			return RecipeResult::DifferentRecipe;
-		if (running())
-			return RecipeResult::Running;
 		if (predecessor.m_index == successor.m_index || reaches(successor.m_index, predecessor.m_index))
 			return RecipeResult::WouldCycle;
 
@@ -122,5 +82,19 @@ namespace multi
 		}
 		return false;
 	}
-} // namespace multi
 
+	std::size_t Recipe::recipeStepCount() const noexcept
+	{
+		return m_steps.size();
+	}
+
+	Recipe::Entry& Recipe::recipeStep(std::size_t index) noexcept
+	{
+		return m_steps[index];
+	}
+
+	const Recipe::Entry& Recipe::recipeStep(std::size_t index) const noexcept
+	{
+		return m_steps[index];
+	}
+} // namespace multi
