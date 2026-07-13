@@ -60,24 +60,31 @@ namespace multi
 
 	bool Recipe::reaches(std::size_t start, std::size_t target) const
 	{
-		std::vector<std::size_t> stack;
-		std::vector<unsigned char> seen(m_steps.size(), 0);
-		stack.push_back(start);
-
-		while (!stack.empty())
+		m_reachStack.clear();
+		if (m_reachSeen.size() < m_steps.size())
+			m_reachSeen.resize(m_steps.size());
+		++m_reachGeneration;
+		if (m_reachGeneration == 0)
 		{
-			const std::size_t index = stack.back();
-			stack.pop_back();
+			std::fill(m_reachSeen.begin(), m_reachSeen.end(), 0);
+			m_reachGeneration = 1;
+		}
+		m_reachStack.push_back(start);
+
+		while (!m_reachStack.empty())
+		{
+			const std::size_t index = m_reachStack.back();
+			m_reachStack.pop_back();
 			if (index == target)
 				return true;
-			if (seen[index])
+			if (m_reachSeen[index] == m_reachGeneration)
 				continue;
-			seen[index] = 1;
+			m_reachSeen[index] = m_reachGeneration;
 
 			for (const std::size_t successor : m_steps[index].successors)
 			{
-				if (!seen[successor])
-					stack.push_back(successor);
+				if (m_reachSeen[successor] != m_reachGeneration)
+					m_reachStack.push_back(successor);
 			}
 		}
 		return false;

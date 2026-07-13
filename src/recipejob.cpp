@@ -36,8 +36,7 @@ namespace multi::details
 		{
 			if (m_pending[i].load(std::memory_order_relaxed) == 0)
 			{
-				int expected = Pending;
-				if (m_state[i].compare_exchange_strong(expected, Scheduled, std::memory_order_acq_rel))
+				if (tryMarkScheduled(i))
 					schedule(i);
 			}
 		}
@@ -55,37 +54,73 @@ namespace multi::details
 
 	void RecipeJob::runStep(std::size_t index) noexcept
 	{
-		bool failed = false;
-		try
-		{
-			m_recipe.recipeStep(index).task();
-		}
-		catch (...)
-		{
-			failed = true;
-			std::call_once(m_exceptionOnce, [this]()
-						   { m_firstException = std::current_exception(); });
-		}
+		std::size_t current = index;
+		std::size_t inlineSuccessor = 0;
+		while (runStepOnce(current, inlineSuccessor))
+			current = inlineSuccessor;
+	}
+
+	bool RecipeJob::runStepOnce(std::size_t index, std::size_t& inlineSuccessor) noexcept
+	{
+		const bool succeeded = executeStep(index);
 
 		m_state[index].store(Finished, std::memory_order_release);
 		finishOne();
 
-		if (failed)
+		if (!succeeded)
 		{
-			for (const std::size_t successor : m_recipe.recipeStep(index).successors)
-				skip(successor);
-			return;
+			skipSuccessors(index);
+			return false;
 		}
 
+		return scheduleReadySuccessors(index, inlineSuccessor);
+	}
+
+	bool RecipeJob::executeStep(std::size_t index) noexcept
+	{
+		try
+		{
+			m_recipe.recipeStep(index).task();
+			return true;
+		}
+		catch (...)
+		{
+			std::call_once(m_exceptionOnce, [this]()
+						   { m_firstException = std::current_exception(); });
+			return false;
+		}
+	}
+
+	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor)
+	{
+		bool hasInlineSuccessor = false;
 		for (const std::size_t successor : m_recipe.recipeStep(index).successors)
 		{
-			if (m_pending[successor].fetch_sub(1, std::memory_order_acq_rel) == 1)
+			if (m_pending[successor].fetch_sub(1, std::memory_order_acq_rel) == 1 &&
+				tryMarkScheduled(successor))
 			{
-				int expected = Pending;
-				if (m_state[successor].compare_exchange_strong(expected, Scheduled, std::memory_order_acq_rel))
+				if (!hasInlineSuccessor)
+				{
+					inlineSuccessor = successor;
+					hasInlineSuccessor = true;
+				}
+				else
 					schedule(successor);
 			}
 		}
+		return hasInlineSuccessor;
+	}
+
+	bool RecipeJob::tryMarkScheduled(std::size_t index) noexcept
+	{
+		int expected = Pending;
+		return m_state[index].compare_exchange_strong(expected, Scheduled, std::memory_order_acq_rel);
+	}
+
+	void RecipeJob::skipSuccessors(std::size_t index) noexcept
+	{
+		for (const std::size_t successor : m_recipe.recipeStep(index).successors)
+			skip(successor);
 	}
 
 	std::size_t RecipeJob::stepCount() const noexcept

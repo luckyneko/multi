@@ -95,6 +95,9 @@ namespace multi
 		const Entry& recipeStep(std::size_t index) const noexcept;
 
 		std::vector<Entry> m_steps;
+		mutable std::vector<std::size_t> m_reachStack;
+		mutable std::vector<std::uint32_t> m_reachSeen;
+		mutable std::uint32_t m_reachGeneration = 0;
 	};
 
 } // namespace multi

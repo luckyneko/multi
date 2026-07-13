@@ -38,6 +38,11 @@ namespace multi::details
 
 	private:
 		void schedule(std::size_t index);
+		bool runStepOnce(std::size_t index, std::size_t& inlineSuccessor) noexcept;
+		bool executeStep(std::size_t index) noexcept;
+		bool scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor);
+		bool tryMarkScheduled(std::size_t index) noexcept;
+		void skipSuccessors(std::size_t index) noexcept;
 		void skip(std::size_t index) noexcept;
 		void finishOne() noexcept;
 		void complete() noexcept;

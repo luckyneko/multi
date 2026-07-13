@@ -88,10 +88,11 @@ def resolve_exec(exec_path: str) -> Optional[str]:
 
 
 def is_baseline(name: str) -> bool:
-    """Treat any benchmark whose name starts with 'serial' as the per-group
-    baseline (the canonical label is 'serial(baseline)', used by
-    tiny_tasks/imbalanced/mandelbrot/nested)."""
-    return name.startswith("serial")
+    """Treat any benchmark variant named '(baseline)' as the per-group
+    speedup anchor. Canonical labels include 'serial(baseline)' for pure serial
+    references and 'async(baseline)' when explicit async orchestration is the
+    comparison point for a higher-level multi API."""
+    return name.endswith("(baseline)")
 
 
 # ---------------------------------------------------------------------------
