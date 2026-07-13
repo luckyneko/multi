@@ -53,6 +53,7 @@ cmake --build build
 ./build/example-parallel_for   # each + range, with and without taskCount
 ./build/example-fanout         # variadic async + waitAll/waitAny
 ./build/example-nested         # recursive divide-and-conquer with waitAll
+./build/example-recipe         # execution-only DAG with Recipe
 ```
 
 For deeper API coverage see [test/context.cpp](test/context.cpp).
@@ -156,6 +157,41 @@ void function()
 
     // Sibling exceptions are isolated per-handle (unlike `parallel`
     // which captures only the first across all siblings).
+}
+```
+
+### Recipe DAG
+``` C++
+void function()
+{
+    multi::Recipe recipe;
+
+    auto load = recipe.step([]() {
+        // Produce caller-owned data.
+    });
+    auto left = recipe.step([]() {
+        // Runs after load.
+    });
+    auto right = recipe.step([]() {
+        // Also runs after load.
+    });
+    auto join = recipe.step([]() {
+        // Runs after both branches finish successfully.
+    });
+
+    recipe.order(load >> left);
+    recipe.order(load >> right);
+    recipe.order(left >> join);
+    recipe.order(right >> join);
+
+    // Launch consumes the recipe and returns a RecipeHandle. The handle
+    // observes completion and progress; data movement stays in your own model.
+    auto h = multi::async(std::move(recipe));
+    multi::waitAll(h);
+
+    // User task exceptions are rethrown here. If a step fails, dependent
+    // successors are skipped and progress still reaches completion.
+    h.get();
 }
 ```
 

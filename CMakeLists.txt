@@ -143,7 +143,7 @@ endif()
 # if a result check fails. Useful as documentation and as a smoke check
 # (`for f in build/example-*; do $f || break; done`).
 if(MULTI_BUILD_EXAMPLES)
-    set(MULTI_EXAMPLES hello parallel_for fanout nested)
+    set(MULTI_EXAMPLES hello parallel_for fanout nested recipe)
     foreach(example IN LISTS MULTI_EXAMPLES)
         add_executable(example-${example} examples/${example}.cpp)
         target_link_libraries(example-${example} PRIVATE ${PROJECT_NAME})
