@@ -11,22 +11,24 @@
 
 namespace multi
 {
-	Step::Step(Recipe* recipe, std::size_t index) noexcept
-		: m_recipe(recipe)
-		, m_index(index)
+	Step::Step(std::uint32_t index) noexcept
+		: m_index(index)
 	{
 	}
 
 	bool Step::valid() const noexcept
 	{
-		return m_recipe != nullptr && m_recipe->validStep(*this);
+		return m_index != InvalidIndex;
 	}
 
-	RecipeResult Step::before(Step successor) const noexcept
+	StepLink operator>>(Step before, Step after) noexcept
 	{
-		if (!m_recipe)
-			return RecipeResult::InvalidStep;
-		return m_recipe->before(*this, successor);
+		return StepLink{before, after};
+	}
+
+	RecipeResult Recipe::order(StepLink link) noexcept
+	{
+		return order(link.before, link.after);
 	}
 
 	std::size_t Recipe::stepCount() const noexcept
@@ -36,25 +38,23 @@ namespace multi
 
 	bool Recipe::validStep(const Step& step) const noexcept
 	{
-		return step.m_recipe == this &&
-			   step.m_index < m_steps.size();
+		return step.valid() &&
+			   static_cast<std::size_t>(step.m_index) < m_steps.size();
 	}
 
-	RecipeResult Recipe::before(Step predecessor, Step successor) noexcept
+	RecipeResult Recipe::order(Step before, Step after) noexcept
 	{
-		if (!validStep(predecessor) || !successor.valid())
+		if (!validStep(before) || !validStep(after))
 			return RecipeResult::InvalidStep;
-		if (successor.m_recipe != this)
-			return RecipeResult::DifferentRecipe;
-		if (predecessor.m_index == successor.m_index || reaches(successor.m_index, predecessor.m_index))
+		if (before.m_index == after.m_index || reaches(after.m_index, before.m_index))
 			return RecipeResult::WouldCycle;
 
-		auto& successors = m_steps[predecessor.m_index].successors;
-		if (std::find(successors.begin(), successors.end(), successor.m_index) != successors.end())
+		auto& successors = m_steps[before.m_index].successors;
+		if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
 			return RecipeResult::DuplicateEdge;
 
-		successors.push_back(successor.m_index);
-		++m_steps[successor.m_index].predecessors;
+		successors.push_back(after.m_index);
+		++m_steps[after.m_index].predecessors;
 		return RecipeResult::Ok;
 	}
 

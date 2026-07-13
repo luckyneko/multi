@@ -9,6 +9,7 @@
 
 #include "multi/details/task.h"
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -25,12 +26,11 @@ namespace multi
 	{
 		Ok,
 		InvalidStep,
-		DifferentRecipe,
 		WouldCycle,
 		DuplicateEdge,
 	};
 
-	/// Light handle to one callable inside a Recipe.
+	/// Light token for one callable inside a Recipe.
 	class Step
 	{
 	public:
@@ -39,18 +39,23 @@ namespace multi
 		bool valid() const noexcept;
 		explicit operator bool() const noexcept { return valid(); }
 
-		/// Require this step to finish successfully before @p successor may run.
-		RecipeResult before(Step successor) const noexcept;
-
 	private:
 		friend class Recipe;
-		Step(Recipe* recipe, std::size_t index) noexcept;
+		explicit Step(std::uint32_t index) noexcept;
 
-		Recipe* m_recipe = nullptr;
-		std::size_t m_index = 0;
+		static constexpr std::uint32_t InvalidIndex = ~std::uint32_t{0};
+		std::uint32_t m_index = InvalidIndex;
 	};
 
-	/// Single-use DAG of void callables connected by Step::before edges.
+	struct StepLink
+	{
+		Step before;
+		Step after;
+	};
+
+	StepLink operator>>(Step before, Step after) noexcept;
+
+	/// Single-use DAG of void callables connected by ordered StepLinks.
 	class Recipe
 	{
 	public:
@@ -64,15 +69,17 @@ namespace multi
 		template <class F>
 		Step step(F&& f)
 		{
+			if (m_steps.size() >= Step::InvalidIndex)
+				return Step();
 			m_steps.push_back(Entry{details::Task(std::forward<F>(f)), {}, 0});
-			return Step(this, m_steps.size() - 1);
+			return Step(static_cast<std::uint32_t>(m_steps.size() - 1));
 		}
 
+		RecipeResult order(StepLink link) noexcept;
 		std::size_t stepCount() const noexcept;
 
 	private:
 		friend class details::RecipeJob;
-		friend class Step;
 		struct Entry
 		{
 			details::Task task;
@@ -81,7 +88,7 @@ namespace multi
 		};
 
 		bool validStep(const Step& step) const noexcept;
-		RecipeResult before(Step predecessor, Step successor) noexcept;
+		RecipeResult order(Step before, Step after) noexcept;
 		bool reaches(std::size_t start, std::size_t target) const;
 		std::size_t recipeStepCount() const noexcept;
 		Entry& recipeStep(std::size_t index) noexcept;

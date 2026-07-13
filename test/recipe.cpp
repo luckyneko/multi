@@ -32,11 +32,12 @@ namespace
 
 TEST_CASE("Recipe: default step is invalid")
 {
+	multi::Recipe recipe;
 	multi::Step step;
 
 	CHECK_FALSE(step.valid());
 	CHECK_FALSE(static_cast<bool>(step));
-	CHECK(step.before(step) == multi::RecipeResult::InvalidStep);
+	CHECK(recipe.order(step >> step) == multi::RecipeResult::InvalidStep);
 }
 
 TEST_CASE("Recipe: step adds a valid void callable")
@@ -59,50 +60,51 @@ TEST_CASE("Recipe: step adds a valid void callable")
 	CHECK(recipe.stepCount() == 3);
 }
 
-TEST_CASE("Recipe: before links two steps")
+TEST_CASE("Recipe: order links two steps")
 {
 	multi::Recipe recipe;
 	auto first = recipe.step([]() {});
 	auto second = recipe.step([]() {});
 
-	CHECK(first.before(second) == multi::RecipeResult::Ok);
-	CHECK(first.before(second) == multi::RecipeResult::DuplicateEdge);
+	CHECK(recipe.order(first >> second) == multi::RecipeResult::Ok);
+	CHECK(recipe.order(first >> second) == multi::RecipeResult::DuplicateEdge);
 }
 
-TEST_CASE("Recipe: before rejects invalid and cross-recipe steps")
+TEST_CASE("Recipe: order rejects invalid and out-of-range steps")
 {
 	multi::Recipe recipe;
 	multi::Recipe other;
 
 	auto step = recipe.step([]() {});
-	auto otherStep = other.step([]() {});
+	other.step([]() {});
+	auto outOfRange = other.step([]() {});
 	multi::Step invalid;
 
-	CHECK(step.before(invalid) == multi::RecipeResult::InvalidStep);
-	CHECK(invalid.before(step) == multi::RecipeResult::InvalidStep);
-	CHECK(step.before(otherStep) == multi::RecipeResult::DifferentRecipe);
+	CHECK(recipe.order(step >> invalid) == multi::RecipeResult::InvalidStep);
+	CHECK(recipe.order(invalid >> step) == multi::RecipeResult::InvalidStep);
+	CHECK(recipe.order(step >> outOfRange) == multi::RecipeResult::InvalidStep);
 }
 
-TEST_CASE("Recipe: before rejects cycles")
+TEST_CASE("Recipe: order rejects cycles")
 {
 	multi::Recipe recipe;
 	auto a = recipe.step([]() {});
 	auto b = recipe.step([]() {});
 	auto c = recipe.step([]() {});
 
-	CHECK(a.before(a) == multi::RecipeResult::WouldCycle);
-	CHECK(a.before(b) == multi::RecipeResult::Ok);
-	CHECK(b.before(c) == multi::RecipeResult::Ok);
-	CHECK(c.before(a) == multi::RecipeResult::WouldCycle);
-	CHECK(c.before(b) == multi::RecipeResult::WouldCycle);
+	CHECK(recipe.order(a >> a) == multi::RecipeResult::WouldCycle);
+	CHECK(recipe.order(a >> b) == multi::RecipeResult::Ok);
+	CHECK(recipe.order(b >> c) == multi::RecipeResult::Ok);
+	CHECK(recipe.order(c >> a) == multi::RecipeResult::WouldCycle);
+	CHECK(recipe.order(c >> b) == multi::RecipeResult::WouldCycle);
 }
 
 TEST_CASE("Recipe: is move-only")
 {
 	static_assert(!std::is_copy_constructible_v<multi::Recipe>,
-				  "Recipe owns Step handle identity and must not be copied");
+				  "Recipe owns move-only tasks and must not be copied");
 	static_assert(!std::is_copy_assignable_v<multi::Recipe>,
-				  "Recipe owns Step handle identity and must not be copy-assigned");
+				  "Recipe owns move-only tasks and must not be copy-assigned");
 	static_assert(std::is_move_constructible_v<multi::Recipe>,
 				  "Recipe is consumed by async");
 	static_assert(std::is_move_assignable_v<multi::Recipe>,
@@ -156,7 +158,7 @@ TEST_CASE("Recipe: handle reports run progress")
 	{
 		ran.fetch_add(1, std::memory_order_relaxed);
 	});
-	REQUIRE(first.before(second) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(first >> second) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());
@@ -193,7 +195,7 @@ TEST_CASE("Recipe: handle rethrows failed step and counts skipped successors")
 	{
 		dependentRan.store(1, std::memory_order_release);
 	});
-	REQUIRE(failing.before(dependent) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(failing >> dependent) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());
@@ -233,8 +235,8 @@ TEST_CASE("Recipe: async follows a linear chain")
 			errors.fetch_add(1, std::memory_order_relaxed);
 		phase.store(3, std::memory_order_release);
 	});
-	REQUIRE(a.before(b) == multi::RecipeResult::Ok);
-	REQUIRE(b.before(c) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(a >> b) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(b >> c) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());
@@ -276,10 +278,10 @@ TEST_CASE("Recipe: async handles fan-out and fan-in")
 		if (branchBits.load(std::memory_order_acquire) != 3)
 			errors.fetch_add(1, std::memory_order_relaxed);
 	});
-	REQUIRE(source.before(left) == multi::RecipeResult::Ok);
-	REQUIRE(source.before(right) == multi::RecipeResult::Ok);
-	REQUIRE(left.before(join) == multi::RecipeResult::Ok);
-	REQUIRE(right.before(join) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(source >> left) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(source >> right) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(left >> join) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(right >> join) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());
@@ -298,7 +300,7 @@ TEST_CASE("Recipe: async consumes the recipe")
 	multi::Recipe recipe;
 	auto first = recipe.step([&]() { count.fetch_add(1, std::memory_order_relaxed); });
 	auto second = recipe.step([&]() { count.fetch_add(10, std::memory_order_relaxed); });
-	REQUIRE(first.before(second) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(first >> second) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
 	REQUIRE(h.valid());

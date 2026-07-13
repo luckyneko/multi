@@ -21,15 +21,15 @@ A single-use DAG of executable steps connected by ordering edges, used as anothe
 _Avoid_: Flow, schedule, node graph, TaskFlow
 
 **Step**:
-A light public handle to one task inside a Recipe. It is not the callable itself; it is the value callers use to attach ordering edges.
+A light public token for one task inside a Recipe. It is not the callable itself; it is the value callers use to describe ordering.
 _Avoid_: Task, job, node
 
 **Invalid Step**:
-A Step that does not refer to a task inside a Recipe. Failed step creation returns an invalid Step, and callers can check it with `valid()` or `operator bool`.
+A Step token that cannot identify a task for the Recipe operation receiving it. Failed step creation returns an invalid Step, and callers can check it with `valid()` or `operator bool`.
 _Avoid_: Null task, exception
 
-**Before Edge**:
-An ordering relationship between two Steps, expressed as `a.before(b)`. It controls when work may run, not what data moves between tasks.
+**Step Link**:
+An ordering relationship between two Steps, expressed as `recipe.order(a >> b)`. It controls when work may run, not what data moves between tasks.
 _Avoid_: Precede, dataflow edge, port connection
 
 **Failed Step**:
@@ -53,7 +53,7 @@ The lifecycle of a launched recipe job. This is exposed through RecipeHandle rat
 _Avoid_: Recipe mutation state, task state
 
 **Recipe Mutation**:
-Changing a Recipe's structure before launch. The initial model allows adding steps and adding before edges; removing individual steps is outside the first version.
+Changing a Recipe's structure before launch. The initial model allows adding steps and ordering step links; removing individual steps is outside the first version.
 _Avoid_: Live graph editing, task cancellation
 
 **Recipe Result**:
