@@ -22,6 +22,7 @@
  *    multi(parallel)   – fork/join via multi::parallel
  *    multi(async)      – multi::async
  *    multi(range)      – externally-driven multi::range
+ *    multi(recipe)     – multi::Recipe DAG execution
  *  The enclosing TEST_CASE / SECTION carries the size and shape, so labels
  *  stay short and comparable across workloads.
  *

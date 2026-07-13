@@ -120,6 +120,7 @@ if(MULTI_BUILD_BENCHMARK)
         bench/steal_contention.cpp
         bench/each_iter.cpp
         bench/parallel_pair.cpp
+        bench/recipe.cpp
     )
     target_link_libraries(bench-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2)
 endif()
