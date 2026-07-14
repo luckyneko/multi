@@ -7,8 +7,8 @@
 
 #pragma once
 
+#include "multi/details/recipegraph.h"
 #include "multi/details/task.h"
-#include "multi/recipe.h"
 
 #include <atomic>
 #include <cstddef>
@@ -18,6 +18,11 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+
+namespace multi
+{
+	class Recipe;
+}
 
 namespace multi::details
 {
@@ -55,7 +60,7 @@ namespace multi::details
 		};
 
 		Submit m_submit;
-		Recipe m_recipe;
+		RecipeGraph m_graph;
 		std::vector<std::atomic<std::size_t>> m_pending;
 		std::vector<std::atomic<int>> m_state;
 		std::atomic<std::size_t> m_remaining;

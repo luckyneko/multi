@@ -8,9 +8,13 @@
 #include "multi/recipe.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace multi
 {
+	// Threshold to trigger using Sets
+	constexpr std::size_t SuccessorSetThreshold = 128;
+
 	Step::Step(std::uint32_t index) noexcept
 		: m_index(index)
 	{
@@ -31,6 +35,13 @@ namespace multi
 		return order(link.before, link.after);
 	}
 
+	Recipe::Recipe(std::size_t reservedStepCount)
+	{
+		m_steps.reserve(reservedStepCount);
+		m_reachStack.reserve(reservedStepCount);
+		m_reachSeen.reserve(reservedStepCount);
+	}
+
 	std::size_t Recipe::stepCount() const noexcept
 	{
 		return m_steps.size();
@@ -46,15 +57,49 @@ namespace multi
 	{
 		if (!validStep(before) || !validStep(after))
 			return RecipeResult::InvalidStep;
-		if (before.m_index == after.m_index || reaches(after.m_index, before.m_index))
+		if (before.m_index == after.m_index)
 			return RecipeResult::WouldCycle;
 
 		auto& successors = m_steps[before.m_index].successors;
-		if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
+		std::unordered_set<std::size_t>* successorSet = nullptr;
+		if (successors.size() >= SuccessorSetThreshold)
+		{
+			auto setIt = m_successorSets.find(before.m_index);
+			if (setIt != m_successorSets.end())
+			{
+				successorSet = &setIt->second;
+				if (successorSet->find(after.m_index) != successorSet->end())
+					return RecipeResult::DuplicateEdge;
+			}
+			else if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
+			{
+				return RecipeResult::DuplicateEdge;
+			}
+		}
+		else if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
+		{
 			return RecipeResult::DuplicateEdge;
+		}
+
+		const bool stepOrderProvesAcyclic = m_stepsAreTopologicallyOrdered && before.m_index < after.m_index;
+		if (!stepOrderProvesAcyclic && reaches(after.m_index, before.m_index))
+			return RecipeResult::WouldCycle;
 
 		successors.push_back(after.m_index);
+		if (successorSet)
+		{
+			successorSet->insert(after.m_index);
+		}
+		else if (successors.size() == SuccessorSetThreshold)
+		{
+			auto [setIt, inserted] = m_successorSets.emplace(before.m_index, std::unordered_set<std::size_t>{});
+			(void)inserted;
+			setIt->second.reserve(successors.size());
+			setIt->second.insert(successors.begin(), successors.end());
+		}
 		++m_steps[after.m_index].predecessors;
+		if (before.m_index > after.m_index)
+			m_stepsAreTopologicallyOrdered = false;
 		return RecipeResult::Ok;
 	}
 
@@ -90,18 +135,8 @@ namespace multi
 		return false;
 	}
 
-	std::size_t Recipe::recipeStepCount() const noexcept
+	details::RecipeGraph Recipe::bake() && noexcept
 	{
-		return m_steps.size();
-	}
-
-	Recipe::Entry& Recipe::recipeStep(std::size_t index) noexcept
-	{
-		return m_steps[index];
-	}
-
-	const Recipe::Entry& Recipe::recipeStep(std::size_t index) const noexcept
-	{
-		return m_steps[index];
+		return details::RecipeGraph(std::move(m_steps));
 	}
 } // namespace multi

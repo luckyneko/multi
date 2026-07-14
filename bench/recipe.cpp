@@ -89,6 +89,16 @@ namespace
 		return count.load(std::memory_order_relaxed);
 	}
 
+	std::uint64_t buildRecipeIndependent(int steps)
+	{
+		multi::Recipe recipe;
+
+		for (int i = 0; i < steps; ++i)
+			recipe.step([]() {});
+
+		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
 	std::uint64_t runAsyncIndependent(int steps)
 	{
 		std::atomic<std::uint64_t> count{0};
@@ -284,22 +294,29 @@ namespace
 // recipe — dependency-aware async scheduling.
 // Compares a single Recipe run against equivalent explicit async orchestration.
 // Recipe is single-use, so these timings include lightweight graph construction
-// as well as execution and RecipeHandle observation.
+// as well as execution and RecipeHandle observation. Recipe construction is
+// also measured in separate build-only sections, outside the async baseline
+// speedup groups.
 // ---------------------------------------------------------------------------
 TEST_CASE("recipe", "[bench][fast]")
 {
-	SECTION("linear 16 steps")
+	SECTION("run / linear 16 steps")
 	{
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncChain(16) == 16);
-		REQUIRE(buildRecipeChain(16) == 16);
 		REQUIRE(runRecipeChain(16) == 16);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeChain(16); }); };
 		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncChain(16); }); };
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeChain(16); }); };
 	}
 
-	SECTION("independent 32 steps")
+	SECTION("build / linear 16 steps")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(buildRecipeChain(16) == 16);
+		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeChain(16); }); };
+	}
+
+	SECTION("run / independent 32 steps")
 	{
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncIndependent(32) == 32);
@@ -308,25 +325,42 @@ TEST_CASE("recipe", "[bench][fast]")
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeIndependent(32); }); };
 	}
 
-	SECTION("fan-out 64 branches")
+	SECTION("build / independent 32 steps")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(buildRecipeIndependent(32) == 32);
+		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeIndependent(32); }); };
+	}
+
+	SECTION("run / fan-out 64 branches")
 	{
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncFanOut(64) == 65);
-		REQUIRE(buildRecipeFanOut(64) == 65);
 		REQUIRE(runRecipeFanOut(64) == 65);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanOut(64); }); };
 		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncFanOut(64); }); };
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanOut(64); }); };
 	}
 
-	SECTION("fan-in 32 branches")
+	SECTION("build / fan-out 64 branches")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(buildRecipeFanOut(64) == 65);
+		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanOut(64); }); };
+	}
+
+	SECTION("run / fan-in 32 branches")
 	{
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncFanIn(32) == 34);
-		REQUIRE(buildRecipeFanIn(32) == 34);
 		REQUIRE(runRecipeFanIn(32) == 34);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanIn(32); }); };
 		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncFanIn(32); }); };
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanIn(32); }); };
+	}
+
+	SECTION("build / fan-in 32 branches")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(buildRecipeFanIn(32) == 34);
+		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanIn(32); }); };
 	}
 }

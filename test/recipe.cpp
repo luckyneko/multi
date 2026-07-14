@@ -60,6 +60,19 @@ TEST_CASE("Recipe: step adds a valid void callable")
 	CHECK(recipe.stepCount() == 3);
 }
 
+TEST_CASE("Recipe: can reserve expected step count")
+{
+	multi::Recipe recipe(4);
+
+	auto a = recipe.step([]() {});
+	auto b = recipe.step([]() {});
+
+	CHECK(a.valid());
+	CHECK(b.valid());
+	CHECK(recipe.stepCount() == 2);
+	CHECK(recipe.order(a >> b) == multi::RecipeResult::Ok);
+}
+
 TEST_CASE("Recipe: order links two steps")
 {
 	multi::Recipe recipe;
@@ -68,6 +81,21 @@ TEST_CASE("Recipe: order links two steps")
 
 	CHECK(recipe.order(first >> second) == multi::RecipeResult::Ok);
 	CHECK(recipe.order(first >> second) == multi::RecipeResult::DuplicateEdge);
+}
+
+TEST_CASE("Recipe: order rejects duplicates after many successors")
+{
+	multi::Recipe recipe;
+	auto source = recipe.step([]() {});
+	multi::Step last;
+
+	for (int i = 0; i < 130; ++i)
+	{
+		last = recipe.step([]() {});
+		REQUIRE(recipe.order(source >> last) == multi::RecipeResult::Ok);
+	}
+
+	CHECK(recipe.order(source >> last) == multi::RecipeResult::DuplicateEdge);
 }
 
 TEST_CASE("Recipe: order rejects invalid and out-of-range steps")
@@ -97,6 +125,18 @@ TEST_CASE("Recipe: order rejects cycles")
 	CHECK(recipe.order(b >> c) == multi::RecipeResult::Ok);
 	CHECK(recipe.order(c >> a) == multi::RecipeResult::WouldCycle);
 	CHECK(recipe.order(c >> b) == multi::RecipeResult::WouldCycle);
+}
+
+TEST_CASE("Recipe: order checks cycles after a legal backward link")
+{
+	multi::Recipe recipe;
+	auto a = recipe.step([]() {});
+	auto b = recipe.step([]() {});
+	auto c = recipe.step([]() {});
+
+	CHECK(recipe.order(b >> a) == multi::RecipeResult::Ok);
+	CHECK(recipe.order(c >> b) == multi::RecipeResult::Ok);
+	CHECK(recipe.order(a >> c) == multi::RecipeResult::WouldCycle);
 }
 
 TEST_CASE("Recipe: is move-only")

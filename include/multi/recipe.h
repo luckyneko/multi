@@ -7,9 +7,11 @@
 
 #pragma once
 
-#include "multi/details/task.h"
+#include "multi/details/recipegraph.h"
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -59,7 +61,7 @@ namespace multi
 	class Recipe
 	{
 	public:
-		Recipe() = default;
+		explicit Recipe(std::size_t reservedStepCount = 128);
 		Recipe(const Recipe&) = delete;
 		Recipe& operator=(const Recipe&) = delete;
 		Recipe(Recipe&&) noexcept = default;
@@ -71,7 +73,7 @@ namespace multi
 		{
 			if (m_steps.size() >= Step::InvalidIndex)
 				return Step();
-			m_steps.push_back(Entry{details::Task(std::forward<F>(f)), {}, 0});
+			m_steps.push_back(details::RecipeStep{details::Task(std::forward<F>(f)), {}, 0});
 			return Step(static_cast<std::uint32_t>(m_steps.size() - 1));
 		}
 
@@ -80,24 +82,18 @@ namespace multi
 
 	private:
 		friend class details::RecipeJob;
-		struct Entry
-		{
-			details::Task task;
-			std::vector<std::size_t> successors;
-			std::size_t predecessors = 0;
-		};
 
 		bool validStep(const Step& step) const noexcept;
 		RecipeResult order(Step before, Step after) noexcept;
 		bool reaches(std::size_t start, std::size_t target) const;
-		std::size_t recipeStepCount() const noexcept;
-		Entry& recipeStep(std::size_t index) noexcept;
-		const Entry& recipeStep(std::size_t index) const noexcept;
+		details::RecipeGraph bake() && noexcept;
 
-		std::vector<Entry> m_steps;
+		std::vector<details::RecipeStep> m_steps;
+		std::unordered_map<std::size_t, std::unordered_set<std::size_t>> m_successorSets;
 		mutable std::vector<std::size_t> m_reachStack;
 		mutable std::vector<std::uint32_t> m_reachSeen;
 		mutable std::uint32_t m_reachGeneration = 0;
+		bool m_stepsAreTopologicallyOrdered = true;
 	};
 
 } // namespace multi

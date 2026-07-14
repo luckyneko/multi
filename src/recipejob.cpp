@@ -6,6 +6,7 @@
  */
 
 #include "multi/details/recipejob.h"
+#include "multi/recipe.h"
 
 #include <utility>
 
@@ -13,14 +14,14 @@ namespace multi::details
 {
 	RecipeJob::RecipeJob(Recipe&& recipe, Submit submit)
 		: m_submit(std::move(submit))
-		, m_recipe(std::move(recipe))
-		, m_pending(m_recipe.recipeStepCount())
-		, m_state(m_recipe.recipeStepCount())
-		, m_remaining(m_recipe.recipeStepCount())
+		, m_graph(std::move(recipe).bake())
+		, m_pending(m_graph.stepCount())
+		, m_state(m_graph.stepCount())
+		, m_remaining(m_graph.stepCount())
 	{
-		for (std::size_t i = 0; i < m_recipe.recipeStepCount(); ++i)
+		for (std::size_t i = 0; i < m_graph.stepCount(); ++i)
 		{
-			m_pending[i].store(m_recipe.recipeStep(i).predecessors, std::memory_order_relaxed);
+			m_pending[i].store(m_graph.step(i).predecessors, std::memory_order_relaxed);
 			m_state[i].store(Pending, std::memory_order_relaxed);
 		}
 	}
@@ -80,7 +81,7 @@ namespace multi::details
 	{
 		try
 		{
-			m_recipe.recipeStep(index).task();
+			m_graph.step(index).task();
 			return true;
 		}
 		catch (...)
@@ -94,7 +95,7 @@ namespace multi::details
 	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor)
 	{
 		bool hasInlineSuccessor = false;
-		for (const std::size_t successor : m_recipe.recipeStep(index).successors)
+		for (const std::size_t successor : m_graph.step(index).successors)
 		{
 			if (m_pending[successor].fetch_sub(1, std::memory_order_acq_rel) == 1 &&
 				tryMarkScheduled(successor))
@@ -119,7 +120,7 @@ namespace multi::details
 
 	void RecipeJob::skipSuccessors(std::size_t index) noexcept
 	{
-		for (const std::size_t successor : m_recipe.recipeStep(index).successors)
+		for (const std::size_t successor : m_graph.step(index).successors)
 			skip(successor);
 	}
 
@@ -151,7 +152,7 @@ namespace multi::details
 
 		finishOne();
 
-		for (const std::size_t successor : m_recipe.recipeStep(index).successors)
+		for (const std::size_t successor : m_graph.step(index).successors)
 			skip(successor);
 	}
 
