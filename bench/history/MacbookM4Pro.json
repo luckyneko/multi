@@ -307,6 +307,419 @@
         "short_commit": "7f50d27"
       },
       "schema_version": 1
+    },
+    {
+      "args": [],
+      "benchmarks": [
+        {
+          "mean_ns": 167365.0,
+          "section": "100 tasks",
+          "stddev_ns": 14709.0,
+          "variant": "multi(async)",
+          "workload": "async_fanout"
+        },
+        {
+          "mean_ns": 1668230.0,
+          "section": "1k tasks",
+          "stddev_ns": 279541.0,
+          "variant": "multi(async)",
+          "workload": "async_fanout"
+        },
+        {
+          "mean_ns": 1884470.0,
+          "section": null,
+          "stddev_ns": 98549.0,
+          "variant": "multi(async)",
+          "workload": "async_latency"
+        },
+        {
+          "mean_ns": 101348.0,
+          "section": "map 1k items",
+          "stddev_ns": 11286.0,
+          "variant": "multi(chunks)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 132778.0,
+          "section": "map 1k items",
+          "stddev_ns": 22493.1,
+          "variant": "multi(items)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 2254320.0,
+          "section": "map 50k items",
+          "stddev_ns": 59748.7,
+          "variant": "multi(chunks)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 4890430.0,
+          "section": "map 50k items",
+          "stddev_ns": 202481.0,
+          "variant": "multi(items)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 94467.2,
+          "section": "vector 1k items",
+          "stddev_ns": 11871.9,
+          "variant": "multi(chunks)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 134986.0,
+          "section": "vector 1k items",
+          "stddev_ns": 23419.0,
+          "variant": "multi(items)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 2096210.0,
+          "section": "vector 50k items",
+          "stddev_ns": 61335.1,
+          "variant": "multi(chunks)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 4594310.0,
+          "section": "vector 50k items",
+          "stddev_ns": 126602.0,
+          "variant": "multi(items)",
+          "workload": "each_iter"
+        },
+        {
+          "mean_ns": 33516.7,
+          "section": "1k tasks",
+          "stddev_ns": 5067.95,
+          "variant": "multi(chunks)",
+          "workload": "empty_tasks"
+        },
+        {
+          "mean_ns": 106431.0,
+          "section": "1k tasks",
+          "stddev_ns": 24434.0,
+          "variant": "multi(items)",
+          "workload": "empty_tasks"
+        },
+        {
+          "mean_ns": 40506.4,
+          "section": "50k tasks",
+          "stddev_ns": 9911.58,
+          "variant": "multi(chunks)",
+          "workload": "empty_tasks"
+        },
+        {
+          "mean_ns": 4977280.0,
+          "section": "50k tasks",
+          "stddev_ns": 631399.0,
+          "variant": "multi(items)",
+          "workload": "empty_tasks"
+        },
+        {
+          "mean_ns": 38047.2,
+          "section": "1k tasks",
+          "stddev_ns": 13654.2,
+          "variant": "multi(chunks)",
+          "workload": "heavy_capture"
+        },
+        {
+          "mean_ns": 117401.0,
+          "section": "1k tasks",
+          "stddev_ns": 16853.7,
+          "variant": "multi(items)",
+          "workload": "heavy_capture"
+        },
+        {
+          "mean_ns": 325543.0,
+          "section": "50k tasks",
+          "stddev_ns": 37622.2,
+          "variant": "multi(chunks)",
+          "workload": "heavy_capture"
+        },
+        {
+          "mean_ns": 4995060.0,
+          "section": "50k tasks",
+          "stddev_ns": 339300.0,
+          "variant": "multi(items)",
+          "workload": "heavy_capture"
+        },
+        {
+          "mean_ns": 35233400.0,
+          "section": "100 tasks",
+          "stddev_ns": 103156.0,
+          "variant": "serial(baseline)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 3528220.0,
+          "section": "100 tasks",
+          "stddev_ns": 258362.0,
+          "variant": "multi(chunks)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 3287040.0,
+          "section": "100 tasks",
+          "stddev_ns": 90147.9,
+          "variant": "multi(items)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 142570000.0,
+          "section": "200 tasks",
+          "stddev_ns": 3267060.0,
+          "variant": "serial(baseline)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 13311500.0,
+          "section": "200 tasks",
+          "stddev_ns": 278743.0,
+          "variant": "multi(chunks)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 12698600.0,
+          "section": "200 tasks",
+          "stddev_ns": 247042.0,
+          "variant": "multi(items)",
+          "workload": "imbalanced"
+        },
+        {
+          "mean_ns": 491694000.0,
+          "section": null,
+          "stddev_ns": 1983640.0,
+          "variant": "serial(baseline)",
+          "workload": "mandelbrot"
+        },
+        {
+          "mean_ns": 54821500.0,
+          "section": null,
+          "stddev_ns": 905960.0,
+          "variant": "multi(chunks)",
+          "workload": "mandelbrot"
+        },
+        {
+          "mean_ns": 49488600.0,
+          "section": null,
+          "stddev_ns": 532187.0,
+          "variant": "multi(items)",
+          "workload": "mandelbrot"
+        },
+        {
+          "mean_ns": 11398400.0,
+          "section": null,
+          "stddev_ns": 77090.1,
+          "variant": "serial(baseline)",
+          "workload": "nested"
+        },
+        {
+          "mean_ns": 1147710.0,
+          "section": null,
+          "stddev_ns": 70157.2,
+          "variant": "multi(parallel)",
+          "workload": "nested"
+        },
+        {
+          "mean_ns": 190282.0,
+          "section": "100 rounds",
+          "stddev_ns": 50364.7,
+          "variant": "multi(parallel)",
+          "workload": "parallel_pair"
+        },
+        {
+          "mean_ns": 1850330.0,
+          "section": "1k rounds",
+          "stddev_ns": 347450.0,
+          "variant": "multi(parallel)",
+          "workload": "parallel_pair"
+        },
+        {
+          "mean_ns": 71193.0,
+          "section": "build / dense width 4 1000 steps",
+          "stddev_ns": 3083.13,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 50651.0,
+          "section": "build / fan-in 1000 branches",
+          "stddev_ns": 2745.22,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 29311.3,
+          "section": "build / fan-out 1000 branches",
+          "stddev_ns": 1655.51,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 34457.6,
+          "section": "build / fan-out dup 1000",
+          "stddev_ns": 1835.12,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 4646.01,
+          "section": "build / independent 1000 steps",
+          "stddev_ns": 232.826,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 24659.6,
+          "section": "build / linear 1000 steps",
+          "stddev_ns": 5879.78,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 23788.8,
+          "section": "build / reverse linear 1000 steps",
+          "stddev_ns": 1316.5,
+          "variant": "recipe(build)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 6189960.0,
+          "section": "run / fan-in 32 branches",
+          "stddev_ns": 588336.0,
+          "variant": "async(baseline)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 6350030.0,
+          "section": "run / fan-in 32 branches",
+          "stddev_ns": 412098.0,
+          "variant": "multi(recipe)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 11345600.0,
+          "section": "run / fan-out 64 branches",
+          "stddev_ns": 519657.0,
+          "variant": "async(baseline)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 12552600.0,
+          "section": "run / fan-out 64 branches",
+          "stddev_ns": 604716.0,
+          "variant": "multi(recipe)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 5796490.0,
+          "section": "run / independent 32 steps",
+          "stddev_ns": 596888.0,
+          "variant": "async(baseline)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 5309200.0,
+          "section": "run / independent 32 steps",
+          "stddev_ns": 451440.0,
+          "variant": "multi(recipe)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 3096170.0,
+          "section": "run / linear 16 steps",
+          "stddev_ns": 216159.0,
+          "variant": "async(baseline)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 263521.0,
+          "section": "run / linear 16 steps",
+          "stddev_ns": 22380.4,
+          "variant": "multi(recipe)",
+          "workload": "recipe"
+        },
+        {
+          "mean_ns": 4892200.0,
+          "section": "4 drivers x async.wait",
+          "stddev_ns": 107288.0,
+          "variant": "multi(async)",
+          "workload": "steal_contention"
+        },
+        {
+          "mean_ns": 31020100.0,
+          "section": "4 drivers x range",
+          "stddev_ns": 976174.0,
+          "variant": "multi(range)",
+          "workload": "steal_contention"
+        },
+        {
+          "mean_ns": 6822910.0,
+          "section": "8 drivers x async.wait",
+          "stddev_ns": 597030.0,
+          "variant": "multi(async)",
+          "workload": "steal_contention"
+        },
+        {
+          "mean_ns": 84989900.0,
+          "section": "8 drivers x range",
+          "stddev_ns": 1483370.0,
+          "variant": "multi(range)",
+          "workload": "steal_contention"
+        },
+        {
+          "mean_ns": 402753.0,
+          "section": "1k tasks",
+          "stddev_ns": 7164.96,
+          "variant": "serial(baseline)",
+          "workload": "tiny_tasks"
+        },
+        {
+          "mean_ns": 90914.3,
+          "section": "1k tasks",
+          "stddev_ns": 13990.9,
+          "variant": "multi(chunks)",
+          "workload": "tiny_tasks"
+        },
+        {
+          "mean_ns": 132425.0,
+          "section": "1k tasks",
+          "stddev_ns": 21503.9,
+          "variant": "multi(items)",
+          "workload": "tiny_tasks"
+        },
+        {
+          "mean_ns": 20052300.0,
+          "section": "50k tasks",
+          "stddev_ns": 69697.0,
+          "variant": "serial(baseline)",
+          "workload": "tiny_tasks"
+        },
+        {
+          "mean_ns": 2096670.0,
+          "section": "50k tasks",
+          "stddev_ns": 60253.9,
+          "variant": "multi(chunks)",
+          "workload": "tiny_tasks"
+        },
+        {
+          "mean_ns": 4787720.0,
+          "section": "50k tasks",
+          "stddev_ns": 202175.0,
+          "variant": "multi(items)",
+          "workload": "tiny_tasks"
+        }
+      ],
+      "executable": "./build/bench-multi",
+      "generated_at": "2026-07-14T02:16:49.196860Z",
+      "git": {
+        "branch": "develop",
+        "commit": "86aebb10d571e8914f2cd2a5435c24caae0d2fdb",
+        "dirty": true,
+        "short_commit": "86aebb1"
+      },
+      "schema_version": 1
     }
   ],
   "schema_version": 1

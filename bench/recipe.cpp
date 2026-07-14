@@ -31,6 +31,39 @@ namespace
 		return static_cast<std::uint64_t>(recipe.stepCount());
 	}
 
+	std::uint64_t buildRecipeReverseChain(int steps)
+	{
+		multi::Recipe recipe;
+		std::vector<multi::Step> nodes;
+		nodes.reserve(static_cast<std::size_t>(steps));
+
+		for (int i = 0; i < steps; ++i)
+			nodes.push_back(recipe.step([]() {}));
+
+		for (int i = steps - 1; i > 0; --i)
+			recipe.order(nodes[static_cast<std::size_t>(i - 1)] >> nodes[static_cast<std::size_t>(i)]);
+
+		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
+	std::uint64_t buildRecipeDenseForward(int steps, int width)
+	{
+		multi::Recipe recipe;
+		std::vector<multi::Step> nodes;
+		nodes.reserve(static_cast<std::size_t>(steps));
+
+		for (int i = 0; i < steps; ++i)
+			nodes.push_back(recipe.step([]() {}));
+
+		for (int i = steps - 1; i >= 0; --i)
+		{
+			for (int offset = 1; offset <= width && i + offset < steps; ++offset)
+				recipe.order(nodes[static_cast<std::size_t>(i)] >> nodes[static_cast<std::size_t>(i + offset)]);
+		}
+
+		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
 	std::uint64_t runRecipeChain(int steps)
 	{
 		std::atomic<std::uint64_t> count{0};
@@ -133,6 +166,29 @@ namespace
 		}
 
 		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
+	std::uint64_t buildRecipeDuplicateFanOut(int branches, int duplicates)
+	{
+		multi::Recipe recipe;
+		auto source = recipe.step([]() {});
+		std::vector<multi::Step> branchSteps;
+		branchSteps.reserve(static_cast<std::size_t>(branches));
+
+		for (int i = 0; i < branches; ++i)
+		{
+			branchSteps.push_back(recipe.step([]() {}));
+			recipe.order(source >> branchSteps.back());
+		}
+
+		std::uint64_t duplicateCount = 0;
+		for (int i = 0; i < duplicates; ++i)
+		{
+			if (recipe.order(source >> branchSteps.back()) == multi::RecipeResult::DuplicateEdge)
+				++duplicateCount;
+		}
+
+		return duplicateCount + static_cast<std::uint64_t>(recipe.stepCount());
 	}
 
 	std::uint64_t runRecipeFanOut(int branches)
@@ -309,11 +365,22 @@ TEST_CASE("recipe", "[bench][fast]")
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeChain(16); }); };
 	}
 
-	SECTION("build / linear 16 steps")
+	SECTION("build / linear 1000 steps")
 	{
-		constexpr int rounds = 100;
-		REQUIRE(buildRecipeChain(16) == 16);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeChain(16); }); };
+		REQUIRE(buildRecipeChain(1000) == 1000);
+		BENCHMARK("recipe(build)") { return buildRecipeChain(1000); };
+	}
+
+	SECTION("build / reverse linear 1000 steps")
+	{
+		REQUIRE(buildRecipeReverseChain(1000) == 1000);
+		BENCHMARK("recipe(build)") { return buildRecipeReverseChain(1000); };
+	}
+
+	SECTION("build / dense width 4 1000 steps")
+	{
+		REQUIRE(buildRecipeDenseForward(1000, 4) == 1000);
+		BENCHMARK("recipe(build)") { return buildRecipeDenseForward(1000, 4); };
 	}
 
 	SECTION("run / independent 32 steps")
@@ -325,11 +392,10 @@ TEST_CASE("recipe", "[bench][fast]")
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeIndependent(32); }); };
 	}
 
-	SECTION("build / independent 32 steps")
+	SECTION("build / independent 1000 steps")
 	{
-		constexpr int rounds = 100;
-		REQUIRE(buildRecipeIndependent(32) == 32);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeIndependent(32); }); };
+		REQUIRE(buildRecipeIndependent(1000) == 1000);
+		BENCHMARK("recipe(build)") { return buildRecipeIndependent(1000); };
 	}
 
 	SECTION("run / fan-out 64 branches")
@@ -341,11 +407,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanOut(64); }); };
 	}
 
-	SECTION("build / fan-out 64 branches")
+	SECTION("build / fan-out 1000 branches")
 	{
-		constexpr int rounds = 100;
-		REQUIRE(buildRecipeFanOut(64) == 65);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanOut(64); }); };
+		REQUIRE(buildRecipeFanOut(1000) == 1001);
+		BENCHMARK("recipe(build)") { return buildRecipeFanOut(1000); };
+	}
+
+	SECTION("build / fan-out dup 1000")
+	{
+		REQUIRE(buildRecipeDuplicateFanOut(1000, 1000) == 2001);
+		BENCHMARK("recipe(build)") { return buildRecipeDuplicateFanOut(1000, 1000); };
 	}
 
 	SECTION("run / fan-in 32 branches")
@@ -357,10 +428,9 @@ TEST_CASE("recipe", "[bench][fast]")
 		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanIn(32); }); };
 	}
 
-	SECTION("build / fan-in 32 branches")
+	SECTION("build / fan-in 1000 branches")
 	{
-		constexpr int rounds = 100;
-		REQUIRE(buildRecipeFanIn(32) == 34);
-		BENCHMARK("recipe(build)") { return repeat(rounds, []() { return buildRecipeFanIn(32); }); };
+		REQUIRE(buildRecipeFanIn(1000) == 1002);
+		BENCHMARK("recipe(build)") { return buildRecipeFanIn(1000); };
 	}
 }
