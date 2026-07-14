@@ -71,12 +71,12 @@ namespace multi
 				if (successorSet->find(after.m_index) != successorSet->end())
 					return RecipeResult::DuplicateEdge;
 			}
-			else if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
+			else if (successors.contains(after.m_index))
 			{
 				return RecipeResult::DuplicateEdge;
 			}
 		}
-		else if (std::find(successors.begin(), successors.end(), after.m_index) != successors.end())
+		else if (successors.contains(after.m_index))
 		{
 			return RecipeResult::DuplicateEdge;
 		}

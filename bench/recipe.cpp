@@ -266,6 +266,48 @@ namespace
 		return static_cast<std::uint64_t>(recipe.stepCount());
 	}
 
+	std::uint64_t buildRecipeWideRoot(int roots)
+	{
+		multi::Recipe recipe;
+
+		std::vector<multi::Step> rootSteps;
+		rootSteps.reserve(static_cast<std::size_t>(roots));
+		for (int i = 0; i < roots; ++i)
+			rootSteps.push_back(recipe.step([]() {}));
+
+		auto join = recipe.step([]() {});
+		for (auto root : rootSteps)
+			recipe.order(root >> join);
+
+		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
+	std::uint64_t buildRecipeLainReduce(int leaves)
+	{
+		multi::Recipe recipe;
+
+		std::vector<multi::Step> current;
+		current.reserve(static_cast<std::size_t>(leaves));
+		for (int i = 0; i < leaves; ++i)
+			current.push_back(recipe.step([]() {}));
+
+		while (current.size() > 1)
+		{
+			std::vector<multi::Step> next;
+			next.reserve(current.size() / 2);
+			for (std::size_t i = 0; i + 1 < current.size(); i += 2)
+			{
+				auto add = recipe.step([]() {});
+				recipe.order(current[i] >> add);
+				recipe.order(current[i + 1] >> add);
+				next.push_back(add);
+			}
+			current = std::move(next);
+		}
+
+		return static_cast<std::uint64_t>(recipe.stepCount());
+	}
+
 	std::uint64_t runRecipeFanIn(int branches)
 	{
 		std::atomic<std::uint64_t> count{0};
@@ -297,6 +339,129 @@ namespace
 		auto handle = multi::async(std::move(recipe));
 		multi::waitAll(handle);
 		handle.get();
+		return count.load(std::memory_order_relaxed);
+	}
+
+	std::uint64_t runRecipeWideRoot(int roots)
+	{
+		std::atomic<std::uint64_t> count{0};
+		multi::Recipe recipe;
+
+		std::vector<multi::Step> rootSteps;
+		rootSteps.reserve(static_cast<std::size_t>(roots));
+		for (int i = 0; i < roots; ++i)
+		{
+			rootSteps.push_back(recipe.step([&count]()
+			{
+				count.fetch_add(1, std::memory_order_relaxed);
+			}));
+		}
+
+		auto join = recipe.step([&count]()
+		{
+			count.fetch_add(1, std::memory_order_relaxed);
+		});
+		for (auto root : rootSteps)
+			recipe.order(root >> join);
+
+		auto handle = multi::async(std::move(recipe));
+		multi::waitAll(handle);
+		handle.get();
+		return count.load(std::memory_order_relaxed);
+	}
+
+	std::uint64_t runAsyncWideRoot(int roots)
+	{
+		std::atomic<std::uint64_t> count{0};
+		std::vector<multi::Handle<>> handles;
+		handles.reserve(static_cast<std::size_t>(roots));
+
+		for (int i = 0; i < roots; ++i)
+		{
+			handles.push_back(multi::async([&count]()
+			{
+				count.fetch_add(1, std::memory_order_relaxed);
+			}));
+		}
+		for (auto& handle : handles)
+		{
+			multi::waitAll(handle);
+			handle.get();
+		}
+
+		auto join = multi::async([&count]()
+		{
+			count.fetch_add(1, std::memory_order_relaxed);
+		});
+		multi::waitAll(join);
+		join.get();
+
+		return count.load(std::memory_order_relaxed);
+	}
+
+	std::uint64_t runRecipeLainReduce(int leaves)
+	{
+		std::atomic<std::uint64_t> count{0};
+		multi::Recipe recipe;
+
+		std::vector<multi::Step> current;
+		current.reserve(static_cast<std::size_t>(leaves));
+		for (int i = 0; i < leaves; ++i)
+		{
+			current.push_back(recipe.step([&count]()
+			{
+				count.fetch_add(1, std::memory_order_relaxed);
+			}));
+		}
+
+		while (current.size() > 1)
+		{
+			std::vector<multi::Step> next;
+			next.reserve(current.size() / 2);
+			for (std::size_t i = 0; i + 1 < current.size(); i += 2)
+			{
+				auto add = recipe.step([&count]()
+				{
+					count.fetch_add(1, std::memory_order_relaxed);
+				});
+				recipe.order(current[i] >> add);
+				recipe.order(current[i + 1] >> add);
+				next.push_back(add);
+			}
+			current = std::move(next);
+		}
+
+		auto handle = multi::async(std::move(recipe));
+		multi::waitAll(handle);
+		handle.get();
+		return count.load(std::memory_order_relaxed);
+	}
+
+	std::uint64_t runAsyncLainReduce(int leaves)
+	{
+		std::atomic<std::uint64_t> count{0};
+		std::size_t current = static_cast<std::size_t>(leaves);
+		std::vector<multi::Handle<>> handles;
+		handles.reserve(current);
+
+		while (current > 0)
+		{
+			handles.clear();
+			for (std::size_t i = 0; i < current; ++i)
+			{
+				handles.push_back(multi::async([&count]()
+				{
+					count.fetch_add(1, std::memory_order_relaxed);
+				}));
+			}
+			for (auto& handle : handles)
+			{
+				multi::waitAll(handle);
+				handle.get();
+			}
+			current /= 2;
+		}
+
 		return count.load(std::memory_order_relaxed);
 	}
 
@@ -417,6 +582,36 @@ TEST_CASE("recipe", "[bench][fast]")
 	{
 		REQUIRE(buildRecipeDuplicateFanOut(1000, 1000) == 2001);
 		BENCHMARK("recipe(build)") { return buildRecipeDuplicateFanOut(1000, 1000); };
+	}
+
+	SECTION("run / wide-root 32 roots")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(runAsyncWideRoot(32) == 33);
+		REQUIRE(runRecipeWideRoot(32) == 33);
+		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncWideRoot(32); }); };
+		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeWideRoot(32); }); };
+	}
+
+	SECTION("build / wide-root 1000 roots")
+	{
+		REQUIRE(buildRecipeWideRoot(1000) == 1001);
+		BENCHMARK("recipe(build)") { return buildRecipeWideRoot(1000); };
+	}
+
+	SECTION("run / lain reduce 64 leaves")
+	{
+		constexpr int rounds = 100;
+		REQUIRE(runAsyncLainReduce(64) == 127);
+		REQUIRE(runRecipeLainReduce(64) == 127);
+		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncLainReduce(64); }); };
+		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeLainReduce(64); }); };
+	}
+
+	SECTION("build / lain reduce 1024 leaves")
+	{
+		REQUIRE(buildRecipeLainReduce(1024) == 2047);
+		BENCHMARK("recipe(build)") { return buildRecipeLainReduce(1024); };
 	}
 
 	SECTION("run / fan-in 32 branches")
