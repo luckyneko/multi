@@ -61,8 +61,10 @@ target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_compile_options(${PROJECT_NAME} PRIVATE
     # MSVC Flags
-    # /wd4324: cache-line alignas() on small members intentionally pads the struct.
-    $<$<CXX_COMPILER_ID:MSVC>:/WX;/W4;/wd4324>
+    # C4324 (alignas() padded the struct) is suppressed at the DECLARATION instead, via
+    # MULTI_BEGIN/END_CACHE_ALIGNED in details/platform.h - a flag here covered multi's own
+    # sources and left every consumer of the headers to trip over it.
+    $<$<CXX_COMPILER_ID:MSVC>:/WX;/W4>
 
     # Clang / GCC Flags
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror;-Wall;-Wextra>

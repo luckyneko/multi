@@ -28,6 +28,7 @@ namespace multi::details
 	 * cell sequence's acquire-load / release-store carries the data hand-off, so
 	 * the position CAS only arbitrates ownership (relaxed).
 	 */
+	MULTI_BEGIN_CACHE_ALIGNED
 	template <typename T, std::size_t CAPACITY>
 	class MpmcQueue
 	{
@@ -143,4 +144,5 @@ namespace multi::details
 		alignas(CACHE_LINE_SIZE) std::atomic<std::size_t> m_dequeuePos;
 		alignas(CACHE_LINE_SIZE) std::array<Cell, CAPACITY> m_cells;
 	};
+	MULTI_END_CACHE_ALIGNED
 } // namespace multi::details

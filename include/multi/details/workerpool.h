@@ -29,6 +29,7 @@ namespace multi::details
 	 * round-robin on submit; an idle worker steals from others when its own
 	 * deque is empty.
 	 */
+	MULTI_BEGIN_CACHE_ALIGNED
 	class WorkerPool
 	{
 	public:
@@ -77,6 +78,7 @@ namespace multi::details
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextWorker;
 		alignas(CACHE_LINE_SIZE) std::atomic<size_t> m_nextVictim;
 	};
+	MULTI_END_CACHE_ALIGNED
 } // namespace multi::details
 
 #include "multi/details/workerpool.inl"

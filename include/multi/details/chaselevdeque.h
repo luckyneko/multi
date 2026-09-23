@@ -34,6 +34,7 @@ namespace multi::details
 	 * away); an owner pop releases to seq == i (it reuses the slot on its next
 	 * push). The owner's push spins on seq == b before writing.
 	 */
+	MULTI_BEGIN_CACHE_ALIGNED
 	template <typename T, std::size_t CAPACITY>
 	class ChaseLevDeque
 	{
@@ -177,4 +178,5 @@ namespace multi::details
 		alignas(CACHE_LINE_SIZE) std::atomic<int64_t> m_bottom;
 		alignas(CACHE_LINE_SIZE) std::array<Slot, CAPACITY> m_buffer;
 	};
+	MULTI_END_CACHE_ALIGNED
 } // namespace multi::details
