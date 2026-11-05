@@ -11,9 +11,11 @@
 #include <catch2/catch_all.hpp>
 #include <chrono>
 #include <limits>
+#include <list>
 #include <map>
 #include <multi/context.h>
 #include <mutex>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -468,6 +470,149 @@ TEST_CASE("Context: range near the top of a signed type stays in bounds")
 }
 
 // ---------------------------------------------------------------------------
+// multi::Serial — every item in order, on the calling thread. These run on a
+// started pool, where order is a claim and not a given. The recordings are
+// plain vectors on purpose: a stray worker would race on them, and TSAN reports
+// that even if the order happens to come out right.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: range Serial visits every index in order on the caller")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	auto step = GENERATE(1, 2, 3);
+	multi::Context context;
+	context.start(threadCount);
+
+	const std::thread::id caller = std::this_thread::get_id();
+	std::vector<int> seen;
+	bool onCaller = true;
+	context.range(multi::Serial, 0, 1000, step, [&](int i)
+				  {
+		seen.push_back(i);
+		onCaller = onCaller && std::this_thread::get_id() == caller; });
+
+	std::vector<int> expected;
+	for (int i = 0; i < 1000; i += step)
+		expected.push_back(i);
+	CHECK(seen == expected);
+	CHECK(onCaller);
+
+	context.stop();
+}
+
+TEST_CASE("Context: each Serial visits every item in order on the caller")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	const auto visitOrder = [&](const auto& items)
+	{
+		const std::thread::id caller = std::this_thread::get_id();
+		std::vector<int> seen;
+		bool onCaller = true;
+		context.each(multi::Serial, items, [&](int x)
+					 {
+			seen.push_back(x);
+			onCaller = onCaller && std::this_thread::get_id() == caller; });
+		CHECK(onCaller);
+		return seen;
+	};
+
+	std::vector<int> expected(1000);
+	std::iota(expected.begin(), expected.end(), 0);
+	// EachJob stores these two differently: a random-access iterator, and a
+	// pointer table built by walking the list.
+	CHECK(visitOrder(expected) == expected);
+	CHECK(visitOrder(std::list<int>(expected.begin(), expected.end())) == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: Serial ends the walk at a throw and rethrows it")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	const std::vector<int> stoppedAtSeven{0, 1, 2, 3, 4, 5, 6, 7};
+	const auto visit = [](std::vector<int>& seen, int i)
+	{
+		seen.push_back(i);
+		if (i == 7)
+			throw std::runtime_error("stop");
+	};
+
+	std::vector<int> seenRange;
+	CHECK_THROWS_AS(context.range(multi::Serial, 0, 100, 1, [&](int i) { visit(seenRange, i); }), std::runtime_error);
+	CHECK(seenRange == stoppedAtSeven);
+
+	std::vector<int> items(100);
+	std::iota(items.begin(), items.end(), 0);
+	std::vector<int> seenEach;
+	CHECK_THROWS_AS(context.each(multi::Serial, items, [&](int i) { visit(seenEach, i); }), std::runtime_error);
+	CHECK(seenEach == stoppedAtSeven);
+
+	context.stop();
+}
+
+TEST_CASE("Context: Serial runs no other pool work on the caller")
+{
+	// One worker held busy, and a task queued behind it that only stealing can reach.
+	multi::Context context;
+	context.start(1);
+
+	std::atomic<bool> started(false), release(false), queuedRan(false);
+	auto hold = context.async([&]()
+							  {
+		started = true;
+		while (!release)
+			std::this_thread::yield(); });
+	while (!started)
+		std::this_thread::yield();
+	auto queued = context.async([&]()
+								{ queuedRan = true; });
+
+	int visited = 0;
+	context.range(multi::Serial, 0, 1000, 1, [&](int) { ++visited; });
+	CHECK(visited == 1000);
+	CHECK_FALSE(queuedRan);
+
+	// The setup can tell the difference: a dispatch that waits by stealing takes it.
+	context.range(multi::PerItem, 0, 8, 1, [](int) {});
+	CHECK(queuedRan);
+
+	release = true;
+	hold.wait();
+	queued.wait();
+	context.stop();
+}
+
+TEST_CASE("Context: Serial called from a pool task stays on that thread")
+{
+	multi::Context context;
+	context.start(2);
+
+	auto hdl = context.async([&]()
+							 {
+		const std::thread::id self = std::this_thread::get_id();
+		std::vector<int> seen;
+		bool onSelf = true;
+		context.range(multi::Serial, 0, 100, 1, [&](int i)
+					  {
+			seen.push_back(i);
+			onSelf = onSelf && std::this_thread::get_id() == self; });
+		return onSelf && seen.size() == 100 && std::is_sorted(seen.begin(), seen.end()); });
+	hdl.wait();
+
+	bool inOrderOnSelf = false;
+	REQUIRE(hdl.get(&inOrderOnSelf));
+	CHECK(inOrderOnSelf);
+
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
 // Edge cases — empty inputs and degenerate parameters must be no-ops, not
 // crashes. These exercise the count==0 fast paths inside each Job subclass.
 // ---------------------------------------------------------------------------
@@ -484,6 +629,7 @@ TEST_CASE("Context: each over empty vector is a no-op")
 
 	// taskCount overload too.
 	context.each(std::size_t(4), empty.begin(), empty.end(), [&](int) { calls++; });
+	context.each(multi::Serial, empty, [&](int) { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();
@@ -509,6 +655,8 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 	context.range(5, 3, 1, [&](int) { calls++; });
 	context.range(std::size_t(4), 5, 5, 1, [&](int) { calls++; });
 	context.range(std::size_t(4), 5, 3, 1, [&](int) { calls++; });
+	context.range(multi::Serial, 5, 5, 1, [&](int) { calls++; });
+	context.range(multi::Serial, 5, 3, 1, [&](int) { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();

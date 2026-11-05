@@ -19,12 +19,13 @@ namespace multi
 	/**
 	 * @brief How many tasks a chunked each()/range() dispatch splits work into.
 	 *
-	 * Carries one of three intents, resolved to a concrete count once the work
+	 * Carries one of four intents, resolved to a concrete count once the work
 	 * size and pool size are known:
 	 *   - a bare integer (implicit conversion) — exactly that many tasks, so
 	 *     `each(64, ...)` compiles;
 	 *   - multi::Auto — `(workers + 1) * CHUNK_FACTOR` oversubscription, clamped;
-	 *   - multi::PerItem — one task per item.
+	 *   - multi::PerItem — one task per item;
+	 *   - multi::Serial — every item in order, on the calling thread.
 	 */
 	class ChunkPolicy
 	{
@@ -35,6 +36,7 @@ namespace multi
 			Auto,	 ///< Oversubscribe by CHUNK_FACTOR per worker, clamped to >= 2.
 			Manual,	 ///< Exact task count (from the implicit size_t constructor).
 			PerItem, ///< One task per item.
+			Serial,	 ///< One task, in order, on the calling thread.
 		};
 
 		/// Implicit by design: a bare integer is an exact task count.
@@ -57,8 +59,8 @@ namespace multi
 		/// Resolve to a concrete task count for a workload and pool size.
 		/// @param total   Items to dispatch.
 		/// @param workers Worker-thread count (from Context::threadCount()).
-		/// @return Task count: Manual >= 1, Auto >= 2, PerItem == total, each
-		///         clamped to <= total; 0 when @p total is 0 (empty dispatch).
+		/// @return Task count: Manual >= 1, Auto >= 2, PerItem == total, Serial == 1,
+		///         each clamped to <= total; 0 when @p total is 0 (empty dispatch).
 		constexpr std::size_t resolve(std::size_t total, std::size_t workers) const noexcept
 		{
 			if (total == 0)
@@ -73,6 +75,8 @@ namespace multi
 					return std::clamp(m_value, std::size_t(1), total);
 				case Policy::PerItem:
 					return total;
+				case Policy::Serial:
+					return 1;
 			}
 			return total; // unreachable; satisfies -Wreturn-type for an out-of-range enum
 		}
@@ -86,5 +90,10 @@ namespace multi
 	inline constexpr ChunkPolicy Auto{ChunkPolicy::Policy::Auto};
 	/// One task per item.
 	inline constexpr ChunkPolicy PerItem{ChunkPolicy::Policy::PerItem};
+	/// Every item in order, on the calling thread, with nothing else run on that
+	/// thread meanwhile: the pool is not involved. A throw ends the walk at that
+	/// item and is rethrown. ChunkPolicy(1) behaves the same today; only this name
+	/// promises it.
+	inline constexpr ChunkPolicy Serial{ChunkPolicy::Policy::Serial};
 
 } // namespace multi

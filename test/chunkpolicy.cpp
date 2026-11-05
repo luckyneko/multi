@@ -54,9 +54,17 @@ TEST_CASE("ChunkPolicy: PerItem is one task per item, ignoring workers")
 	STATIC_REQUIRE(multi::PerItem.resolve(1, 4) == 1);
 }
 
+TEST_CASE("ChunkPolicy: Serial is one task, ignoring workers")
+{
+	STATIC_REQUIRE(multi::Serial.resolve(7, 4) == 1);
+	STATIC_REQUIRE(multi::Serial.resolve(7, 999) == 1);
+	STATIC_REQUIRE(multi::Serial.resolve(1, 4) == 1);
+}
+
 TEST_CASE("ChunkPolicy: empty workload resolves to 0 for every policy")
 {
 	STATIC_REQUIRE(ChunkPolicy(64).resolve(0, 4) == 0);
 	STATIC_REQUIRE(multi::Auto.resolve(0, 4) == 0);
 	STATIC_REQUIRE(multi::PerItem.resolve(0, 4) == 0);
+	STATIC_REQUIRE(multi::Serial.resolve(0, 4) == 0);
 }

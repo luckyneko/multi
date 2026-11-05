@@ -214,10 +214,11 @@ void function()
     });
 
     // The leading argument is a `multi::ChunkPolicy` — how many tasks to split
-    // the work into. Three spellings:
+    // the work into. Four spellings:
     multi::each(32, items, fn);             // exact: 32 tasks (bare int)
     multi::each(multi::Auto, items, fn);    // (workers+1)*CHUNK_FACTOR, clamped
     multi::each(multi::PerItem, items, fn); // one task per item (== no count)
+    multi::each(multi::Serial, items, fn);  // in order, on this thread, no pool
 }
 ```
 
@@ -240,7 +241,7 @@ void function()
     });
 
     // Chunked: the leading multi::ChunkPolicy picks how many tasks (exact count,
-    // multi::Auto, or multi::PerItem).
+    // multi::Auto, multi::PerItem, or multi::Serial).
     multi::range(32, 0, 100, 2, [&](int idx)
     {
         out += idx;
@@ -317,6 +318,6 @@ Workloads:
 ### Exception handling
 Tasks that throw propagate the exception to the caller:
 - `multi::async`: the exception is stored on the returned value-typed `Handle<T>`. Wait for completion (`multi::waitAll(h)`), then `h.get(&out)` rethrows it. Void tasks (`Handle<void>`) have no `get()` and so cannot surface a task exception — return a value if you need to observe failures.
-- `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled.
+- `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled. Under `multi::Serial` there are no siblings: a throw ends the walk at that item, and later items do not run.
 
 A `Handle` never blocks on destruction and does not throw — dropping one cannot call `std::terminate`. To wait: `Handle::wait()` blocks plainly (no work-stealing), while `multi::waitAll` / `waitAny` / `waitUntil` block *and* help drain the pool. Observe results or exceptions with `Handle::get(&out)`.

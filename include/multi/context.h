@@ -76,7 +76,7 @@ namespace multi
 		void each(ITER begin, ITER end, FUNC&& func);
 
 		/// Chunked overload: distribute the items across @p chunkPolicy tasks
-		/// (an exact count, or multi::Auto / multi::PerItem).
+		/// (an exact count, or multi::Auto / multi::PerItem / multi::Serial).
 		template <typename ITER, typename FUNC>
 		void each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func);
 
@@ -87,7 +87,7 @@ namespace multi
 		void each(CONTAINER&& c, FUNC&& func);
 
 		/// Chunked range-based overload: distribute @p c across @p chunkPolicy tasks
-		/// (an exact count, or multi::Auto / multi::PerItem).
+		/// (an exact count, or multi::Auto / multi::PerItem / multi::Serial).
 		template <typename CONTAINER, typename FUNC>
 		void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
@@ -102,7 +102,7 @@ namespace multi
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 
 		/// Chunked overload: distribute the indices across @p chunkPolicy tasks
-		/// (an exact count, or multi::Auto / multi::PerItem).
+		/// (an exact count, or multi::Auto / multi::PerItem / multi::Serial).
 		template <typename IDX, typename FUNC>
 		void range(ChunkPolicy chunkPolicy, IDX begin, IDX end, IDX step, FUNC&& func);
 

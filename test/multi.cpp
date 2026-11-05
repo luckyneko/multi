@@ -237,7 +237,7 @@ TEST_CASE("multi: range over integers")
 	multi::stop();
 }
 
-TEST_CASE("multi: ChunkPolicy resolves the three policies")
+TEST_CASE("multi: ChunkPolicy resolves the four policies")
 {
 	using multi::ChunkPolicy;
 
@@ -249,6 +249,9 @@ TEST_CASE("multi: ChunkPolicy resolves the three policies")
 
 	// PerItem: one task per item.
 	CHECK(multi::PerItem.resolve(37, 8) == 37);
+
+	// Serial: one task, whatever the size.
+	CHECK(multi::Serial.resolve(37, 8) == 1);
 
 	// Auto: clamp((workers+1)*CHUNK_FACTOR, 2, total).
 	const std::size_t k = multi::CHUNK_FACTOR;
@@ -296,6 +299,18 @@ TEST_CASE("multi: each/range accept ChunkPolicy policies")
 		multi::range(multi::PerItem, 0, 100, 1, [&](int i)
 					 { s += i; });
 		CHECK(s == expected);
+	}
+	{
+		std::vector<int> seen;
+		multi::each(multi::Serial, v, [&](int x)
+					{ seen.push_back(x); });
+		CHECK(seen == v);
+	}
+	{
+		std::vector<int> seen;
+		multi::range(multi::Serial, 0, 100, 1, [&](int i)
+					 { seen.push_back(i); });
+		CHECK(seen == v);
 	}
 
 	multi::stop();
