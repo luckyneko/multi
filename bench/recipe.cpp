@@ -74,9 +74,7 @@ namespace
 		for (int i = 0; i < steps; ++i)
 		{
 			nodes.push_back(recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										{ count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 
 		for (int i = 1; i < steps; ++i)
@@ -94,9 +92,7 @@ namespace
 		for (int i = 0; i < steps; ++i)
 		{
 			auto handle = multi::async([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			});
+									   { count.fetch_add(1, std::memory_order_relaxed); });
 			multi::waitAll(handle);
 			handle.get();
 		}
@@ -111,9 +107,7 @@ namespace
 		for (int i = 0; i < steps; ++i)
 		{
 			recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			});
+						{ count.fetch_add(1, std::memory_order_relaxed); });
 		}
 
 		auto handle = multi::async(std::move(recipe));
@@ -141,9 +135,7 @@ namespace
 		for (int i = 0; i < steps; ++i)
 		{
 			handles.push_back(multi::async([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										   { count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 		for (auto& handle : handles)
 		{
@@ -197,16 +189,12 @@ namespace
 		multi::Recipe recipe;
 
 		auto source = recipe.step([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								  { count.fetch_add(1, std::memory_order_relaxed); });
 
 		for (int i = 0; i < branches; ++i)
 		{
 			auto branch = recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			});
+									  { count.fetch_add(1, std::memory_order_relaxed); });
 			recipe.order(source >> branch);
 		}
 
@@ -221,9 +209,7 @@ namespace
 		std::atomic<std::uint64_t> count{0};
 
 		auto source = multi::async([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								   { count.fetch_add(1, std::memory_order_relaxed); });
 		multi::waitAll(source);
 		source.get();
 
@@ -232,9 +218,7 @@ namespace
 		for (int i = 0; i < branches; ++i)
 		{
 			handles.push_back(multi::async([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										   { count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 		for (auto& handle : handles)
 		{
@@ -314,25 +298,19 @@ namespace
 		multi::Recipe recipe;
 
 		auto source = recipe.step([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								  { count.fetch_add(1, std::memory_order_relaxed); });
 
 		std::vector<multi::Step> branchSteps;
 		branchSteps.reserve(static_cast<std::size_t>(branches));
 		for (int i = 0; i < branches; ++i)
 		{
 			branchSteps.push_back(recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+											  { count.fetch_add(1, std::memory_order_relaxed); }));
 			recipe.order(source >> branchSteps.back());
 		}
 
 		auto join = recipe.step([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								{ count.fetch_add(1, std::memory_order_relaxed); });
 		for (auto branch : branchSteps)
 			recipe.order(branch >> join);
 
@@ -352,15 +330,11 @@ namespace
 		for (int i = 0; i < roots; ++i)
 		{
 			rootSteps.push_back(recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+											{ count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 
 		auto join = recipe.step([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								{ count.fetch_add(1, std::memory_order_relaxed); });
 		for (auto root : rootSteps)
 			recipe.order(root >> join);
 
@@ -379,9 +353,7 @@ namespace
 		for (int i = 0; i < roots; ++i)
 		{
 			handles.push_back(multi::async([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										   { count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 		for (auto& handle : handles)
 		{
@@ -390,9 +362,7 @@ namespace
 		}
 
 		auto join = multi::async([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								 { count.fetch_add(1, std::memory_order_relaxed); });
 		multi::waitAll(join);
 		join.get();
 
@@ -409,9 +379,7 @@ namespace
 		for (int i = 0; i < leaves; ++i)
 		{
 			current.push_back(recipe.step([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										  { count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 
 		while (current.size() > 1)
@@ -421,9 +389,7 @@ namespace
 			for (std::size_t i = 0; i + 1 < current.size(); i += 2)
 			{
 				auto add = recipe.step([&count]()
-				{
-					count.fetch_add(1, std::memory_order_relaxed);
-				});
+									   { count.fetch_add(1, std::memory_order_relaxed); });
 				recipe.order(current[i] >> add);
 				recipe.order(current[i + 1] >> add);
 				next.push_back(add);
@@ -450,9 +416,7 @@ namespace
 			for (std::size_t i = 0; i < current; ++i)
 			{
 				handles.push_back(multi::async([&count]()
-				{
-					count.fetch_add(1, std::memory_order_relaxed);
-				}));
+											   { count.fetch_add(1, std::memory_order_relaxed); }));
 			}
 			for (auto& handle : handles)
 			{
@@ -470,9 +434,7 @@ namespace
 		std::atomic<std::uint64_t> count{0};
 
 		auto source = multi::async([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								   { count.fetch_add(1, std::memory_order_relaxed); });
 		multi::waitAll(source);
 		source.get();
 
@@ -481,9 +443,7 @@ namespace
 		for (int i = 0; i < branches; ++i)
 		{
 			handles.push_back(multi::async([&count]()
-			{
-				count.fetch_add(1, std::memory_order_relaxed);
-			}));
+										   { count.fetch_add(1, std::memory_order_relaxed); }));
 		}
 		for (auto& handle : handles)
 		{
@@ -492,9 +452,7 @@ namespace
 		}
 
 		auto join = multi::async([&count]()
-		{
-			count.fetch_add(1, std::memory_order_relaxed);
-		});
+								 { count.fetch_add(1, std::memory_order_relaxed); });
 		multi::waitAll(join);
 		join.get();
 
@@ -526,8 +484,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncChain(16) == 16);
 		REQUIRE(runRecipeChain(16) == 16);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncChain(16); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeChain(16); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncChain(16); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeChain(16); });
+		};
 	}
 
 	SECTION("build / linear 1000 steps")
@@ -553,8 +519,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncIndependent(32) == 32);
 		REQUIRE(runRecipeIndependent(32) == 32);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncIndependent(32); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeIndependent(32); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncIndependent(32); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeIndependent(32); });
+		};
 	}
 
 	SECTION("build / independent 1000 steps")
@@ -568,8 +542,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncFanOut(64) == 65);
 		REQUIRE(runRecipeFanOut(64) == 65);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncFanOut(64); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanOut(64); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncFanOut(64); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeFanOut(64); });
+		};
 	}
 
 	SECTION("build / fan-out 1000 branches")
@@ -589,8 +571,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncWideRoot(32) == 33);
 		REQUIRE(runRecipeWideRoot(32) == 33);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncWideRoot(32); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeWideRoot(32); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncWideRoot(32); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeWideRoot(32); });
+		};
 	}
 
 	SECTION("build / wide-root 1000 roots")
@@ -604,8 +594,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncLainReduce(64) == 127);
 		REQUIRE(runRecipeLainReduce(64) == 127);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncLainReduce(64); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeLainReduce(64); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncLainReduce(64); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeLainReduce(64); });
+		};
 	}
 
 	SECTION("build / lain reduce 1024 leaves")
@@ -619,8 +617,16 @@ TEST_CASE("recipe", "[bench][fast]")
 		constexpr int rounds = 100;
 		REQUIRE(runAsyncFanIn(32) == 34);
 		REQUIRE(runRecipeFanIn(32) == 34);
-		BENCHMARK("async(baseline)") { return repeat(rounds, []() { return runAsyncFanIn(32); }); };
-		BENCHMARK("multi(recipe)") { return repeat(rounds, []() { return runRecipeFanIn(32); }); };
+		BENCHMARK("async(baseline)")
+		{
+			return repeat(rounds, []()
+						  { return runAsyncFanIn(32); });
+		};
+		BENCHMARK("multi(recipe)")
+		{
+			return repeat(rounds, []()
+						  { return runRecipeFanIn(32); });
+		};
 	}
 
 	SECTION("build / fan-in 1000 branches")

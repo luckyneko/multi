@@ -18,9 +18,8 @@ int main()
 	// Typed async: lambda returns int → Handle<int>. The Handle itself never
 	// blocks; wait on it with multi::waitAll (which participates in stealing),
 	// then get(&out) copies the value out and returns true once complete.
-	auto greeting = multi::async([]() {
-		return 42;
-	});
+	auto greeting = multi::async([]()
+								 { return 42; });
 	multi::waitAll(greeting);
 	int answer = 0;
 	greeting.get(&answer);
@@ -29,9 +28,8 @@ int main()
 	// Fire-and-forget: a Handle you don't keep does NOT block on destruction.
 	// The task still runs on the pool and is guaranteed to have finished once
 	// stop() drains the workers below.
-	multi::async([]() {
-		std::printf("side-effect task ran\n");
-	});
+	multi::async([]()
+				 { std::printf("side-effect task ran\n"); });
 
 	multi::stop();
 	return (answer == 42) ? 0 : 1;

@@ -69,11 +69,11 @@ TEST_CASE("Context: waitAll avoids self-deadlock with 1 worker")
 	context.start(1);
 
 	std::atomic<int> counter(0);
-	auto outer = context.async([&]() {
+	auto outer = context.async([&]()
+							   {
 		auto inner = context.async([&]() { counter++; });
 		context.waitAll(inner);  // explicit participation
-		counter++;
-	});
+		counter++; });
 	// Main thread isn't a worker; waitAll lets it participate in stealing so
 	// the sole worker isn't the only thread that can make progress.
 	context.waitAll(outer);
@@ -95,7 +95,8 @@ TEST_CASE("Context: async rethrows task exception and pool survives")
 
 	// Pool still accepts new work after a throwing task.
 	std::atomic<int> x(0);
-	context.waitAll(context.async([&]() { x = 42; }));
+	context.waitAll(context.async([&]()
+								  { x = 42; }));
 	CHECK(x == 42);
 
 	context.stop();
@@ -112,7 +113,8 @@ TEST_CASE("Context: parallel runs siblings")
 	// order-dependent read-modify-write (e.g. a = a * 2) gated on a sleep --
 	// that races the sibling's increment and fails intermittently under CI load.
 	std::atomic<int> a(2);
-	context.parallel([&]() { a += 1; },
+	context.parallel([&]()
+					 { a += 1; },
 					 [&]()
 					 {
 						 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -178,9 +180,9 @@ TEST_CASE("Context: parallel rethrows first exception and runs siblings")
 	CHECK_THROWS_AS(
 		context.parallel(
 			multi::details::Task([]()
-						{ throw std::runtime_error("boom"); }),
+								 { throw std::runtime_error("boom"); }),
 			multi::details::Task([&]()
-						{ otherRan++; })),
+								 { otherRan++; })),
 		std::runtime_error);
 	CHECK(otherRan == 1);
 
@@ -198,10 +200,12 @@ TEST_CASE("Context: each over vector")
 	for (std::size_t i = 0; i < DATA_SET_MAX_SIZE; ++i)
 	{
 		std::vector<int> tmpVec = inVec;
-		context.each(tmpVec.begin(), tmpVec.end(), [](int& v) { v += 1; });
+		context.each(tmpVec.begin(), tmpVec.end(), [](int& v)
+					 { v += 1; });
 
 		std::atomic<int> a(0);
-		context.each(tmpVec.begin(), tmpVec.end(), [&](int v) { a += v; });
+		context.each(tmpVec.begin(), tmpVec.end(), [&](int v)
+					 { a += v; });
 		CHECK(a == inVecSum + static_cast<int>(i));
 
 		inVec.push_back(static_cast<int>(i));
@@ -223,11 +227,13 @@ TEST_CASE("Context: each over map")
 	{
 		std::map<int, int> tmpMap = inMap;
 		context.each(tmpMap.begin(), tmpMap.end(),
-					 [](std::pair<const int, int>& p) { p.second += 1; });
+					 [](std::pair<const int, int>& p)
+					 { p.second += 1; });
 
 		std::atomic<int> a(0);
 		context.each(tmpMap.begin(), tmpMap.end(),
-					 [&](const std::pair<const int, int>& p) { a += p.second; });
+					 [&](const std::pair<const int, int>& p)
+					 { a += p.second; });
 		CHECK(a == inMapSum + static_cast<int>(i));
 
 		inMap[static_cast<int>(i)] = static_cast<int>(i);
@@ -249,10 +255,12 @@ TEST_CASE("Context: each with taskCount over vector")
 	for (std::size_t i = 0; i < DATA_SET_MAX_SIZE; ++i)
 	{
 		std::vector<int> tmpVec = inVec;
-		context.each(taskCount, tmpVec.begin(), tmpVec.end(), [](int& v) { v += 1; });
+		context.each(taskCount, tmpVec.begin(), tmpVec.end(), [](int& v)
+					 { v += 1; });
 
 		std::atomic<int> a(0);
-		context.each(taskCount, tmpVec.begin(), tmpVec.end(), [&](int v) { a += v; });
+		context.each(taskCount, tmpVec.begin(), tmpVec.end(), [&](int v)
+					 { a += v; });
 		CHECK(a == inVecSum + static_cast<int>(i));
 
 		inVec.push_back(static_cast<int>(i));
@@ -275,11 +283,13 @@ TEST_CASE("Context: each with taskCount over map")
 	{
 		std::map<int, int> tmpMap = inMap;
 		context.each(taskCount, tmpMap.begin(), tmpMap.end(),
-					 [](std::pair<const int, int>& p) { p.second += 1; });
+					 [](std::pair<const int, int>& p)
+					 { p.second += 1; });
 
 		std::atomic<int> a(0);
 		context.each(taskCount, tmpMap.begin(), tmpMap.end(),
-					 [&](const std::pair<const int, int>& p) { a += p.second; });
+					 [&](const std::pair<const int, int>& p)
+					 { a += p.second; });
 		CHECK(a == inMapSum + static_cast<int>(i));
 
 		inMap[static_cast<int>(i)] = static_cast<int>(i);
@@ -306,11 +316,13 @@ TEST_CASE("Context: each/range ChunkPolicy policies on a local pool")
 	}
 
 	std::atomic<int> eachSum(0);
-	context.each(policy, v, [&](int x) { eachSum += x; });
+	context.each(policy, v, [&](int x)
+				 { eachSum += x; });
 	CHECK(eachSum == expected);
 
 	std::atomic<int> rangeSum(0);
-	context.range(policy, 0, 50, 1, [&](int i) { rangeSum += i; });
+	context.range(policy, 0, 50, 1, [&](int i)
+				  { rangeSum += i; });
 	CHECK(rangeSum == expected);
 
 	context.stop();
@@ -329,7 +341,8 @@ TEST_CASE("Context: range int")
 			for (int step = 1; step < static_cast<int>(DATA_SET_MAX_SIZE); ++step)
 			{
 				std::atomic<int> a(0);
-				context.range(begin, end, step, [&](int /*i*/) { a += 1; });
+				context.range(begin, end, step, [&](int /*i*/)
+							  { a += 1; });
 
 				const int totalRange = std::max(0, (end - begin));
 				const int expected = (totalRange / step) + ((totalRange % step > 0) ? 1 : 0);
@@ -355,7 +368,8 @@ TEST_CASE("Context: range float")
 			for (float step = scale; step < scale * DATA_SET_MAX_SIZE; step += scale)
 			{
 				std::atomic<int> a(0);
-				context.range(begin, end, step, [&](float /*i*/) { a += 1; });
+				context.range(begin, end, step, [&](float /*i*/)
+							  { a += 1; });
 
 				int expected = 0;
 				for (float i = begin; i < end; i += step)
@@ -383,7 +397,8 @@ TEST_CASE("Context: range with taskCount")
 			for (int step = 1; step < static_cast<int>(DATA_SET_MAX_SIZE); ++step)
 			{
 				std::atomic<int> a(0);
-				context.range(taskCount, begin, end, step, [&](int /*i*/) { a += 1; });
+				context.range(taskCount, begin, end, step, [&](int /*i*/)
+							  { a += 1; });
 
 				const int totalRange = std::max(0, (end - begin));
 				const int expected = (totalRange / step) + ((totalRange % step > 0) ? 1 : 0);
@@ -401,7 +416,8 @@ TEST_CASE("Context: range step-less overload defaults step to 1")
 	context.start(2);
 
 	std::atomic<int> sum(0);
-	context.range(0, 10, [&](int i) { sum += i; });
+	context.range(0, 10, [&](int i)
+				  { sum += i; });
 	CHECK(sum == 45);
 
 	context.stop();
@@ -424,7 +440,8 @@ TEST_CASE("Context: range over one float chunk visits exactly its count")
 			++expected;
 
 		int visited = 0;
-		context.range(std::size_t(1), 0.f, end, step, [&](float /*i*/) { ++visited; });
+		context.range(std::size_t(1), 0.f, end, step, [&](float /*i*/)
+					  { ++visited; });
 		CHECK(visited == expected);
 	}
 
@@ -465,7 +482,8 @@ TEST_CASE("Context: range near the top of a signed type stays in bounds")
 
 	const int top = std::numeric_limits<int>::max();
 	std::vector<int> seen;
-	context.range(std::size_t(1), top - 5, top, 3, [&](int i) { seen.push_back(i); });
+	context.range(std::size_t(1), top - 5, top, 3, [&](int i)
+				  { seen.push_back(i); });
 	CHECK(seen == std::vector<int>{top - 5, top - 2});
 
 	context.stop();
@@ -489,7 +507,8 @@ TEMPLATE_TEST_CASE("Context: range unsigned", "", std::uint8_t, std::uint16_t, u
 			for (TestType step = 1; step < static_cast<TestType>(DATA_SET_MAX_SIZE); ++step)
 			{
 				std::atomic<int> a(0);
-				context.range(begin, end, step, [&](TestType /*i*/) { a += 1; });
+				context.range(begin, end, step, [&](TestType /*i*/)
+							  { a += 1; });
 
 				const int totalRange = std::max(0, static_cast<int>(end) - static_cast<int>(begin));
 				const int s = static_cast<int>(step);
@@ -517,7 +536,8 @@ TEMPLATE_TEST_CASE("Context: range unsigned with a ChunkPolicy", "", std::uint8_
 			for (TestType step = 1; step < static_cast<TestType>(DATA_SET_MAX_SIZE); ++step)
 			{
 				std::atomic<int> a(0);
-				context.range(policy, begin, end, step, [&](TestType /*i*/) { a += 1; });
+				context.range(policy, begin, end, step, [&](TestType /*i*/)
+							  { a += 1; });
 
 				const int totalRange = std::max(0, static_cast<int>(end) - static_cast<int>(begin));
 				const int s = static_cast<int>(step);
@@ -640,13 +660,17 @@ TEST_CASE("Context: Serial ends the walk at a throw and rethrows it")
 	};
 
 	std::vector<int> seenRange;
-	CHECK_THROWS_AS(context.range(multi::Serial, 0, 100, 1, [&](int i) { visit(seenRange, i); }), std::runtime_error);
+	CHECK_THROWS_AS(context.range(multi::Serial, 0, 100, 1, [&](int i)
+								  { visit(seenRange, i); }),
+					std::runtime_error);
 	CHECK(seenRange == stoppedAtSeven);
 
 	std::vector<int> items(100);
 	std::iota(items.begin(), items.end(), 0);
 	std::vector<int> seenEach;
-	CHECK_THROWS_AS(context.each(multi::Serial, items, [&](int i) { visit(seenEach, i); }), std::runtime_error);
+	CHECK_THROWS_AS(context.each(multi::Serial, items, [&](int i)
+								 { visit(seenEach, i); }),
+					std::runtime_error);
 	CHECK(seenEach == stoppedAtSeven);
 
 	context.stop();
@@ -670,7 +694,8 @@ TEST_CASE("Context: Serial runs no other pool work on the caller")
 								{ queuedRan = true; });
 
 	int visited = 0;
-	context.range(multi::Serial, 0, 1000, 1, [&](int) { ++visited; });
+	context.range(multi::Serial, 0, 1000, 1, [&](int)
+				  { ++visited; });
 	CHECK(visited == 1000);
 	CHECK_FALSE(queuedRan);
 
@@ -720,12 +745,15 @@ TEST_CASE("Context: each over empty vector is a no-op")
 
 	std::vector<int> empty;
 	std::atomic<int> calls(0);
-	context.each(empty.begin(), empty.end(), [&](int) { calls++; });
+	context.each(empty.begin(), empty.end(), [&](int)
+				 { calls++; });
 	CHECK(calls == 0);
 
 	// taskCount overload too.
-	context.each(std::size_t(4), empty.begin(), empty.end(), [&](int) { calls++; });
-	context.each(multi::Serial, empty, [&](int) { calls++; });
+	context.each(std::size_t(4), empty.begin(), empty.end(), [&](int)
+				 { calls++; });
+	context.each(multi::Serial, empty, [&](int)
+				 { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();
@@ -747,17 +775,27 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 	context.start(2);
 
 	std::atomic<int> calls(0);
-	context.range(5, 5, 1, [&](int) { calls++; });
-	context.range(5, 3, 1, [&](int) { calls++; });
-	context.range(std::size_t(4), 5, 5, 1, [&](int) { calls++; });
-	context.range(std::size_t(4), 5, 3, 1, [&](int) { calls++; });
-	context.range(multi::Serial, 5, 5, 1, [&](int) { calls++; });
-	context.range(multi::Serial, 5, 3, 1, [&](int) { calls++; });
+	context.range(5, 5, 1, [&](int)
+				  { calls++; });
+	context.range(5, 3, 1, [&](int)
+				  { calls++; });
+	context.range(std::size_t(4), 5, 5, 1, [&](int)
+				  { calls++; });
+	context.range(std::size_t(4), 5, 3, 1, [&](int)
+				  { calls++; });
+	context.range(multi::Serial, 5, 5, 1, [&](int)
+				  { calls++; });
+	context.range(multi::Serial, 5, 3, 1, [&](int)
+				  { calls++; });
 	// Unsigned: end < begin must be empty, not a span that underflowed to huge.
-	context.range(5u, 3u, [&](unsigned) { calls++; });
-	context.range(std::size_t(4), 5u, 3u, 1u, [&](unsigned) { calls++; });
-	context.range(std::size_t{5}, std::size_t{0}, [&](std::size_t) { calls++; });
-	context.range(0u, 10u, 0u, [&](unsigned) { calls++; });
+	context.range(5u, 3u, [&](unsigned)
+				  { calls++; });
+	context.range(std::size_t(4), 5u, 3u, 1u, [&](unsigned)
+				  { calls++; });
+	context.range(std::size_t{5}, std::size_t{0}, [&](std::size_t)
+				  { calls++; });
+	context.range(0u, 10u, 0u, [&](unsigned)
+				  { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();
@@ -769,13 +807,17 @@ TEST_CASE("Context: range with a non-positive step is a no-op")
 	context.start(2);
 
 	std::atomic<int> calls(0);
-	context.range(0, 10, 0, [&](int) { calls++; });
-	context.range(0, 10, -1, [&](int) { calls++; });
-	context.range(std::size_t(4), 0, 10, -1, [&](int) { calls++; });
-	context.range(0.f, 1.f, 0.f, [&](float) { calls++; });
-	context.range(0.f, 1.f, -0.5f, [&](float) { calls++; });
+	context.range(0, 10, 0, [&](int)
+				  { calls++; });
+	context.range(0, 10, -1, [&](int)
+				  { calls++; });
+	context.range(std::size_t(4), 0, 10, -1, [&](int)
+				  { calls++; });
+	context.range(0.f, 1.f, 0.f, [&](float)
+				  { calls++; });
+	context.range(0.f, 1.f, -0.5f, [&](float)
+				  { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();
 }
-

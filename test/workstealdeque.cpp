@@ -28,9 +28,12 @@ TEST_CASE("WorkStealDeque: push and pop (LIFO)")
 	multi::details::WorkStealDeque deque;
 	int order = 0;
 
-	deque.tryPushRemote([&order]() { order = 1; });
-	deque.tryPushRemote([&order]() { order = 2; });
-	deque.tryPushRemote([&order]() { order = 3; });
+	deque.tryPushRemote([&order]()
+						{ order = 1; });
+	deque.tryPushRemote([&order]()
+						{ order = 2; });
+	deque.tryPushRemote([&order]()
+						{ order = 3; });
 	CHECK(deque.sizeHint() == 3);
 
 	multi::details::Task task;
@@ -57,9 +60,12 @@ TEST_CASE("WorkStealDeque: push and steal (FIFO)")
 	multi::details::WorkStealDeque deque;
 	int order = 0;
 
-	deque.tryPushRemote([&order]() { order = 1; });
-	deque.tryPushRemote([&order]() { order = 2; });
-	deque.tryPushRemote([&order]() { order = 3; });
+	deque.tryPushRemote([&order]()
+						{ order = 1; });
+	deque.tryPushRemote([&order]()
+						{ order = 2; });
+	deque.tryPushRemote([&order]()
+						{ order = 3; });
 
 	multi::details::Task task;
 
@@ -92,7 +98,7 @@ TEST_CASE("WorkStealDeque: mixed pop and steal")
 
 	// Steal takes from front, pop takes from back
 	REQUIRE(deque.steal(&task)); // removes front
-	REQUIRE(deque.pop(&task));   // removes back
+	REQUIRE(deque.pop(&task));	 // removes back
 	CHECK(deque.sizeHint() == 1);
 
 	REQUIRE(deque.pop(&task));
@@ -156,7 +162,8 @@ TEST_CASE("WorkStealDeque: concurrent pop and steal stress", "[stress]")
 	std::atomic<int> counter(0);
 
 	for (int i = 0; i < numTasks; ++i)
-		deque.tryPushRemote([&counter]() { counter++; });
+		deque.tryPushRemote([&counter]()
+							{ counter++; });
 
 	// Owner pops from back
 	std::atomic<int> totalDone(0);
@@ -204,12 +211,13 @@ TEST_CASE("WorkStealDeque: tryPushLocal cascade preserves Task contents")
 {
 	multi::details::WorkStealDeque deque;
 
-	constexpr std::size_t N = 1000;  // > LOCAL_CAP=256, forces cascade to overflow
+	constexpr std::size_t N = 1000; // > LOCAL_CAP=256, forces cascade to overflow
 	std::atomic<int> counter(0);
 
 	for (std::size_t i = 0; i < N; ++i)
 	{
-		multi::details::Task t([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
+		multi::details::Task t([&counter]()
+							   { counter.fetch_add(1, std::memory_order_relaxed); });
 		REQUIRE(deque.tryPushLocal(std::move(t)));
 	}
 

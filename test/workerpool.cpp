@@ -20,11 +20,14 @@ TEST_CASE("WorkerPool: submit runs inline when not started")
 	REQUIRE(pool.threadCount() == 0);
 
 	int value = 0;
-	pool.submit([&value]() { value = 42; });
+	pool.submit([&value]()
+				{ value = 42; });
 	CHECK(value == 42);
 
-	pool.submit([&value]() { value += 1; });
-	pool.submit([&value]() { value += 2; });
+	pool.submit([&value]()
+				{ value += 1; });
+	pool.submit([&value]()
+				{ value += 2; });
 	CHECK(value == 45);
 }
 
@@ -36,11 +39,14 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 	REQUIRE(!pool.isActive());
 
 	int value = 0;
-	pool.submit([&value]() { value = 42; });
+	pool.submit([&value]()
+				{ value = 42; });
 	CHECK(value == 42);
 
-	pool.submit([&value]() { value += 1; });
-	pool.submit([&value]() { value += 2; });
+	pool.submit([&value]()
+				{ value += 1; });
+	pool.submit([&value]()
+				{ value += 2; });
 	CHECK(value == 45);
 }
 
@@ -82,12 +88,11 @@ TEST_CASE("WorkerPool: submitBatch distributes work")
 	auto done = std::make_shared<std::promise<void>>();
 	auto doneHandle = done->get_future();
 
-	pool.submitBatch(numTasks, [&counter, numTasks, done](size_t) {
-		return multi::details::Task([&counter, numTasks, done]() {
+	pool.submitBatch(numTasks, [&counter, numTasks, done](size_t)
+					 { return multi::details::Task([&counter, numTasks, done]()
+												   {
 			if (++counter == numTasks)
-				done->set_value();
-		});
-	});
+				done->set_value(); }); });
 
 	doneHandle.wait();
 	CHECK(counter == numTasks);
@@ -99,7 +104,8 @@ TEST_CASE("WorkerPool: empty batch is a no-op")
 	multi::details::WorkerPool pool;
 	pool.start(2);
 
-	pool.submitBatch(0, [](size_t) { return multi::details::Task{}; });
+	pool.submitBatch(0, [](size_t)
+					 { return multi::details::Task{}; });
 
 	pool.stop();
 }
@@ -141,9 +147,9 @@ TEST_CASE("WorkerPool: tryStealAny lets caller participate")
 	const int numTasks = 50;
 	std::atomic<int> counter(0);
 
-	pool.submitBatch(numTasks, [&counter](size_t) {
-		return multi::details::Task([&counter]() { counter++; });
-	});
+	pool.submitBatch(numTasks, [&counter](size_t)
+					 { return multi::details::Task([&counter]()
+												   { counter++; }); });
 
 	multi::details::Task stolen;
 	while (pool.tryStealAny(&stolen))
@@ -174,12 +180,11 @@ TEST_CASE("WorkerPool: high contention batch")
 
 	for (int b = 0; b < numBatches; ++b)
 	{
-		pool.submitBatch(batchSize, [&counter, totalTasks, allDone](size_t) {
-			return multi::details::Task([&counter, totalTasks, allDone]() {
+		pool.submitBatch(batchSize, [&counter, totalTasks, allDone](size_t)
+						 { return multi::details::Task([&counter, totalTasks, allDone]()
+													   {
 				if (++counter == totalTasks)
-					allDone->set_value();
-			});
-		});
+					allDone->set_value(); }); });
 	}
 
 	allDoneHandle.wait();
@@ -204,10 +209,10 @@ TEST_CASE("WorkerPool: failed start rolls back created workers")
 {
 	multi::details::WorkerPool pool;
 	size_t created = 0;
-	CHECK_FALSE(pool.start(4, [&](size_t) {
+	CHECK_FALSE(pool.start(4, [&](size_t)
+						   {
 		if (created++ >= 1)
-			throw std::runtime_error("test-injected thread creation failure");
-	}));
+			throw std::runtime_error("test-injected thread creation failure"); }));
 	CHECK(pool.threadCount() == 0);
 	CHECK_FALSE(pool.isActive());
 
@@ -224,7 +229,8 @@ TEST_CASE("WorkerPool: destructor stops threads on forgotten stop")
 	{
 		multi::details::WorkerPool pool;
 		pool.start(2);
-		pool.submit([&counter]() { counter++; });
+		pool.submit([&counter]()
+					{ counter++; });
 		// Intentionally no stop() — destructor must join threads defensively.
 	}
 	// If the dtor didn't join, this process would leak threads or crash.
@@ -243,9 +249,9 @@ TEST_CASE("WorkerPool: stop drains pending tasks")
 	std::atomic<int> counter(0);
 	const int numTasks = 2000;
 
-	pool.submitBatch(numTasks, [&counter](size_t) {
-		return multi::details::Task([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
-	});
+	pool.submitBatch(numTasks, [&counter](size_t)
+					 { return multi::details::Task([&counter]()
+												   { counter.fetch_add(1, std::memory_order_relaxed); }); });
 
 	pool.stop();
 
@@ -283,9 +289,9 @@ TEST_CASE("WorkerPool: submit and stop race without lost tasks", "[stress]")
 		{
 			while (shouldRun.load(std::memory_order_relaxed))
 			{
-				pool.submitBatch(8, [&totalRun](size_t) {
-					return multi::details::Task([&totalRun]() { totalRun.fetch_add(1, std::memory_order_relaxed); });
-				});
+				pool.submitBatch(8, [&totalRun](size_t)
+								 { return multi::details::Task([&totalRun]()
+															   { totalRun.fetch_add(1, std::memory_order_relaxed); }); });
 				totalSubmitted.fetch_add(8, std::memory_order_relaxed);
 			}
 		};
@@ -321,9 +327,9 @@ TEST_CASE("WorkerPool: external steal and stop race without touching freed worke
 		std::atomic<int> totalRun(0);
 		std::atomic<bool> keepStealing(true);
 
-		pool.submitBatch(numTasks, [&totalRun](size_t) {
-			return multi::details::Task([&totalRun]() { totalRun.fetch_add(1, std::memory_order_relaxed); });
-		});
+		pool.submitBatch(numTasks, [&totalRun](size_t)
+						 { return multi::details::Task([&totalRun]()
+													   { totalRun.fetch_add(1, std::memory_order_relaxed); }); });
 
 		auto stealerMain = [&pool, &keepStealing]()
 		{
@@ -358,8 +364,8 @@ TEST_CASE("WorkerPool: external steal and stop race without touching freed worke
 // Windows path compiling, so skip the runtime verification there.
 // ---------------------------------------------------------------------------
 #if defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
-#include <pthread.h>
-#include <string>
+#	include <pthread.h>
+#	include <string>
 
 TEST_CASE("WorkerPool: worker thread name matches multi-N convention")
 {
@@ -372,12 +378,12 @@ TEST_CASE("WorkerPool: worker thread name matches multi-N convention")
 	auto done = std::make_shared<std::atomic<int>>(0);
 	for (std::size_t i = 0; i < 3; ++i)
 	{
-		pool.submit(multi::details::Task([&, i, done]() {
+		pool.submit(multi::details::Task([&, i, done]()
+										 {
 			char buf[32] = {0};
 			pthread_getname_np(pthread_self(), buf, sizeof(buf));
 			names[i] = buf;
-			done->fetch_add(1, std::memory_order_release);
-		}));
+			done->fetch_add(1, std::memory_order_release); }));
 	}
 
 	// Spin until all three tasks have run. Round-robin distribution lands

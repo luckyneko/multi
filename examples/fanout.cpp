@@ -22,9 +22,12 @@ int main()
 	// Heterogeneous fan-out: each lambda has its own return type. The
 	// tuple's element types are deduced from invoke_result of each.
 	auto group = multi::async(
-		[]() { return 7; },
-		[]() { return 3.14; },
-		[]() { return std::string("multi"); });
+		[]()
+		{ return 7; },
+		[]()
+		{ return 3.14; },
+		[]()
+		{ return std::string("multi"); });
 
 	// waitAll blocks until every handle completes, participating in
 	// work-stealing while we wait. Handles never block on their own — read
@@ -45,7 +48,8 @@ int main()
 	// participates in stealing), then read the value out with get(&out).
 	std::vector<multi::Handle<int>> squares;
 	for (int i = 0; i < 8; ++i)
-		squares.push_back(multi::async([i]() { return i * i; }));
+		squares.push_back(multi::async([i]()
+									   { return i * i; }));
 
 	long long total = 0;
 	for (auto& h : squares)
@@ -55,23 +59,26 @@ int main()
 		h.get(&sq);
 		total += sq;
 	}
-	const bool sumOk = (total == 0 + 1 + 4 + 9 + 16 + 25 + 36 + 49);  // = 140
+	const bool sumOk = (total == 0 + 1 + 4 + 9 + 16 + 25 + 36 + 49); // = 140
 	std::printf("sum of squares 0..7 = %lld (expected 140) -> %s\n",
-	            total, sumOk ? "ok" : "FAIL");
+				total, sumOk ? "ok" : "FAIL");
 
 	// waitAny: spawn three handles, two slow + one fast. Pre-complete the
 	// fast one with Handle::wait() — a plain, NON-stealing block — so we get a
 	// deterministic index. (waitAll here would participate in stealing and
 	// could pull the slow siblings onto this thread and run them first.)
-	auto slowA = multi::async([]() { std::this_thread::sleep_for(std::chrono::milliseconds(50)); return 'a'; });
-	auto slowB = multi::async([]() { std::this_thread::sleep_for(std::chrono::milliseconds(80)); return 'b'; });
-	auto fast  = multi::async([]() { return 'F'; });
+	auto slowA = multi::async([]()
+							  { std::this_thread::sleep_for(std::chrono::milliseconds(50)); return 'a'; });
+	auto slowB = multi::async([]()
+							  { std::this_thread::sleep_for(std::chrono::milliseconds(80)); return 'b'; });
+	auto fast = multi::async([]()
+							 { return 'F'; });
 	fast.wait();
 	const std::size_t firstDone = multi::waitAny(slowA, slowB, fast);
 	std::printf("waitAny first-complete index = %zu (expected 2)\n", firstDone);
 	const bool waitAnyOk = (firstDone == 2);
 
-	multi::waitAll(slowA, slowB);  // tidy up slow siblings
+	multi::waitAll(slowA, slowB); // tidy up slow siblings
 
 	multi::stop();
 	return (tupleOk && sumOk && waitAnyOk) ? 0 : 1;

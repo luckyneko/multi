@@ -28,8 +28,10 @@ namespace
 
 		const std::size_t mid = lo + (hi - lo) / 2;
 		auto children = multi::async(
-			[&]() { return parallelSum(v, lo, mid); },
-			[&]() { return parallelSum(v, mid, hi); });
+			[&]()
+			{ return parallelSum(v, lo, mid); },
+			[&]()
+			{ return parallelSum(v, mid, hi); });
 		multi::waitAll(children);
 
 		auto& [hL, hR] = children;
@@ -46,13 +48,13 @@ int main()
 	multi::start();
 
 	std::vector<long long> v(100000);
-	std::iota(v.begin(), v.end(), 1LL);  // 1..100000
+	std::iota(v.begin(), v.end(), 1LL); // 1..100000
 
 	const long long sum = parallelSum(v, 0, v.size());
-	const long long expected = 100000LL * 100001LL / 2LL;  // 5,000,050,000
+	const long long expected = 100000LL * 100001LL / 2LL; // 5,000,050,000
 	const bool ok = (sum == expected);
 	std::printf("nested divide-and-conquer sum 1..100000 = %lld (expected %lld) -> %s\n",
-	            sum, expected, ok ? "ok" : "FAIL");
+				sum, expected, ok ? "ok" : "FAIL");
 
 	multi::stop();
 	return ok ? 0 : 1;

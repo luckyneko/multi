@@ -31,8 +31,8 @@ namespace multi::details
 		// embedded vptr — so the SBO budget isn't spent on type info.
 		struct Vtable
 		{
-			void (*invoke)(void* buf);			   // call the functor
-			void (*destroy)(void* buf);			   // destroy (and free, if heap) the functor
+			void (*invoke)(void* buf);			  // call the functor
+			void (*destroy)(void* buf);			  // destroy (and free, if heap) the functor
 			void (*moveTo)(void* src, void* dst); // relocate functor src -> dst; src buffer left dead
 		};
 
@@ -82,8 +82,8 @@ namespace multi::details
 		// allocate (where relocation is just a noexcept pointer copy).
 		template <class F>
 		static constexpr bool fitsSbo = sizeof(F) <= SBO_SIZE &&
-										 alignof(F) <= SBO_ALIGN &&
-										 std::is_nothrow_move_constructible_v<F>;
+										alignof(F) <= SBO_ALIGN &&
+										std::is_nothrow_move_constructible_v<F>;
 
 	public:
 		Task() = default;

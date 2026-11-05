@@ -15,4 +15,4 @@ namespace multi
 		static Context g_context;
 		return g_context;
 	}
-}
+} // namespace multi

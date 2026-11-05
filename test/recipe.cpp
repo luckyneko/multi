@@ -5,8 +5,8 @@
  *  (See accompanying file LICENSE.md)
  */
 
-#include <catch2/catch_all.hpp>
 #include <atomic>
+#include <catch2/catch_all.hpp>
 #include <multi/multi.h>
 #include <multi/recipe.h>
 #include <stdexcept>
@@ -188,16 +188,13 @@ TEST_CASE("Recipe: handle reports run progress")
 
 	multi::Recipe recipe;
 	auto first = recipe.step([&]()
-	{
+							 {
 		entered.store(true, std::memory_order_release);
 		while (!release.load(std::memory_order_acquire))
 			std::this_thread::yield();
-		ran.fetch_add(1, std::memory_order_relaxed);
-	});
+		ran.fetch_add(1, std::memory_order_relaxed); });
 	auto second = recipe.step([&]()
-	{
-		ran.fetch_add(1, std::memory_order_relaxed);
-	});
+							  { ran.fetch_add(1, std::memory_order_relaxed); });
 	REQUIRE(recipe.order(first >> second) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
@@ -228,13 +225,9 @@ TEST_CASE("Recipe: handle rethrows failed step and counts skipped successors")
 	std::atomic<int> dependentRan{0};
 	multi::Recipe recipe;
 	auto failing = recipe.step([]()
-	{
-		throw std::runtime_error("recipe step failed");
-	});
+							   { throw std::runtime_error("recipe step failed"); });
 	auto dependent = recipe.step([&]()
-	{
-		dependentRan.store(1, std::memory_order_release);
-	});
+								 { dependentRan.store(1, std::memory_order_release); });
 	REQUIRE(recipe.order(failing >> dependent) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
@@ -259,22 +252,19 @@ TEST_CASE("Recipe: async follows a linear chain")
 	std::atomic<int> errors{0};
 	multi::Recipe recipe;
 	auto a = recipe.step([&]()
-	{
+						 {
 		if (phase.exchange(1, std::memory_order_acq_rel) != 0)
-			errors.fetch_add(1, std::memory_order_relaxed);
-	});
+			errors.fetch_add(1, std::memory_order_relaxed); });
 	auto b = recipe.step([&]()
-	{
+						 {
 		if (phase.load(std::memory_order_acquire) != 1)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		phase.store(2, std::memory_order_release);
-	});
+		phase.store(2, std::memory_order_release); });
 	auto c = recipe.step([&]()
-	{
+						 {
 		if (phase.load(std::memory_order_acquire) != 2)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		phase.store(3, std::memory_order_release);
-	});
+		phase.store(3, std::memory_order_release); });
 	REQUIRE(recipe.order(a >> b) == multi::RecipeResult::Ok);
 	REQUIRE(recipe.order(b >> c) == multi::RecipeResult::Ok);
 
@@ -298,26 +288,21 @@ TEST_CASE("Recipe: async handles fan-out and fan-in")
 	std::atomic<int> errors{0};
 	multi::Recipe recipe;
 	auto source = recipe.step([&]()
-	{
-		sourceDone.store(1, std::memory_order_release);
-	});
+							  { sourceDone.store(1, std::memory_order_release); });
 	auto left = recipe.step([&]()
-	{
+							{
 		if (sourceDone.load(std::memory_order_acquire) != 1)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		branchBits.fetch_or(1, std::memory_order_acq_rel);
-	});
+		branchBits.fetch_or(1, std::memory_order_acq_rel); });
 	auto right = recipe.step([&]()
-	{
+							 {
 		if (sourceDone.load(std::memory_order_acquire) != 1)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		branchBits.fetch_or(2, std::memory_order_acq_rel);
-	});
+		branchBits.fetch_or(2, std::memory_order_acq_rel); });
 	auto join = recipe.step([&]()
-	{
+							{
 		if (branchBits.load(std::memory_order_acquire) != 3)
-			errors.fetch_add(1, std::memory_order_relaxed);
-	});
+			errors.fetch_add(1, std::memory_order_relaxed); });
 	REQUIRE(recipe.order(source >> left) == multi::RecipeResult::Ok);
 	REQUIRE(recipe.order(source >> right) == multi::RecipeResult::Ok);
 	REQUIRE(recipe.order(left >> join) == multi::RecipeResult::Ok);
@@ -338,8 +323,10 @@ TEST_CASE("Recipe: async consumes the recipe")
 
 	std::atomic<int> count{0};
 	multi::Recipe recipe;
-	auto first = recipe.step([&]() { count.fetch_add(1, std::memory_order_relaxed); });
-	auto second = recipe.step([&]() { count.fetch_add(10, std::memory_order_relaxed); });
+	auto first = recipe.step([&]()
+							 { count.fetch_add(1, std::memory_order_relaxed); });
+	auto second = recipe.step([&]()
+							  { count.fetch_add(10, std::memory_order_relaxed); });
 	REQUIRE(recipe.order(first >> second) == multi::RecipeResult::Ok);
 
 	auto h = context.async(std::move(recipe));
@@ -359,15 +346,15 @@ TEST_CASE("Recipe: async launches independent recipes concurrently")
 	std::atomic<bool> release{false};
 	multi::Recipe slow;
 	slow.step([&]()
-	{
+			  {
 		entered.store(true, std::memory_order_release);
 		while (!release.load(std::memory_order_acquire))
-			std::this_thread::yield();
-	});
+			std::this_thread::yield(); });
 
 	std::atomic<int> fastRan{0};
 	multi::Recipe fast;
-	fast.step([&]() { fastRan.store(1, std::memory_order_release); });
+	fast.step([&]()
+			  { fastRan.store(1, std::memory_order_release); });
 
 	auto slowHandle = context.async(std::move(slow));
 	REQUIRE(slowHandle.valid());
@@ -394,7 +381,8 @@ TEST_CASE("Recipe: async job survives recipe destruction")
 	auto h = [&]()
 	{
 		multi::Recipe recipe;
-		recipe.step([&]() { ran.store(1, std::memory_order_release); });
+		recipe.step([&]()
+					{ ran.store(1, std::memory_order_release); });
 		return context.async(std::move(recipe));
 	}();
 
@@ -411,7 +399,8 @@ TEST_CASE("Recipe: global async uses the global context")
 
 	std::atomic<int> ran{0};
 	multi::Recipe recipe;
-	recipe.step([&]() { ran.store(1, std::memory_order_release); });
+	recipe.step([&]()
+				{ ran.store(1, std::memory_order_release); });
 
 	auto h = multi::async(std::move(recipe));
 	REQUIRE(h.valid());

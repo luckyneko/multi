@@ -47,7 +47,8 @@ namespace
 		{
 			m_threads.reserve(static_cast<size_t>(numDrivers));
 			for (int d = 0; d < numDrivers; ++d)
-				m_threads.emplace_back([this, d]() { loop(d); });
+				m_threads.emplace_back([this, d]()
+									   { loop(d); });
 		}
 
 		~DriverPool()
@@ -76,7 +77,8 @@ namespace
 			m_cvGo.notify_all();
 
 			std::unique_lock<std::mutex> lk(m_mx);
-			m_cvDone.wait(lk, [this]() { return m_pending == 0; });
+			m_cvDone.wait(lk, [this]()
+						  { return m_pending == 0; });
 		}
 
 	private:
@@ -86,7 +88,8 @@ namespace
 			for (;;)
 			{
 				std::unique_lock<std::mutex> lk(m_mx);
-				m_cvGo.wait(lk, [this, &seen]() { return m_generation != seen; });
+				m_cvGo.wait(lk, [this, &seen]()
+							{ return m_generation != seen; });
 				seen = m_generation;
 				if (m_stop)
 					return;
@@ -122,9 +125,7 @@ TEST_CASE("steal_contention", "[bench][fast]")
 			for (int c = 0; c < callsPerDriver; ++c)
 			{
 				multi::range(chunksPerCall, 0, itemsPerCall, 1, [&sink](int)
-				{
-					sink.fetch_add(1, std::memory_order_relaxed);
-				});
+							 { sink.fetch_add(1, std::memory_order_relaxed); });
 			}
 		};
 	};
@@ -136,9 +137,7 @@ TEST_CASE("steal_contention", "[bench][fast]")
 			for (int c = 0; c < callsPerDriver; ++c)
 			{
 				multi::waitAll(multi::async([&sink]()
-				{
-					sink.fetch_add(1, std::memory_order_relaxed);
-				}));
+											{ sink.fetch_add(1, std::memory_order_relaxed); }));
 			}
 		};
 	};
@@ -146,21 +145,37 @@ TEST_CASE("steal_contention", "[bench][fast]")
 	SECTION("4 drivers x range")
 	{
 		DriverPool pool(4, rangeWork(200, 32, 1000));
-		BENCHMARK("multi(range)") { pool.runRound(); return sink.load(); };
+		BENCHMARK("multi(range)")
+		{
+			pool.runRound();
+			return sink.load();
+		};
 	}
 	SECTION("8 drivers x range")
 	{
 		DriverPool pool(8, rangeWork(200, 32, 1000));
-		BENCHMARK("multi(range)") { pool.runRound(); return sink.load(); };
+		BENCHMARK("multi(range)")
+		{
+			pool.runRound();
+			return sink.load();
+		};
 	}
 	SECTION("4 drivers x async.wait")
 	{
 		DriverPool pool(4, asyncWork(500));
-		BENCHMARK("multi(async)") { pool.runRound(); return sink.load(); };
+		BENCHMARK("multi(async)")
+		{
+			pool.runRound();
+			return sink.load();
+		};
 	}
 	SECTION("8 drivers x async.wait")
 	{
 		DriverPool pool(8, asyncWork(500));
-		BENCHMARK("multi(async)") { pool.runRound(); return sink.load(); };
+		BENCHMARK("multi(async)")
+		{
+			pool.runRound();
+			return sink.load();
+		};
 	}
 }

@@ -31,26 +31,21 @@ int main()
 
 	multi::Recipe recipe;
 	auto load = recipe.step([&]()
-	{
-		loaded.store(1, std::memory_order_release);
-	});
+							{ loaded.store(1, std::memory_order_release); });
 	auto left = recipe.step([&]()
-	{
+							{
 		if (loaded.load(std::memory_order_acquire) != 1)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		branches.fetch_or(1, std::memory_order_acq_rel);
-	});
+		branches.fetch_or(1, std::memory_order_acq_rel); });
 	auto right = recipe.step([&]()
-	{
+							 {
 		if (loaded.load(std::memory_order_acquire) != 1)
 			errors.fetch_add(1, std::memory_order_relaxed);
-		branches.fetch_or(2, std::memory_order_acq_rel);
-	});
+		branches.fetch_or(2, std::memory_order_acq_rel); });
 	auto join = recipe.step([&]()
-	{
+							{
 		if (branches.load(std::memory_order_acquire) != 3)
-			errors.fetch_add(1, std::memory_order_relaxed);
-	});
+			errors.fetch_add(1, std::memory_order_relaxed); });
 
 	const bool orderOk =
 		recipe.order(load >> left) == multi::RecipeResult::Ok &&
@@ -69,20 +64,16 @@ int main()
 		handle.progress() == 1.0f &&
 		handle.get();
 	std::printf("recipe fan-out/fan-in: %zu/%zu finished -> %s\n",
-	            handle.finishedCount(), handle.stepCount(), recipeOk ? "ok" : "FAIL");
+				handle.finishedCount(), handle.stepCount(), recipeOk ? "ok" : "FAIL");
 
 	// User exceptions are observed through RecipeHandle::get(). Dependents of
 	// the failed step are skipped, while the run still reaches 100% progress.
 	std::atomic<int> dependentRan{0};
 	multi::Recipe failing;
 	auto fail = failing.step([]()
-	{
-		throw std::runtime_error("example failure");
-	});
+							 { throw std::runtime_error("example failure"); });
 	auto dependent = failing.step([&]()
-	{
-		dependentRan.store(1, std::memory_order_release);
-	});
+								  { dependentRan.store(1, std::memory_order_release); });
 
 	const bool failOrderOk = failing.order(fail >> dependent) == multi::RecipeResult::Ok;
 	auto failingHandle = multi::async(std::move(failing));
@@ -105,7 +96,7 @@ int main()
 		failingHandle.finishedCount() == failingHandle.stepCount() &&
 		failingHandle.progress() == 1.0f;
 	std::printf("recipe failure skips dependent: %s\n",
-	            failureOk ? "ok" : "FAIL");
+				failureOk ? "ok" : "FAIL");
 
 	multi::stop();
 	return (recipeOk && failureOk) ? 0 : 1;
