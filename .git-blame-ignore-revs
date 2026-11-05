@@ -1,0 +1,6 @@
+# Revisions to skip in `git blame` — bulk mechanical reformats, not authored changes.
+# Enable locally with:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub and GitLab honor this file automatically.)
+
+# style: clang-format the tree
+d80467ef9e900d5da5fcf206175aca8a78fb4a2d

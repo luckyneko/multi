@@ -7,6 +7,37 @@ on:
     branches: [master, develop]
 
 jobs:
+  # Its own job, not a step inside a build leg: formatting feedback should still arrive while a
+  # build leg is red. The binary is the repo's PINNED clang-format 20 (cmake/addclangformat.cmake),
+  # which exists precisely so CI and every developer machine format identically.
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache fetched tools
+        uses: actions/cache@v4
+        with:
+          path: .cache/fetch
+          key: ${{ runner.os }}-format-${{ hashFiles('.clang-format', '.clang-format-include', 'cmake/addclangformat.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-format-
+
+      - name: Configure formatter
+        run: >
+          cmake -S . -B build-format
+          -DMULTI_FORMAT=ON
+          -DMULTI_BUILD_TESTING=OFF
+          -DMULTI_BUILD_BENCHMARK=OFF
+          -DMULTI_BUILD_EXAMPLES=OFF
+          -DMULTI_INSTALL=OFF
+
+      - name: Check formatting
+        run: cmake --build build-format --target format-check
+
   linux:
     name: linux ${{ matrix.compiler.name }} ${{ matrix.build_type }}
     runs-on: ubuntu-latest
