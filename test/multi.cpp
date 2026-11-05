@@ -237,6 +237,33 @@ TEST_CASE("multi: range over integers")
 	multi::stop();
 }
 
+TEST_CASE("multi: range over unsigned indices")
+{
+	multi::start(2);
+
+	const std::size_t count = 10;
+
+	std::atomic<std::size_t> sum(0);
+	multi::range(std::size_t{0}, count, [&](std::size_t i)
+				 { sum += i; });
+	CHECK(sum == 45);
+
+	// A const callable through both policies: every index once, and in order for Serial.
+	std::atomic<std::size_t> perItem(0);
+	const auto add = [&](std::size_t i)
+	{ perItem += i; };
+	multi::range(multi::PerItem, std::size_t{0}, count, std::size_t{1}, add);
+	CHECK(perItem == 45);
+
+	std::vector<std::size_t> seen;
+	const auto record = [&](std::size_t i)
+	{ seen.push_back(i); };
+	multi::range(multi::Serial, std::size_t{0}, count, std::size_t{1}, record);
+	CHECK(seen == std::vector<std::size_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+	multi::stop();
+}
+
 TEST_CASE("multi: ChunkPolicy resolves the four policies")
 {
 	using multi::ChunkPolicy;

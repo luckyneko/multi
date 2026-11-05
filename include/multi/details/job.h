@@ -267,7 +267,7 @@ namespace multi::details
 	template <class IDX, class FUNC>
 	class RangeJob : public Job
 	{
-		static_assert(std::is_signed_v<IDX>, "multi::range: IDX must be a signed type; unsigned subtraction silently underflows");
+		static_assert(std::is_arithmetic_v<IDX> && !std::is_same_v<IDX, bool>, "multi::range: IDX must be an arithmetic type other than bool");
 
 	public:
 		RangeJob(ChunkPolicy chunkPolicy, std::size_t workers, IDX begin, IDX end, IDX step, FUNC& func) noexcept

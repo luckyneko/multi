@@ -10,6 +10,8 @@
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <list>
 #include <map>
@@ -470,6 +472,100 @@ TEST_CASE("Context: range near the top of a signed type stays in bounds")
 }
 
 // ---------------------------------------------------------------------------
+// Unsigned indices. The narrow types are the interesting ones: they promote
+// through the index arithmetic, and their top is reachable in a test.
+// ---------------------------------------------------------------------------
+
+TEMPLATE_TEST_CASE("Context: range unsigned", "", std::uint8_t, std::uint16_t, unsigned, std::size_t)
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	for (TestType begin = 0; begin < static_cast<TestType>(DATA_SET_MAX_SIZE); ++begin)
+	{
+		for (TestType end = 0; end < static_cast<TestType>(DATA_SET_MAX_SIZE); ++end)
+		{
+			for (TestType step = 1; step < static_cast<TestType>(DATA_SET_MAX_SIZE); ++step)
+			{
+				std::atomic<int> a(0);
+				context.range(begin, end, step, [&](TestType /*i*/) { a += 1; });
+
+				const int totalRange = std::max(0, static_cast<int>(end) - static_cast<int>(begin));
+				const int s = static_cast<int>(step);
+				const int expected = (totalRange / s) + ((totalRange % s > 0) ? 1 : 0);
+				CHECK(a == expected);
+			}
+		}
+	}
+
+	context.stop();
+}
+
+TEMPLATE_TEST_CASE("Context: range unsigned with a ChunkPolicy", "", std::uint8_t, std::uint16_t, unsigned, std::size_t)
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	auto policy = GENERATE(multi::ChunkPolicy(0), multi::ChunkPolicy(1), multi::ChunkPolicy(2), multi::ChunkPolicy(4),
+						   multi::Auto, multi::PerItem, multi::Serial);
+	multi::Context context;
+	context.start(threadCount);
+
+	for (TestType begin = 0; begin < static_cast<TestType>(DATA_SET_MAX_SIZE); ++begin)
+	{
+		for (TestType end = 0; end < static_cast<TestType>(DATA_SET_MAX_SIZE); ++end)
+		{
+			for (TestType step = 1; step < static_cast<TestType>(DATA_SET_MAX_SIZE); ++step)
+			{
+				std::atomic<int> a(0);
+				context.range(policy, begin, end, step, [&](TestType /*i*/) { a += 1; });
+
+				const int totalRange = std::max(0, static_cast<int>(end) - static_cast<int>(begin));
+				const int s = static_cast<int>(step);
+				const int expected = (totalRange / s) + ((totalRange % s > 0) ? 1 : 0);
+				CHECK(a == expected);
+			}
+		}
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: range stays in bounds at the top of an unsigned type")
+{
+	// One chunk over the lot is where stepping by addition would wrap: the index
+	// after the last one does not fit, and a wrapped end visits nothing at all.
+	auto policy = GENERATE(multi::ChunkPolicy(1), multi::ChunkPolicy(2), multi::Auto, multi::PerItem, multi::Serial);
+	multi::Context context;
+	context.start(2);
+
+	const auto visited = [&](auto begin, auto end, auto step)
+	{
+		using IDX = decltype(begin);
+		std::mutex mutex;
+		std::vector<IDX> seen;
+		context.range(policy, begin, end, step, [&](IDX i)
+					  {
+			const std::lock_guard<std::mutex> lock(mutex);
+			seen.push_back(i); });
+		std::sort(seen.begin(), seen.end());
+		return seen;
+	};
+
+	using U8 = std::uint8_t;
+	CHECK(visited(U8{250}, U8{255}, U8{3}) == std::vector<U8>{250, 253});
+	CHECK(visited(U8{0}, U8{255}, U8{254}) == std::vector<U8>{0, 254});
+	CHECK(visited(U8{250}, U8{255}, U8{200}) == std::vector<U8>{250});
+	CHECK(visited(U8{0}, U8{255}, U8{1}).size() == 255);
+
+	// span + step - 1 wraps on the first of these; a round-up written that way counts 0.
+	const std::size_t top = std::numeric_limits<std::size_t>::max();
+	CHECK(visited(std::size_t{0}, top, top - 1) == std::vector<std::size_t>{0, top - 1});
+	CHECK(visited(top - 4, top, std::size_t{3}) == std::vector<std::size_t>{top - 4, top - 1});
+
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
 // multi::Serial — every item in order, on the calling thread. These run on a
 // started pool, where order is a claim and not a given. The recordings are
 // plain vectors on purpose: a stray worker would race on them, and TSAN reports
@@ -657,6 +753,11 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 	context.range(std::size_t(4), 5, 3, 1, [&](int) { calls++; });
 	context.range(multi::Serial, 5, 5, 1, [&](int) { calls++; });
 	context.range(multi::Serial, 5, 3, 1, [&](int) { calls++; });
+	// Unsigned: end < begin must be empty, not a span that underflowed to huge.
+	context.range(5u, 3u, [&](unsigned) { calls++; });
+	context.range(std::size_t(4), 5u, 3u, 1u, [&](unsigned) { calls++; });
+	context.range(std::size_t{5}, std::size_t{0}, [&](std::size_t) { calls++; });
+	context.range(0u, 10u, 0u, [&](unsigned) { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();

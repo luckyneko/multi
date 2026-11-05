@@ -240,6 +240,13 @@ void function()
         out += idx;
     });
 
+    // Any arithmetic index type, so a container's size needs no cast. All the
+    // arguments share one type: range(0, items.size(), ...) does not compile.
+    multi::range(std::size_t{0}, items.size(), [&](std::size_t idx)
+    {
+        items[idx].setValue();
+    });
+
     // Chunked: the leading multi::ChunkPolicy picks how many tasks (exact count,
     // multi::Auto, multi::PerItem, or multi::Serial).
     multi::range(32, 0, 100, 2, [&](int idx)

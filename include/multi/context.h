@@ -92,7 +92,7 @@ namespace multi
 		void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
 		/// Launch one task per index in [begin, end), stepping by 1.
-		/// @tparam IDX Signed arithmetic type.
+		/// @tparam IDX Arithmetic type other than bool: signed, unsigned or floating-point.
 		/// @tparam FUNC Callable as void(IDX).
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, FUNC&& func);
