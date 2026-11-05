@@ -97,7 +97,7 @@ namespace multi
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, FUNC&& func);
 
-		/// Step overload.
+		/// Step overload. A non-positive @p step dispatches nothing.
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 

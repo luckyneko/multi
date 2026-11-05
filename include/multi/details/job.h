@@ -281,12 +281,13 @@ namespace multi::details
 											 ? i * (m_base + 1)
 											 : m_extra * (m_base + 1) + (i - m_extra) * m_base;
 			const std::size_t len = (i < m_extra) ? m_base + 1 : m_base;
-			const IDX innerBegin = m_begin + static_cast<IDX>(startIdx) * m_step;
-			const IDX innerEnd = innerBegin + static_cast<IDX>(len) * m_step;
+			// Counted, not compared against a computed end: nothing steps past
+			// the last index at the top of IDX, a float chunk cannot drift to a
+			// different count, and an index's value is the same under any policy.
 			runOne([&]()
 				   {
-				for (IDX j = innerBegin; j < innerEnd; j += m_step)
-					(*m_func)(j); });
+				for (std::size_t k = startIdx; k < startIdx + len; ++k)
+					(*m_func)(static_cast<IDX>(m_begin + static_cast<IDX>(k) * m_step)); });
 		}
 
 	private:
@@ -300,11 +301,14 @@ namespace multi::details
 
 		static std::size_t computeTotal(IDX begin, IDX end, IDX step) noexcept
 		{
-			if (step == 0 || end <= begin)
+			if (!(step > 0) || end <= begin)
 				return 0;
 			if constexpr (std::is_integral_v<IDX>)
 			{
-				return static_cast<std::size_t>((end - begin + step - 1) / step);
+				// Round up without `span + step - 1`, which wraps near the top of
+				// an unsigned type. auto: narrow types promote rather than truncate.
+				const auto span = end - begin;
+				return static_cast<std::size_t>(span / step) + (span % step != 0 ? std::size_t(1) : std::size_t(0));
 			}
 			else
 			{

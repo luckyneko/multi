@@ -6,11 +6,14 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <limits>
 #include <map>
 #include <multi/context.h>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -400,6 +403,70 @@ TEST_CASE("Context: range step-less overload defaults step to 1")
 	context.stop();
 }
 
+TEST_CASE("Context: range over one float chunk visits exactly its count")
+{
+	// One chunk is where stepping by addition drifts furthest from the
+	// multiplied bound: 0 to 24*0.1f by 0.1f is 25 indices, not 26.
+	multi::Context context;
+	context.start(2);
+
+	const float step = 0.1f;
+	for (int n = 1; n < 256; ++n)
+	{
+		const float end = static_cast<float>(n) * step;
+
+		int expected = 0;
+		for (float i = 0.f; i < end; i += step)
+			++expected;
+
+		int visited = 0;
+		context.range(std::size_t(1), 0.f, end, step, [&](float /*i*/) { ++visited; });
+		CHECK(visited == expected);
+	}
+
+	context.stop();
+}
+
+TEST_CASE("Context: chunked float range hands out the same values as per-item")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	const auto valuesOf = [&](multi::ChunkPolicy policy)
+	{
+		std::mutex mutex;
+		std::vector<float> values;
+		context.range(policy, 0.f, 25.6f, 0.1f, [&](float v)
+					  {
+			const std::lock_guard<std::mutex> lock(mutex);
+			values.push_back(v); });
+		std::sort(values.begin(), values.end());
+		return values;
+	};
+
+	const std::vector<float> perItem = valuesOf(multi::PerItem);
+	CHECK(valuesOf(1) == perItem);
+	CHECK(valuesOf(7) == perItem);
+	CHECK(valuesOf(multi::Auto) == perItem);
+
+	context.stop();
+}
+
+TEST_CASE("Context: range near the top of a signed type stays in bounds")
+{
+	// Stepping past the last index would overflow here, which is undefined.
+	multi::Context context;
+	context.start(2);
+
+	const int top = std::numeric_limits<int>::max();
+	std::vector<int> seen;
+	context.range(std::size_t(1), top - 5, top, 3, [&](int i) { seen.push_back(i); });
+	CHECK(seen == std::vector<int>{top - 5, top - 2});
+
+	context.stop();
+}
+
 // ---------------------------------------------------------------------------
 // Edge cases — empty inputs and degenerate parameters must be no-ops, not
 // crashes. These exercise the count==0 fast paths inside each Job subclass.
@@ -442,6 +509,22 @@ TEST_CASE("Context: range with begin >= end is a no-op")
 	context.range(5, 3, 1, [&](int) { calls++; });
 	context.range(std::size_t(4), 5, 5, 1, [&](int) { calls++; });
 	context.range(std::size_t(4), 5, 3, 1, [&](int) { calls++; });
+	CHECK(calls == 0);
+
+	context.stop();
+}
+
+TEST_CASE("Context: range with a non-positive step is a no-op")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> calls(0);
+	context.range(0, 10, 0, [&](int) { calls++; });
+	context.range(0, 10, -1, [&](int) { calls++; });
+	context.range(std::size_t(4), 0, 10, -1, [&](int) { calls++; });
+	context.range(0.f, 1.f, 0.f, [&](float) { calls++; });
+	context.range(0.f, 1.f, -0.5f, [&](float) { calls++; });
 	CHECK(calls == 0);
 
 	context.stop();
