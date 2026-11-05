@@ -27,6 +27,13 @@ option(MULTI_BUILD_BENCHMARK "Build Benchmark project" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
+option(MULTI_FORMAT "Provide clang-format format / format-check targets" ${NOT_SUBPROJECT})
+
+# clang-format `format` / `format-check` targets, over a vendored pinned binary. The
+# set of files is declared in .clang-format-include at the repo root.
+if(MULTI_FORMAT)
+    include(addclangformat)
+endif()
 
 # Find Required Packages
 find_package(Threads REQUIRED)

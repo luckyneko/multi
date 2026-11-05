@@ -1,5 +1,6 @@
-# Custom Format based on Visual-Studio style using clang-format v6.0.0
-# https://releases.llvm.org/6.0.0/tools/clang/docs/ClangFormatStyleOptions.html
+# Custom Format based on Visual-Studio style, checked with the clang-format pinned in
+# cmake/addclangformat.cmake.
+# Option reference: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 
 # Defaults
 BasedOnStyle: LLVM

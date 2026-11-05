@@ -15,6 +15,7 @@ CMake options (default ON when standalone, OFF when consumed via `add_subdirecto
 - `MULTI_BUILD_TESTING` — builds `test-multi`
 - `MULTI_BUILD_BENCHMARK` — builds `bench-multi` (off by default; opt in with `-DMULTI_BUILD_BENCHMARK=ON`)
 - `MULTI_INSTALL` — generates install/export rules
+- `MULTI_FORMAT` — provides the `format` / `format-check` targets, downloading the pinned clang-format at configure time
 
 Single Catch2 test name:
 
@@ -64,7 +65,7 @@ open build/docs/html/index.html   # macOS; use xdg-open on Linux
 
 ## Code style
 
-- C++17, Allman braces, **tabs** for indentation. The repo ships a [.clang-format](.clang-format); VS Code is configured to format on save.
+- C++17, Allman braces, **tabs** for indentation. The repo ships a [.clang-format](.clang-format); VS Code is configured to format on save. `cmake --build build --target format` rewrites the sources listed in [.clang-format-include](.clang-format-include) with the pinned clang-format, and `--target format-check` only reports what it would change.
 - Strict warnings: `-Werror -Wall -Wextra` (Clang/GCC), `/WX /W4` (MSVC). PRs that warn don't merge.
 - `#pragma once` for header guards (not `_MULTI_*_H_` — those are reserved identifiers per `[lex.name]`).
 - Public headers should not transitively pull in heavy STL headers if it can be avoided. The non-template implementation lives in `src/`.

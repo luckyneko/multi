@@ -1,0 +1,8 @@
+# Files the `format` / `format-check` targets cover — the single source of truth.
+# Each line is either a folder (globbed recursively for *.h / *.inl / *.cpp) or an
+# explicit glob (any line containing '*'). build/ is intentionally absent.
+include
+src
+test
+bench
+examples
