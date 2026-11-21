@@ -102,11 +102,14 @@ namespace multi
 		Context(const Context&) = delete;
 		~Context() = default;
 
-		/// Start worker threads. Calling start() on a running pool is undefined
-		/// — call stop() first. Passing 0 leaves the pool inactive, so every
+		/// Start worker threads. Passing 0 leaves the pool inactive, so every
 		/// dispatch primitive runs inline on the caller.
 		/// @param threadCount Worker count; -1 (default) uses
 		///        hardware_concurrency() - 1.
+		/// @return False if the pool is already running, which leaves it as it
+		///         is (call stop() first to resize it), or if a worker thread
+		///         could not be created, which stops the ones already started.
+		///         True otherwise, including for 0.
 		bool start(int threadCount = -1);
 
 		/// Stop all workers, draining in-flight tasks first. Blocks until every
