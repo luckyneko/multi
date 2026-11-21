@@ -21,6 +21,8 @@ add_subdirectory("path/to/multi")
 target_link_libraries(${PROJECT_NAME} multi)
 ```
 
+Added this way, multi leaves your `CMAKE_BUILD_TYPE` alone and skips its tests, benchmarks and examples (turn them on with `MULTI_BUILD_TESTING`, `MULTI_BUILD_BENCHMARK` and `MULTI_BUILD_EXAMPLES`). It builds with its usual warning levels, but a warning is not an error unless you set `-DMULTI_WARNINGS_AS_ERRORS=ON`. Built stand-alone, it treats warnings as errors and, on single-config generators, builds Release when no `CMAKE_BUILD_TYPE` is given.
+
 ## Tested Platforms
 
 Continuously built and tested on:
@@ -62,16 +64,18 @@ For deeper API coverage see [test/context.cpp](test/context.cpp).
 ``` C++
 #include <multi/multi.h>
 #include <atomic>
+#include <memory>
 
 int main()
 {
-    // Start the worker pool. Returns true on success, false if already active
-    // (programming error — asserted in debug builds). Defaults to
-    // hardware_concurrency()-1 workers; pass an explicit count to override.
+    // Start the worker pool. Returns true on success; false if the pool is
+    // already running (call stop() first to resize it) or a worker thread
+    // could not be created. Defaults to hardware_concurrency()-1 workers;
+    // pass an explicit count to override.
     multi::start();
 
     // Fire off a task. async returns a Handle<T> (T is deduced from the
-    // functor's return type — void here). The Handle itself never blocks;
+    // functor's return type — void here). Reading a Handle never blocks;
     // you wait on it through the multi::wait* functions.
     std::atomic<int> i(0);
     auto jobHdl = multi::async([&]() { ++i; });
@@ -86,11 +90,18 @@ int main()
 
     // Tasks that return a value: wait for completion, then read the result
     // out with get(&out). get() returns true once the task is complete (and
-    // rethrows if the task threw). It never blocks on its own.
+    // rethrows if the task threw), false if it isn't yet. It never blocks.
     auto answer = multi::async([]() { return 42; });   // Handle<int>
     multi::waitAll(answer);
     int result = 0;
     answer.get(&result);
+
+    // get(&out) copies the result. take(&out) moves it out instead, which is
+    // the only way to read a move-only result; the handle is empty afterwards.
+    auto owned = multi::async([]() { return std::make_unique<int>(7); });
+    multi::waitAll(owned);
+    std::unique_ptr<int> ptr;
+    owned.take(&ptr);
 
     // Wait on multiple handles at once. waitAll returns after every handle
     // completes; waitAny returns the index of the first one to complete.
@@ -146,8 +157,8 @@ void function()
         []() { return 3.14; });
 
     // waitAll on the tuple (participates in stealing while waiting), then
-    // read each result with get(&out). get() returns true once complete and
-    // rethrows if that task threw.
+    // read each result with get(&out), or take(&out) to move it out. Both
+    // return true once complete and rethrow if that task threw.
     multi::waitAll(handles);
     auto& [hInt, hStr, hDbl] = handles;
     int i = 0; std::string s; double d = 0.0;
@@ -190,7 +201,9 @@ void function()
     multi::waitAll(h);
 
     // User task exceptions are rethrown here. If a step fails, dependent
-    // successors are skipped and progress still reaches completion.
+    // successors are skipped and progress still reaches completion. Each
+    // step's callable, with everything it captured, is destroyed as soon as
+    // the step has run or been skipped, even while you keep the handle.
     h.get();
 }
 ```
@@ -324,7 +337,11 @@ Workloads:
 
 ### Exception handling
 Tasks that throw propagate the exception to the caller:
-- `multi::async`: the exception is stored on the returned value-typed `Handle<T>`. Wait for completion (`multi::waitAll(h)`), then `h.get(&out)` rethrows it. Void tasks (`Handle<void>`) have no `get()` and so cannot surface a task exception — return a value if you need to observe failures.
+- `multi::async`: the exception is stored on the returned `Handle<T>`. Wait for completion (`multi::waitAll(h)`), then `h.get(&out)` or `h.take(&out)` rethrows it; for a void task (`Handle<void>`), `h.get()` does. A call that rethrows leaves the handle as it was, so a later call rethrows again.
 - `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled. Under `multi::Serial` there are no siblings: a throw ends the walk at that item, and later items do not run.
 
-A `Handle` never blocks on destruction and does not throw — dropping one cannot call `std::terminate`. To wait: `Handle::wait()` blocks plainly (no work-stealing), while `multi::waitAll` / `waitAny` / `waitUntil` block *and* help drain the pool. Observe results or exceptions with `Handle::get(&out)`.
+A `Handle` never blocks on destruction and does not throw — dropping one cannot call `std::terminate`. To wait: `Handle::wait()` blocks plainly (no work-stealing), while `multi::waitAll` / `waitAny` / `waitUntil` block *and* help drain the pool. Observe results or exceptions with `Handle::get(&out)` (copies the result; repeatable), `Handle::take(&out)` (moves the result out, required for a move-only type, and leaves the handle empty), or `get()` on a `Handle<void>`. None of them blocks: each returns false if the task has not completed, or if the handle is empty (default-constructed, moved-from or already taken). `get(&out)` on a result type that cannot be copied does not compile, and the error points at `take(&out)`.
+
+Inside a task, wait on work it launched with `multi::waitAll(h)`, not `h.wait()`: the waiting thread can then run that work itself. A plain `wait()` there needs another thread to pick the work up, and deadlocks if none does — as can happen with a single worker, or when every worker is blocked the same way.
+
+While there is nothing to steal, `waitAll` / `waitAny` / `waitUntil` and the waits inside `parallel` / `each` / `range` spin for the first 20 ms and then sleep between checks, 50 µs doubling to 1 ms. A long wait therefore uses little CPU, but may notice completion up to about 1 ms late (about 1.5 ms on Windows, or a whole ~15.6 ms timer tick on Windows before 10 1803). Shorter waits never sleep.
