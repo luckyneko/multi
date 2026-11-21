@@ -184,7 +184,8 @@ namespace multi::details
 	 * RangeJob. Iterator-category split via if constexpr: random-access
 	 * iterators store the begin iterator directly (no allocation); other
 	 * categories materialise a std::vector<T*> pointer table at construction.
-	 * Per-item each() resolves to PerItem here (one chunk per item).
+	 * A policy-less each() arrives here as multi::Auto; only an explicit
+	 * multi::PerItem gives one chunk per item.
 	 */
 	template <class ITER, class FUNC>
 	class EachJob : public Job
