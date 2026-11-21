@@ -188,13 +188,12 @@ namespace multi::details
 	 *
 	 * A worker sleeps in cv.wait only while registered as parked (its parked
 	 * flag set and counted in m_parkedCount), and it holds its own mutex from
-	 * its last scan of the deques, through registering and re-checking, until
-	 * cv.wait releases it:
+	 * registering, through re-checking the deques, until cv.wait releases it:
 	 *
 	 *   worker (workerMain)                  submitter (submit/submitBatch)
 	 *   -------------------                  ------------------------------
-	 *   lock own mutex                       push task                    (A)
-	 *   scan deques: nothing                 seq_cst fence                (X)
+	 *   (a scan of the deques found nothing) push task                    (A)
+	 *   lock own mutex                       seq_cst fence                (X)
 	 *   parked = true, ++m_parkedCount (B)   read m_parkedCount           (C)
 	 *   seq_cst fence                  (Y)   if non-zero: claim and wake the
 	 *   re-check deques                (D)     target if parked, else one
@@ -231,18 +230,19 @@ namespace multi::details
 	 *    (spuriously), and in both cases the worker re-scans. A claimer that
 	 *    sees parked == false has found a worker that is not waiting and
 	 *    needs no notify. A claimer that got the mutex before the worker
-	 *    locked it made its push happen-before the worker's scan.
+	 *    locked it made its push happen-before the worker's re-check.
 	 *
 	 * 3. Claims are exclusive: clearing parked under the mutex gives each
 	 *    sleeping worker to one claimer, so two pushes that each need a
 	 *    helper wake two workers, not the same one twice.
 	 *
-	 * Case 1 needs the re-check D to find a task it can see, not merely to
-	 * try once: see tryGetTaskBeforePark.
+	 * Case 1 needs the re-check D to take a task it can see, not merely to
+	 * try once, and needs nothing more: see tryGetTaskBeforePark.
 	 *
 	 * Cost: with nobody parked, a push adds the fence and one relaxed load of
-	 * m_parkedCount: no lock, no notify. Parking adds the registration, the
-	 * fence and one more scan, all on the way to sleep.
+	 * m_parkedCount: no lock, no notify. Parking adds the registration and the
+	 * fence; a worker going idle still scans twice before sleeping (the drain
+	 * loop's last scan, then the re-check), as before the parking protocol.
 	 */
 	void WorkerPool::workerMain(size_t workerIndex)
 	{
@@ -259,14 +259,19 @@ namespace multi::details
 		{
 			{
 				std::unique_lock<std::mutex> lk(self->mutex);
+				bool woken = false;
 				for (;;)
 				{
 					if (!self->parked.load(std::memory_order_relaxed))
 					{
-						// Not registered (first pass, or claimed by a waker):
-						// a plain scan, so a worker woken for a task takes it
-						// without touching the shared count.
-						if (tryGetTask(workerIndex, &task) || !m_opLock.isActive())
+						// Claimed by a waker: a plain scan first, so a worker
+						// woken for a task takes it without touching the shared
+						// count. Arriving from the drain loop, whose last scan
+						// just came up empty, register at once instead: a third
+						// scan before sleeping would mostly catch tasks a
+						// submitter is still pushing, keeping idle workers
+						// awake to contend with it (it wakes them when done).
+						if (woken && (tryGetTask(workerIndex, &task) || !m_opLock.isActive()))
 							break;
 
 						// Register, then re-check below (protocol case 1).
@@ -280,6 +285,7 @@ namespace multi::details
 					if (tryGetTaskBeforePark(workerIndex, &task) || !m_opLock.isActive())
 						break;
 					self->cv.wait(lk);
+					woken = true;
 				}
 
 				// Leaving with work (or for stop) while still registered:
@@ -360,30 +366,41 @@ namespace multi::details
 	{
 		// The last scan before sleeping must not come back empty while it can
 		// see a queued task, or protocol case 1 (above workerMain) proves
-		// nothing. One tryGetTask pass can: a Chase-Lev steal that loses its
-		// CAS to another thief gives up on that deque although more tasks may
-		// sit behind the stolen one, and an MPMC pop stops at a slot another
-		// thread has claimed but not yet filled although later slots are
-		// full. Both are transient (each failure means another thread is
-		// mid-operation), so retry until every deque reads empty. Each deque is
-		// read overflow first: an owner refilling its local half moves tasks
-		// overflow -> local one at a time, so a task is missed only while it is
-		// in the owner's hands, and that is the one the owner pops next (LIFO).
-		for (;;)
+		// nothing. A plain tryGetTask pass can: a Chase-Lev steal that loses
+		// its CAS to another thief gives up on that deque although more tasks
+		// may sit behind the stolen one, and an MPMC pop stops at a slot
+		// another thread has claimed but not yet filled although later slots
+		// are full. So this is one pass, own deque first, in which a deque
+		// that reads non-empty is retried until a take succeeds or it reads
+		// empty. Each failed take means another thread is mid-operation on
+		// that deque, so the retry is transient.
+		//
+		// Each deque's state when it is read is all that matters. A task case 1
+		// makes this worker responsible for was pushed before its submitter's
+		// fence X, and X precedes this worker's fence Y, so the relaxed size
+		// reads here (after Y) see its enqueue: its deque reads non-empty until
+		// someone takes it. A task this pass misses is one whose enqueue it did
+		// not see, so its submitter's X follows Y, and that submitter's read of
+		// m_parkedCount sees this worker parked. Not waiting for every deque to
+		// read empty is what keeps a parking worker from chasing a submitter's
+		// push loop task by task, slowing the pusher it competes with.
+		//
+		// Each deque is read overflow first: an owner refilling its local half
+		// moves tasks overflow -> local one at a time, so a task is missed only
+		// while it is in the owner's hands, and that is the one the owner pops
+		// next (LIFO). An empty deque is skipped without the steal's fence.
+		for (size_t i = 0; i < m_workerCount; ++i)
 		{
-			if (tryGetTask(workerIndex, task))
-				return true;
-
-			bool empty = true;
-			for (size_t i = 0; i < m_workerCount && empty; ++i)
+			WorkStealDeque& d = m_workers[(workerIndex + i) % m_workerCount].deque;
+			for (unsigned failures = 0; d.overflowSizeHint() != 0 || d.localSizeHint() != 0; ++failures)
 			{
-				const WorkStealDeque& d = m_workers[i].deque;
-				empty = d.overflowSizeHint() == 0 && d.localSizeHint() == 0;
+				if (i == 0 ? d.pop(task) : d.steal(task))
+					return true;
+				if (failures > 0)
+					std::this_thread::yield(); // a pusher may be preempted mid-push
 			}
-			if (empty)
-				return false;
-			std::this_thread::yield();
 		}
+		return false;
 	}
 
 	bool WorkerPool::pushOrRun(size_t idx, Task& task)
