@@ -45,7 +45,9 @@ namespace multi
 
 		/// Non-blocking result fetch.
 		/// @param value Destination, written only on success.
-		/// @return True (and writes @p value) if complete; false otherwise.
+		/// @return True (and writes @p value) if complete; false if the task
+		///         has not completed or the handle is invalid (default-
+		///         constructed or moved-from), leaving @p value untouched.
 		///         Rethrows a stored task exception.
 		template <class U = T, std::enable_if_t<!std::is_void_v<U>, int> = 0>
 		bool get(U* value);

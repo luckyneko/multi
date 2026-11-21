@@ -44,7 +44,9 @@ namespace multi
 	template <class U, std::enable_if_t<!std::is_void_v<U>, int>>
 	bool Handle<T>::get(U* value)
 	{
-		if (!complete())
+		// complete() is true for an invalid handle, and get() on an invalid
+		// shared_future is undefined, so check valid() first.
+		if (!valid() || !complete())
 			return false;
 		*value = m_handle.get();
 		return true;

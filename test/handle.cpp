@@ -30,6 +30,45 @@ TEST_CASE("Handle: default-constructed is invalid and complete")
 	CHECK_NOTHROW(h.wait());
 }
 
+TEST_CASE("Handle: get(&out) on an invalid handle returns false")
+{
+	// An invalid handle reports complete() (nothing to wait for), but it has
+	// no result: get(&out) must say so instead of reading a missing shared
+	// state, and must leave *out alone.
+	SECTION("default-constructed")
+	{
+		multi::Handle<int> h;
+		int value = -1;
+		bool got = true;
+		CHECK_NOTHROW(got = h.get(&value));
+		CHECK_FALSE(got);
+		CHECK(value == -1);
+	}
+
+	SECTION("moved-from")
+	{
+		multi::Context context;
+		context.start(2);
+
+		auto h = context.async([]()
+							   { return 5; });
+		multi::Handle<int> moved(std::move(h));
+		REQUIRE_FALSE(h.valid());
+
+		int value = -1;
+		bool got = true;
+		CHECK_NOTHROW(got = h.get(&value));
+		CHECK_FALSE(got);
+		CHECK(value == -1);
+
+		context.waitAll(moved);
+		CHECK(moved.get(&value));
+		CHECK(value == 5);
+
+		context.stop();
+	}
+}
+
 TEST_CASE("Handle: wait() blocks until the task completes")
 {
 	multi::Context context;
