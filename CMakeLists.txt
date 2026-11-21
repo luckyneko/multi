@@ -10,8 +10,12 @@ if (CMAKE_BINARY_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     message(FATAL_ERROR "Building in-source is not supported! Create a build dir and remove ${CMAKE_SOURCE_DIR}/CMakeCache.txt")
 endif()
 
-# Default build release
-if(NOT CMAKE_BUILD_TYPE)
+# Default build release - but only when multi is the top-level project. CMAKE_BUILD_TYPE
+# is a single global cache entry, so forcing it from a vendored multi would pick the
+# parent's build type for it. Multi-config generators ignore it (the configuration is
+# chosen at build time), so leave it alone there too.
+get_property(MULTI_IS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT_SUBPROJECT AND NOT MULTI_IS_MULTI_CONFIG AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
 endif()
 
