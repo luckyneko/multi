@@ -10,9 +10,31 @@
 #include "multi/details/recipejob.h"
 #include "multi/recipe.h"
 
+#include <algorithm>
+#include <chrono>
 #include <memory>
 #include <thread>
 #include <utility>
+
+namespace multi::details
+{
+	void WaitBackoff::checkSpinTime()
+	{
+		// The streak's clock starts at its first check, WAIT_CLOCK_INTERVAL
+		// attempts in, so a short wait never reads the clock at all.
+		const auto now = std::chrono::steady_clock::now();
+		if (m_idlePolls == WAIT_CLOCK_INTERVAL)
+			m_idleSince = now;
+		else if (now - m_idleSince >= WAIT_SPIN_TIME)
+			m_sleep = WAIT_SLEEP_MIN;
+	}
+
+	void WaitBackoff::sleep()
+	{
+		std::this_thread::sleep_for(m_sleep);
+		m_sleep = std::min(m_sleep * 2, std::chrono::microseconds(WAIT_SLEEP_MAX));
+	}
+} // namespace multi::details
 
 namespace multi
 {

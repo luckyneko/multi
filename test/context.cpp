@@ -24,10 +24,39 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#	define WIN32_LEAN_AND_MEAN
+#	define NOMINMAX
+#	include <windows.h>
+#else
+#	include <time.h>
+#endif
+
 namespace
 {
 	constexpr std::size_t DATA_SET_MAX_SIZE = 32;
-}
+
+	// CPU time the calling thread has used so far, or a negative duration where
+	// the platform cannot tell.
+	std::chrono::microseconds threadCpuTime()
+	{
+#if defined(_WIN32)
+		FILETIME creation, exited, kernel, user;
+		if (!GetThreadTimes(GetCurrentThread(), &creation, &exited, &kernel, &user))
+			return std::chrono::microseconds(-1);
+		const auto hundredNs = [](const FILETIME& t)
+		{ return (static_cast<std::uint64_t>(t.dwHighDateTime) << 32) | t.dwLowDateTime; };
+		return std::chrono::microseconds(static_cast<std::int64_t>((hundredNs(kernel) + hundredNs(user)) / 10));
+#elif defined(CLOCK_THREAD_CPUTIME_ID)
+		timespec ts{};
+		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0)
+			return std::chrono::microseconds(-1);
+		return std::chrono::seconds(ts.tv_sec) + std::chrono::microseconds(ts.tv_nsec / 1000);
+#else
+		return std::chrono::microseconds(-1);
+#endif
+	}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Context API behaviour — one TEST_CASE per dispatch shape. Thread counts are
@@ -185,6 +214,154 @@ TEST_CASE("Context: parallel rethrows first exception and runs siblings")
 								 { otherRan++; })),
 		std::runtime_error);
 	CHECK(otherRan == 1);
+
+	context.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Long waits. A waiter with nothing to steal spins for a bounded phase and then
+// backs off to sleeping between steal attempts (details::WAIT_SPIN_TIME). These
+// waits run well past that phase; they check results and stealing, not timing.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	constexpr auto LONG_TASK = std::chrono::milliseconds(300);
+
+	// Spin, without stealing, until a task flags that a worker has picked it up.
+	// A waiter that steals could otherwise take the long task and run it itself.
+	void awaitStart(const std::atomic<bool>& started)
+	{
+		while (!started.load(std::memory_order_acquire))
+			std::this_thread::yield();
+	}
+} // namespace
+
+TEST_CASE("Context: waitAll and waitUntil return the result of a long task")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<bool> valueStarted(false);
+	auto value = context.async([&]()
+							   {
+		valueStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		return 42; });
+	awaitStart(valueStarted);
+	context.waitAll(value);
+	int v = 0;
+	REQUIRE(value.get(&v));
+	CHECK(v == 42);
+
+	int payload = 0;
+	std::atomic<bool> setterStarted(false), ready(false);
+	auto setter = context.async([&]()
+								{
+		setterStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		payload = 7;
+		ready.store(true, std::memory_order_release); });
+	awaitStart(setterStarted);
+	context.waitUntil([&]()
+					  { return ready.load(std::memory_order_acquire); });
+	CHECK(payload == 7);
+	context.waitAll(setter);
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel returns once a long sibling finishes")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> ran(0);
+	std::atomic<bool> slowStarted(false);
+	const auto slow = [&]()
+	{
+		slowStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		ran += 1;
+	};
+
+	// Two tasks take runQueueJob's count == 2 path: task 0 goes to a worker and
+	// task 1 runs on the caller, which here holds on until a worker has task 0,
+	// so the caller is left waiting on it.
+	context.parallel(slow, [&]()
+					 {
+		awaitStart(slowStarted);
+		ran += 10; });
+	CHECK(ran == 11);
+
+	// More than two take the batch path.
+	ran = 0;
+	const auto fast = [&]()
+	{ ran += 10; };
+	context.parallel(slow, fast, fast, fast);
+	CHECK(ran == 31);
+
+	context.stop();
+}
+
+TEST_CASE("Context: a long wait still steals work that turns up late")
+{
+	// The sole worker stays busy past the spin phase, so by the time it queues the
+	// inner task the caller has backed off to sleeping. Only the caller can run
+	// it: the worker just polls inner.complete(), which never steals.
+	multi::Context context;
+	context.start(1);
+
+	const std::thread::id caller = std::this_thread::get_id();
+	std::atomic<bool> outerStarted(false);
+	auto outer = context.async([&]()
+							   {
+		outerStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		auto inner = context.async([]()
+								   { return std::this_thread::get_id(); });
+		// Bounded, so a waiter that stopped stealing fails the check below
+		// instead of hanging the suite.
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (!inner.complete() && std::chrono::steady_clock::now() < deadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		std::thread::id ranOn;
+		return inner.get(&ranOn) ? ranOn : std::thread::id(); });
+	awaitStart(outerStarted);
+	context.waitAll(outer);
+
+	std::thread::id innerRanOn;
+	REQUIRE(outer.get(&innerRanOn));
+	CHECK(innerRanOn == caller);
+
+	context.stop();
+}
+
+TEST_CASE("Context: a long wait stops spinning")
+{
+	if (threadCpuTime().count() < 0)
+		SKIP("no per-thread CPU clock on this platform");
+
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<bool> started(false);
+	auto hdl = context.async([&]()
+							 {
+		started.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK); });
+	awaitStart(started);
+	const auto wallStart = std::chrono::steady_clock::now();
+	const auto cpuStart = threadCpuTime();
+	context.waitAll(hdl);
+	const auto cpu = threadCpuTime() - cpuStart;
+	const auto wall = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - wallStart);
+
+	// Spinning through the whole wait costs about as much CPU as wall time; backing
+	// off costs about the spin phase. Half is far from both, so load and
+	// sanitizers do not move the result across it.
+	CAPTURE(cpu.count(), wall.count());
+	CHECK(cpu < wall / 2);
 
 	context.stop();
 }

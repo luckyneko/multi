@@ -8,7 +8,6 @@
 
 #include <iterator>
 #include <memory>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -134,13 +133,21 @@ namespace multi
 	template <class Pred>
 	void Context::waitUntil(Pred&& pred)
 	{
-		// Drain pending pool work while pred() reports "not yet"; matches
-		// runQueueJob's wait loop, so a worker sitting here is indistinguishable
-		// from one processing its own deque.
-		while (!pred())
+		// The same loop as runQueueJob's waits, so a worker sitting here keeps
+		// draining pending pool work while pred() reports "not yet".
+		stealUntil(pred);
+	}
+
+	template <class Done>
+	void Context::stealUntil(Done&& done)
+	{
+		details::WaitBackoff backoff;
+		while (!done())
 		{
-			if (!tryRunSteal())
-				std::this_thread::yield();
+			if (tryRunSteal())
+				backoff.reset();
+			else
+				backoff.idle();
 		}
 	}
 
@@ -170,11 +177,8 @@ namespace multi
 			m_workerPool.submit(details::Task([&job]()
 											  { job.run(0); }));
 			job.run(1);
-			while (job.remaining() > 0)
-			{
-				if (!tryRunSteal())
-					std::this_thread::yield();
-			}
+			stealUntil([&job]()
+					   { return job.remaining() == 0; });
 			job.rethrowIfFailed();
 			return;
 		}
@@ -187,11 +191,8 @@ namespace multi
 								 { return details::Task([&job, i]()
 														{ job.run(i); }); });
 
-		while (job.remaining() > 0)
-		{
-			if (!tryRunSteal())
-				std::this_thread::yield();
-		}
+		stealUntil([&job]()
+				   { return job.remaining() == 0; });
 
 		job.rethrowIfFailed();
 	}
