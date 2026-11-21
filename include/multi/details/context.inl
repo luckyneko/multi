@@ -23,7 +23,7 @@ namespace multi
 		auto job = std::make_shared<details::AsyncJob<DecayedF, R>>(std::forward<F>(f));
 		auto fut = job->getFuture();
 		m_workerPool.submit([job]()
-							{ job->run(0); });
+							{ job->run(); });
 		return Handle<R>(std::move(fut));
 	}
 

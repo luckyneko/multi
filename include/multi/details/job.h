@@ -31,10 +31,10 @@ namespace multi::details
 	 * Context::runQueueJob is templated on the concrete subclass so the call
 	 * resolves directly, no virtual indirection.
 	 *
-	 * A sync Job lives on the caller's stack; runQueueJob blocks until every
-	 * run() has completed, so the wrappers dispatched into worker deques never
-	 * outlive it. AsyncJob is the exception — heap-allocated via shared_ptr so
-	 * its wrapper can outlive the calling frame.
+	 * A Job lives on the caller's stack; runQueueJob blocks until every run()
+	 * has completed, so the wrappers dispatched into worker deques never outlive
+	 * it. Context::async needs none of this and uses AsyncJob below, which is
+	 * not a Job.
 	 */
 	class Job
 	{
@@ -75,7 +75,7 @@ namespace multi::details
 
 		// Run user code under try/catch, capture the first exception, and
 		// release-decrement the countdown (which publishes the exception to
-		// waiters). AsyncJob bypasses this — its exception path is the promise.
+		// waiters).
 		template <class F>
 		void runOne(F&& f) noexcept
 		{
@@ -99,26 +99,30 @@ namespace multi::details
 	};
 
 	/*
-	 * AsyncJob — single-task heap-allocated Job for Context::async, held in a
-	 * shared_ptr so its lifetime outlasts the calling frame. The exception path
-	 * goes through std::promise (observed via the Handle's future), not
-	 * Job::runOne, so the inherited m_remaining is unused. R is the functor's
-	 * return type (defaults to invoke_result_t<F>); void uses promise<void>.
+	 * AsyncJob — the single task behind Context::async. Not a Job: it has no
+	 * countdown and no captured exception, because its result or exception goes
+	 * through std::promise to the Handle's future, and it never passes through
+	 * runQueueJob. Held in a shared_ptr so it outlives the calling frame. R is
+	 * the functor's return type (defaults to invoke_result_t<F>); void uses
+	 * promise<void>.
 	 */
 	template <class F, class R = std::invoke_result_t<F>>
-	class AsyncJob : public Job
+	class AsyncJob
 	{
 	public:
 		template <class G>
 		explicit AsyncJob(G&& g)
-			: Job(1)
-			, m_func(std::forward<G>(g))
+			: m_func(std::forward<G>(g))
 		{
 		}
 
+		AsyncJob(const AsyncJob&) = delete;
+		AsyncJob& operator=(const AsyncJob&) = delete;
+
 		std::future<R> getFuture() { return m_promise.get_future(); }
 
-		void run(std::size_t /*i*/) noexcept
+		// Call the functor once, fulfilling the promise with its result or exception.
+		void run() noexcept
 		{
 			try
 			{
