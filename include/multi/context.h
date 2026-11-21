@@ -37,11 +37,16 @@ namespace multi::details
 	 * (microseconds to a few milliseconds) and a whole 60 Hz frame.
 	 *
 	 * Worst-case added wake-up latency, once a wait has backed off: WAIT_SLEEP_MAX
-	 * plus the OS timer slack on Linux, Android, macOS and iOS (tens of
-	 * microseconds). On Windows every sleep rounds up to the system timer tick, so
-	 * the cap does not hold there: one tick, ~15.6 ms by default, or 1-2 ms once
-	 * the process has called timeBeginPeriod(1). Measured on Windows 11: any
-	 * sleep_for from 1 us to 4 ms took ~15.5 ms, and yield() ~0.3 us.
+	 * plus the sleep's own slack. Linux, Android, macOS and iOS sleep with
+	 * sleep_for, whose slack is tens of microseconds. Windows sleeps on a
+	 * high-resolution waitable timer instead, whose slack is about 0.5 ms,
+	 * because sleep_for there rounds up to the system timer tick (~15.6 ms by
+	 * default). Measured on Windows 11, a backed-off waiter noticed completion at
+	 * worst 1.56 ms late with the timer, against 15.1 ms with sleep_for. Before
+	 * Windows 10 1803, which lacks that timer, it falls back to sleep_for and so
+	 * to one tick (1-2 ms once the process has called timeBeginPeriod(1)).
+	 * Measured on the same machine: any sleep_for from 1 us to 4 ms took ~15.5 ms,
+	 * and yield() ~0.3 us.
 	 */
 	inline constexpr std::chrono::milliseconds WAIT_SPIN_TIME{20};
 	inline constexpr std::chrono::microseconds WAIT_SLEEP_MIN{50};
@@ -204,8 +209,9 @@ namespace multi
 		/// waitAny; also useful directly when the condition isn't a Handle
 		/// (atomic counters, external events). With nothing to steal it spins
 		/// for details::WAIT_SPIN_TIME, then sleeps between checks, so a long
-		/// wait notices @p pred up to details::WAIT_SLEEP_MAX late (a timer tick
-		/// on Windows).
+		/// wait notices @p pred up to details::WAIT_SLEEP_MAX late, plus the
+		/// sleep's slack: tens of microseconds, about 0.5 ms on Windows, or a
+		/// whole timer tick (~15.6 ms) on Windows before 10 1803.
 		template <class Pred>
 		void waitUntil(Pred&& pred);
 
