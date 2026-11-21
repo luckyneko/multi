@@ -148,17 +148,24 @@ namespace multi::details
 
 	bool RecipeJob::executeStep(std::size_t index) noexcept
 	{
+		Task& task = m_graph.step(index).task;
+		bool succeeded = true;
 		try
 		{
-			m_graph.step(index).task();
-			return true;
+			task();
 		}
 		catch (...)
 		{
 			std::call_once(m_exceptionOnce, [this]()
 						   { m_firstException = std::current_exception(); });
-			return false;
+			succeeded = false;
 		}
+
+		// The step has run, so drop its callable and whatever it captured now
+		// rather than with the job, which a RecipeHandle keeps alive. This is
+		// before the step is counted, so a completed recipe holds no callable.
+		task = Task();
+		return succeeded;
 	}
 
 	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred)
@@ -269,6 +276,9 @@ namespace multi::details
 		if (!m_state[index].compare_exchange_strong(expected, Finished, std::memory_order_acq_rel))
 			return false;
 
+		// Winning the CAS makes the step ours, and it will never run: drop its
+		// callable before counting it, as executeStep does.
+		m_graph.step(index).task = Task();
 		finishOne();
 		return true;
 	}

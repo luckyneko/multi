@@ -5,10 +5,12 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <array>
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <multi/multi.h>
 #include <multi/recipe.h>
 #include <stdexcept>
@@ -584,6 +586,49 @@ TEST_CASE("Recipe: concurrent failures skip shared successors once")
 	CHECK(h.stepCount() == SharedCount + 3);
 	CHECK(h.finishedCount() == h.stepCount());
 	CHECK(ran.load(std::memory_order_relaxed) == 0);
+	CHECK_THROWS_AS(h.get(), std::runtime_error);
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: steps release their callables before the run completes")
+{
+	// The handle keeps the run alive for progress reporting; what the steps
+	// captured must not live on with it. Covers a step that ran, one that
+	// threw and one skipped because of it, inline and on a pool. The
+	// throwing step's capture is too big for the inline buffer, so the
+	// heap-held callable is covered too.
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(2));
+	multi::Context context;
+	context.start(static_cast<int>(threadCount));
+
+	auto ranToken = std::make_shared<int>(0);
+	auto threwToken = std::make_shared<int>(0);
+	auto skippedToken = std::make_shared<int>(0);
+
+	multi::Recipe recipe;
+	auto ran = recipe.step([token = ranToken]()
+						   { (void)token; });
+	auto threw = recipe.step([token = threwToken, padding = std::array<char, 64>{}]()
+							 {
+		(void)padding;
+		if (token)
+			throw std::runtime_error("recipe step failed"); });
+	auto skipped = recipe.step([token = skippedToken]()
+							   { (void)token; });
+	REQUIRE(recipe.order(ran >> threw) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(threw >> skipped) == multi::RecipeResult::Ok);
+	REQUIRE(ranToken.use_count() == 2);
+	REQUIRE(threwToken.use_count() == 2);
+	REQUIRE(skippedToken.use_count() == 2);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	h.wait();
+	CHECK(h.finishedCount() == 3);
+	CHECK(ranToken.use_count() == 1);
+	CHECK(threwToken.use_count() == 1);
+	CHECK(skippedToken.use_count() == 1);
 	CHECK_THROWS_AS(h.get(), std::runtime_error);
 
 	context.stop();

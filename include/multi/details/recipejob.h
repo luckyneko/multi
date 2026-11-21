@@ -58,12 +58,13 @@ namespace multi::details
 		void runChain(std::size_t index, Deferred& deferred) noexcept;
 		void runDeferred(Deferred& deferred) noexcept;
 		bool runStepOnce(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred) noexcept;
+		// Runs the step's callable, then drops it; false if it threw.
 		bool executeStep(std::size_t index) noexcept;
 		bool scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred);
 		bool tryMarkScheduled(std::size_t index) noexcept;
 		void skipSuccessors(std::size_t index) noexcept;
-		// Claims a Pending step as skipped and counts it; false if another
-		// thread ran, scheduled or skipped it first.
+		// Claims a Pending step as skipped, drops its callable and counts it;
+		// false if another thread scheduled or skipped it first.
 		bool skip(std::size_t index) noexcept;
 		void finishOne() noexcept;
 		void complete() noexcept;
