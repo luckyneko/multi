@@ -31,37 +31,105 @@ namespace multi::details
 		return m_promise.get_future();
 	}
 
+	namespace
+	{
+		// Set while RecipeJob::schedule is inside m_submit. The submit runs the
+		// step's task inline on this thread when the pool is not running, is
+		// stopping or the target deque is full; runStep then finds its own job
+		// here and hands the step back to the frame that called schedule,
+		// instead of running it one level deeper on the stack. Only that task
+		// can run inside m_submit, so no step's callable ever sees this set,
+		// and the job check keeps a step of any other RecipeJob off the list.
+		struct InlineSubmit
+		{
+			const RecipeJob* job;
+			RecipeDeferredSteps* deferred;
+		};
+
+		thread_local const InlineSubmit* t_inlineSubmit = nullptr;
+	} // namespace
+
 	void RecipeJob::start()
 	{
+		Deferred deferred;
 		for (std::size_t i = 0; i < m_pending.size(); ++i)
 		{
 			if (m_pending[i].load(std::memory_order_relaxed) == 0)
 			{
 				if (tryMarkScheduled(i))
-					schedule(i);
+					schedule(i, deferred);
 			}
 		}
+		runDeferred(deferred);
 
 		if (m_remaining.load(std::memory_order_acquire) == 0)
 			complete();
 	}
 
-	void RecipeJob::schedule(std::size_t index)
+	void RecipeJob::schedule(std::size_t index, Deferred& deferred)
 	{
-		auto self = shared_from_this();
-		m_submit(Task([self, index]()
+		const InlineSubmit submitting{this, &deferred};
+		struct Restore
+		{
+			const InlineSubmit* previous;
+			~Restore() { t_inlineSubmit = previous; }
+		} restore{t_inlineSubmit};
+		t_inlineSubmit = &submitting;
+
+		m_submit(Task([self = shared_from_this(), index]()
 					  { self->runStep(index); }));
 	}
 
 	void RecipeJob::runStep(std::size_t index) noexcept
 	{
+		const InlineSubmit* const submitting = t_inlineSubmit;
+		if (submitting != nullptr && submitting->job == this)
+		{
+			// Run inline by our own schedule(): the frame that called it runs
+			// the step once its current chain ends.
+			defer(index, *submitting->deferred);
+			return;
+		}
+
+		Deferred deferred;
+		runChain(index, deferred);
+		runDeferred(deferred);
+	}
+
+	void RecipeJob::defer(std::size_t index, Deferred& deferred) noexcept
+	{
+		// index is Scheduled and not yet run, as is deferred.tail: both slots
+		// are free to hold links.
+		m_pending[index].store(Deferred::None, std::memory_order_relaxed);
+		if (deferred.tail == Deferred::None)
+			deferred.head = index;
+		else
+			m_pending[deferred.tail].store(index, std::memory_order_relaxed);
+		deferred.tail = index;
+	}
+
+	void RecipeJob::runChain(std::size_t index, Deferred& deferred) noexcept
+	{
 		std::size_t current = index;
 		std::size_t inlineSuccessor = 0;
-		while (runStepOnce(current, inlineSuccessor))
+		while (runStepOnce(current, inlineSuccessor, deferred))
 			current = inlineSuccessor;
 	}
 
-	bool RecipeJob::runStepOnce(std::size_t index, std::size_t& inlineSuccessor) noexcept
+	void RecipeJob::runDeferred(Deferred& deferred) noexcept
+	{
+		// A chain may defer more steps; this loop, not the stack, takes them.
+		while (deferred.head != Deferred::None)
+		{
+			const std::size_t index = deferred.head;
+			deferred.head = m_pending[index].load(std::memory_order_relaxed);
+			if (deferred.head == Deferred::None)
+				deferred.tail = Deferred::None;
+			runChain(index, deferred);
+		}
+	}
+
+	bool RecipeJob::runStepOnce(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred) noexcept
 	{
 		const bool succeeded = executeStep(index);
 
@@ -74,7 +142,7 @@ namespace multi::details
 			return false;
 		}
 
-		return scheduleReadySuccessors(index, inlineSuccessor);
+		return scheduleReadySuccessors(index, inlineSuccessor, deferred);
 	}
 
 	bool RecipeJob::executeStep(std::size_t index) noexcept
@@ -92,7 +160,7 @@ namespace multi::details
 		}
 	}
 
-	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor)
+	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred)
 	{
 		bool hasInlineSuccessor = false;
 		for (const std::size_t successor : m_graph.step(index).successors)
@@ -106,7 +174,7 @@ namespace multi::details
 					hasInlineSuccessor = true;
 				}
 				else
-					schedule(successor);
+					schedule(successor, deferred);
 			}
 		}
 		return hasInlineSuccessor;
