@@ -214,7 +214,11 @@ void function()
 {
     std::vector<Item> items;
 
-    // Whole container, one task per item — mirrors `for (auto& item : items)`
+    // Whole container — mirrors `for (auto& item : items)`. With no policy the
+    // items are split into a few chunks per thread (multi::Auto); each chunk
+    // runs its consecutive items in order on one thread, so items that wait
+    // on each other can deadlock and thread_local state is shared within a
+    // chunk. Pass multi::PerItem (below) for one task per item.
     multi::each(items, [](Item& item)
     {
         item.setValue();
@@ -229,8 +233,8 @@ void function()
     // The leading argument is a `multi::ChunkPolicy` — how many tasks to split
     // the work into. Four spellings:
     multi::each(32, items, fn);             // exact: 32 tasks (bare int)
-    multi::each(multi::Auto, items, fn);    // (workers+1)*CHUNK_FACTOR, clamped
-    multi::each(multi::PerItem, items, fn); // one task per item (== no count)
+    multi::each(multi::Auto, items, fn);    // (workers+1)*CHUNK_FACTOR, clamped (== no policy)
+    multi::each(multi::PerItem, items, fn); // one task per item
     multi::each(multi::Serial, items, fn);  // in order, on this thread, no pool
 }
 ```
@@ -241,13 +245,13 @@ void function()
 {
     std::atomic<int> out(0);
 
-    // Run task per index (step defaults to 1)
+    // Every index in [0, 100) (step defaults to 1), chunked like multi::Auto
     multi::range(0, 100, [&](int idx)
     {
         out += idx;
     });
 
-    // Run task per step
+    // Every second index
     multi::range(0, 100, 2, [&](int idx)
     {
         out += idx;
@@ -260,8 +264,8 @@ void function()
         items[idx].setValue();
     });
 
-    // Chunked: the leading multi::ChunkPolicy picks how many tasks (exact count,
-    // multi::Auto, multi::PerItem, or multi::Serial).
+    // Explicit policy: the leading multi::ChunkPolicy picks how many tasks
+    // (exact count, multi::Auto, multi::PerItem, or multi::Serial).
     multi::range(32, 0, 100, 2, [&](int idx)
     {
         out += idx;
@@ -272,7 +276,7 @@ void function()
 
 ## Benchmarks
 
-Headline numbers — AMD Ryzen 9 5950X (16 cores / 32 threads), Windows 11, MSVC Release, 20 samples. The pool runs `hardware_concurrency()-1 = 31` workers plus the calling thread; `chunks`-mode uses `(threadCount+1)*CHUNK_FACTOR = 128` chunks (`CHUNK_FACTOR = 4`). Times are mean per iteration.
+Headline numbers — AMD Ryzen 9 5950X (16 cores / 32 threads), Windows 11, MSVC Release, 20 samples. The pool runs `hardware_concurrency()-1 = 31` workers plus the calling thread; `chunks`-mode uses `(threadCount+1)*CHUNK_FACTOR = 128` chunks (`CHUNK_FACTOR = 4`), the same as `multi::Auto`, which `each` / `range` use when given no policy; `items`-mode passes `multi::PerItem`, one task per item. Times are mean per iteration.
 
 | Workload                      | serial   | items    | chunks   | speedup   |
 |-------------------------------|---------:|---------:|---------:|----------:|
@@ -338,7 +342,7 @@ Workloads:
 ### Exception handling
 Tasks that throw propagate the exception to the caller:
 - `multi::async`: the exception is stored on the returned `Handle<T>`. Wait for completion (`multi::waitAll(h)`), then `h.get(&out)` or `h.take(&out)` rethrows it; for a void task (`Handle<void>`), `h.get()` does. A call that rethrows leaves the handle as it was, so a later call rethrows again.
-- `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled. Under `multi::Serial` there are no siblings: a throw ends the walk at that item, and later items do not run.
+- `multi::parallel` / `each` / `range`: the first exception thrown by any task is rethrown once all tasks have finished. Siblings are not cancelled. For `each` / `range` a task is a chunk of consecutive items, so a throw ends the rest of its chunk: the items after it in that chunk are skipped, while every other chunk still runs. Under the default `multi::Auto` that only matters once there are more items than `(workers+1)*CHUNK_FACTOR`; pass `multi::PerItem` to run each item as its own task, so a throw skips nothing else. Under `multi::Serial` there are no siblings: a throw ends the walk at that item, and later items do not run.
 
 A `Handle` never blocks on destruction and does not throw — dropping one cannot call `std::terminate`. To wait: `Handle::wait()` blocks plainly (no work-stealing), while `multi::waitAll` / `waitAny` / `waitUntil` block *and* help drain the pool. Observe results or exceptions with `Handle::get(&out)` (copies the result; repeatable), `Handle::take(&out)` (moves the result out, required for a move-only type, and leaves the handle empty), or `get()` on a `Handle<void>`. None of them blocks: each returns false if the task has not completed, or if the handle is empty (default-constructed, moved-from or already taken). `get(&out)` on a result type that cannot be copied does not compile, and the error points at `take(&out)`.
 
