@@ -31,10 +31,13 @@ namespace multi::details
 	 *
 	 * Trade-off: a long wait burns at most about WAIT_SPIN_TIME of a core instead
 	 * of the whole wait, and in exchange notices completion, or new work to steal,
-	 * up to one sleep late. Work queued onto a waiting worker's own deque can wait
-	 * as long, since submitting it wakes only that worker. Waits shorter than
-	 * WAIT_SPIN_TIME never sleep: that covers the waits in the benchmarks
-	 * (microseconds to a few milliseconds) and a whole 60 Hz frame.
+	 * up to one sleep late. Work queued onto a waiting worker's own deque is not
+	 * held up by that: the waiter is not parked, so the push wakes a parked
+	 * worker, if there is one, to steal it. Only with no worker parked does it
+	 * wait for a thread to come looking, at the latest this waiter's next poll,
+	 * up to one sleep away. Waits shorter than WAIT_SPIN_TIME never sleep: that
+	 * covers the waits in the benchmarks (microseconds to a few milliseconds)
+	 * and a whole 60 Hz frame.
 	 *
 	 * Worst-case added wake-up latency, once a wait has backed off: WAIT_SLEEP_MAX
 	 * plus the sleep's own slack. Linux, Android, macOS and iOS sleep with
