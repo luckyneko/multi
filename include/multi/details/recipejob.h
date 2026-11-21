@@ -62,7 +62,9 @@ namespace multi::details
 		bool scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred);
 		bool tryMarkScheduled(std::size_t index) noexcept;
 		void skipSuccessors(std::size_t index) noexcept;
-		void skip(std::size_t index) noexcept;
+		// Claims a Pending step as skipped and counts it; false if another
+		// thread ran, scheduled or skipped it first.
+		bool skip(std::size_t index) noexcept;
 		void finishOne() noexcept;
 		void complete() noexcept;
 

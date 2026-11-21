@@ -9,6 +9,7 @@
 #include "multi/recipe.h"
 
 #include <utility>
+#include <vector>
 
 namespace multi::details
 {
@@ -188,8 +189,58 @@ namespace multi::details
 
 	void RecipeJob::skipSuccessors(std::size_t index) noexcept
 	{
-		for (const std::size_t successor : m_graph.step(index).successors)
-			skip(successor);
+		// Walks everything after index with an explicit stack, not recursion,
+		// so the stack stays flat however long the chain. Several threads can
+		// walk at once (two failing steps); skip()'s CAS gives each step to
+		// exactly one of them, and a walker only goes on from steps it won.
+		// The first step claimed from each visited step is walked next without
+		// touching the stack, so skipping a plain chain allocates nothing.
+		//
+		// The stack can fail to grow. Dropping the claimed step would leave
+		// its successors Pending and the recipe could never complete, and
+		// letting bad_alloc reach noexcept would terminate. Instead the step
+		// that could not be pushed is walked by a nested call. Chains still
+		// need no stack, so while memory stays short only branching steps
+		// nest: the walk may run deeper, but every step is still skipped.
+		std::vector<std::size_t> claimed;
+		std::size_t current = index;
+		for (;;)
+		{
+			bool hasNext = false;
+			std::size_t next = 0;
+			for (const std::size_t successor : m_graph.step(current).successors)
+			{
+				if (!skip(successor))
+					continue;
+				if (!hasNext)
+				{
+					next = successor;
+					hasNext = true;
+					continue;
+				}
+
+				bool pushed = true;
+				try
+				{
+					claimed.push_back(successor);
+				}
+				catch (...)
+				{
+					pushed = false;
+				}
+				if (!pushed)
+					skipSuccessors(successor);
+			}
+
+			if (!hasNext)
+			{
+				if (claimed.empty())
+					return;
+				next = claimed.back();
+				claimed.pop_back();
+			}
+			current = next;
+		}
 	}
 
 	std::size_t RecipeJob::stepCount() const noexcept
@@ -212,16 +263,14 @@ namespace multi::details
 		return static_cast<float>(finishedCount()) / static_cast<float>(total);
 	}
 
-	void RecipeJob::skip(std::size_t index) noexcept
+	bool RecipeJob::skip(std::size_t index) noexcept
 	{
 		int expected = Pending;
 		if (!m_state[index].compare_exchange_strong(expected, Finished, std::memory_order_acq_rel))
-			return;
+			return false;
 
 		finishOne();
-
-		for (const std::size_t successor : m_graph.step(index).successors)
-			skip(successor);
+		return true;
 	}
 
 	void RecipeJob::finishOne() noexcept
