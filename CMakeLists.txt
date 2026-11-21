@@ -32,6 +32,7 @@ option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
 option(MULTI_FORMAT "Provide clang-format format / format-check targets" ${NOT_SUBPROJECT})
+option(MULTI_WARNINGS_AS_ERRORS "Build multi with warnings as errors (/WX, -Werror)" ${NOT_SUBPROJECT})
 
 # clang-format `format` / `format-check` targets, over a vendored pinned binary. The
 # set of files is declared in .clang-format-include at the repo root.
@@ -75,11 +76,20 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     # C4324 (alignas() padded the struct) is suppressed at the DECLARATION instead, via
     # MULTI_BEGIN/END_CACHE_ALIGNED in details/platform.h - a flag here covered multi's own
     # sources and left every consumer of the headers to trip over it.
-    $<$<CXX_COMPILER_ID:MSVC>:/WX;/W4>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
 
     # Clang / GCC Flags
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror;-Wall;-Wextra>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall;-Wextra>
 )
+
+# Warnings as errors: on for multi's own builds (and so for CI), off by default when
+# vendored, where a new warning from the consumer's compiler must not break their build.
+if(MULTI_WARNINGS_AS_ERRORS)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/WX>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror>
+    )
+endif()
 
 # Namespaced alias so consumers can always write multi::multi regardless of
 # whether they got the target via add_subdirectory or find_package.
