@@ -287,10 +287,32 @@ namespace multi::details
 			runOne([&]()
 				   {
 				for (std::size_t k = startIdx; k < startIdx + len; ++k)
-					(*m_func)(static_cast<IDX>(m_begin + static_cast<IDX>(k) * m_step)); });
+					(*m_func)(indexAt(k)); });
 		}
 
 	private:
+		// The k-th index, begin + k * step. A signed IDX can overflow on the way
+		// (from its min to its max, k * step passes the max halfway), so integers
+		// go through the unsigned type of the same width, where both steps are
+		// exact: k * step is below the span, and the sum lies in [begin, end).
+		// Narrow types promote to int in between, which cannot overflow for the
+		// same reason, so each result is cast straight back. The last cast to a
+		// signed IDX is modular, as every supported compiler does it and C++20
+		// requires, so it yields the true value.
+		IDX indexAt(std::size_t k) const noexcept
+		{
+			if constexpr (std::is_integral_v<IDX>)
+			{
+				using U = std::make_unsigned_t<IDX>;
+				const U offset = static_cast<U>(static_cast<U>(k) * static_cast<U>(m_step));
+				return static_cast<IDX>(static_cast<U>(static_cast<U>(m_begin) + offset));
+			}
+			else
+			{
+				return static_cast<IDX>(m_begin + static_cast<IDX>(k) * m_step);
+			}
+		}
+
 		struct Setup
 		{
 			IDX begin;
@@ -305,10 +327,15 @@ namespace multi::details
 				return 0;
 			if constexpr (std::is_integral_v<IDX>)
 			{
-				// Round up without `span + step - 1`, which wraps near the top of
-				// an unsigned type. auto: narrow types promote rather than truncate.
-				const auto span = end - begin;
-				return static_cast<std::size_t>(span / step) + (span % step != 0 ? std::size_t(1) : std::size_t(0));
+				// In the unsigned type of IDX's width, as in indexAt(): a signed
+				// end - begin can exceed IDX's max, but the true span always fits
+				// there. Narrow types promote to int in between, so the difference
+				// is cast straight back. Round up from the remainder, not with
+				// `span + step - 1`, which wraps near the top of the type.
+				using U = std::make_unsigned_t<IDX>;
+				const U span = static_cast<U>(static_cast<U>(end) - static_cast<U>(begin));
+				const U ustep = static_cast<U>(step);
+				return static_cast<std::size_t>(span / ustep) + (span % ustep != 0 ? std::size_t(1) : std::size_t(0));
 			}
 			else
 			{

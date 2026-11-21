@@ -762,6 +762,36 @@ TEST_CASE("Context: range stays in bounds at the top of an unsigned type")
 	context.stop();
 }
 
+TEMPLATE_TEST_CASE("Context: range wider than a signed type's maximum", "", std::int8_t, std::int16_t, int, long long)
+{
+	// From the type's min to its max: end - begin does not fit the type, and nor
+	// does k * step for the upper half. A step of 2^(bits-4) keeps it to 16
+	// indices. int8_t and int16_t promote to int, so only int and long long
+	// overflowed before; under UBSan that is a report, elsewhere a wrong count.
+	auto policy = GENERATE(multi::ChunkPolicy(1), multi::ChunkPolicy(4), multi::Auto, multi::PerItem, multi::Serial);
+	multi::Context context;
+	context.start(2);
+
+	using Limits = std::numeric_limits<TestType>;
+	const TestType step = static_cast<TestType>(TestType(1) << (Limits::digits - 3));
+
+	std::vector<TestType> expected{Limits::min()};
+	while (expected.size() < 16)
+		expected.push_back(static_cast<TestType>(expected.back() + step));
+	REQUIRE(expected.back() > Limits::max() - step); // the 17th would pass the end
+
+	std::mutex mutex;
+	std::vector<TestType> seen;
+	context.range(policy, Limits::min(), Limits::max(), step, [&](TestType i)
+				  {
+		const std::lock_guard<std::mutex> lock(mutex);
+		seen.push_back(i); });
+	std::sort(seen.begin(), seen.end());
+	CHECK(seen == expected);
+
+	context.stop();
+}
+
 // ---------------------------------------------------------------------------
 // multi::Serial — every item in order, on the calling thread. These run on a
 // started pool, where order is a claim and not a given. The recordings are
