@@ -24,6 +24,7 @@ namespace multi
 	 *   - a bare integer (implicit conversion) — exactly that many tasks, so
 	 *     `each(64, ...)` compiles;
 	 *   - multi::Auto — `(workers + 1) * CHUNK_FACTOR` oversubscription, clamped;
+	 *     what each() / range() use when given no policy;
 	 *   - multi::PerItem — one task per item;
 	 *   - multi::Serial — every item in order, on the calling thread.
 	 */
@@ -87,6 +88,7 @@ namespace multi
 	};
 
 	/// Oversubscribe: roughly `(workers + 1) * CHUNK_FACTOR` tasks (clamped to >= 2).
+	/// The default for each() / range() calls that pass no policy.
 	inline constexpr ChunkPolicy Auto{ChunkPolicy::Policy::Auto};
 	/// One task per item.
 	inline constexpr ChunkPolicy PerItem{ChunkPolicy::Policy::PerItem};

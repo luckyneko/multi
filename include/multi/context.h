@@ -151,7 +151,12 @@ namespace multi
 		template <typename... TASKS>
 		void parallel(TASKS&&... tasks);
 
-		/// Launch one task per item in [begin, end).
+		/// Call @p func on every item in [begin, end) and block until all are
+		/// done. Chunked as multi::Auto: (threadCount() + 1) * CHUNK_FACTOR tasks,
+		/// or one per item if there are fewer items, each running consecutive
+		/// items in order. A throw ends the rest of its chunk; the first one is
+		/// rethrown once every task is done.
+		/// For one task per item, pass multi::PerItem to the chunked overload.
 		/// @tparam FUNC Callable as void(T) or void(T&).
 		template <typename ITER, typename FUNC>
 		void each(ITER begin, ITER end, FUNC&& func);
@@ -161,9 +166,9 @@ namespace multi
 		template <typename ITER, typename FUNC>
 		void each(ChunkPolicy chunkPolicy, ITER begin, ITER end, FUNC&& func);
 
-		/// Range-based overload: iterate a whole container, one task per item.
-		/// Equivalent to each(std::begin(c), std::end(c), func) and mirrors the
-		/// `for (auto item : c)` shape.
+		/// Range-based overload: iterate a whole container, chunked as
+		/// multi::Auto. Equivalent to each(std::begin(c), std::end(c), func) and
+		/// mirrors the `for (auto item : c)` shape.
 		template <typename CONTAINER, typename FUNC>
 		void each(CONTAINER&& c, FUNC&& func);
 
@@ -172,13 +177,16 @@ namespace multi
 		template <typename CONTAINER, typename FUNC>
 		void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
-		/// Launch one task per index in [begin, end), stepping by 1.
+		/// Call @p func on every index in [begin, end), stepping by 1, and block
+		/// until all are done. Chunked as multi::Auto, like each(); for one task
+		/// per index, pass multi::PerItem to the chunked overload.
 		/// @tparam IDX Arithmetic type other than bool: signed, unsigned or floating-point.
 		/// @tparam FUNC Callable as void(IDX).
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, FUNC&& func);
 
-		/// Step overload. A non-positive @p step dispatches nothing.
+		/// Step overload, also chunked as multi::Auto. A non-positive @p step
+		/// dispatches nothing.
 		template <typename IDX, typename FUNC>
 		void range(IDX begin, IDX end, IDX step, FUNC&& func);
 

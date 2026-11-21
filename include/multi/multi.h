@@ -42,7 +42,8 @@ namespace multi
 	template <typename... TASKS>
 	void parallel(TASKS&&... tasks);
 
-	/// Launch one task per item. @see Context::each
+	/// Call func on every item, chunked as multi::Auto unless a ChunkPolicy is
+	/// given (multi::PerItem for one task per item). @see Context::each
 	template <typename ITER, typename FUNC>
 	void each(ITER begin, ITER end, FUNC&& func);
 	template <typename ITER, typename FUNC>
@@ -53,7 +54,8 @@ namespace multi
 	template <typename CONTAINER, typename FUNC>
 	void each(ChunkPolicy chunkPolicy, CONTAINER&& c, FUNC&& func);
 
-	/// Launch one task per index. @see Context::range
+	/// Call func on every index, chunked as multi::Auto unless a ChunkPolicy is
+	/// given (multi::PerItem for one task per index). @see Context::range
 	template <typename IDX, typename FUNC>
 	void range(IDX begin, IDX end, FUNC&& func);
 	template <typename IDX, typename FUNC>

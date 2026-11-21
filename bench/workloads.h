@@ -121,7 +121,8 @@ namespace bench
 		template <class F>
 		void operator()(int begin, int end, F&& f) const
 		{
-			multi::range(begin, end, 1, std::forward<F>(f));
+			// Explicit: the policy-less overload chunks like multi::Auto.
+			multi::range(multi::PerItem, begin, end, 1, std::forward<F>(f));
 		}
 	};
 

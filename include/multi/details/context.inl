@@ -45,7 +45,9 @@ namespace multi
 	template <typename ITER, typename FUNC>
 	void Context::each(ITER begin, ITER end, FUNC&& func)
 	{
-		each(PerItem, begin, end, std::forward<FUNC>(func));
+		// Every policy-less each() ends up here, and every policy-less range()
+		// in the stepped overload below: the default policy is set in those two.
+		each(Auto, begin, end, std::forward<FUNC>(func));
 	}
 
 	template <typename ITER, typename FUNC>
@@ -76,7 +78,7 @@ namespace multi
 	template <typename IDX, typename FUNC>
 	void Context::range(IDX begin, IDX end, IDX step, FUNC&& func)
 	{
-		range(PerItem, begin, end, step, std::forward<FUNC>(func));
+		range(Auto, begin, end, step, std::forward<FUNC>(func));
 	}
 
 	template <typename IDX, typename FUNC>

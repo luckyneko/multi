@@ -505,6 +505,145 @@ TEST_CASE("Context: each/range ChunkPolicy policies on a local pool")
 	context.stop();
 }
 
+// ---------------------------------------------------------------------------
+// The policy-less each() / range() overloads chunk like multi::Auto.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: policy-less each and range chunk like Auto")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	// A throw ends the rest of its chunk, so a throw at item 0 skips exactly the
+	// rest of chunk 0, and how many that is follows from the chunk count. One
+	// task per item would skip nothing.
+	constexpr int total = 1000;
+	const std::size_t chunks = multi::Auto.resolve(total, context.threadCount());
+	const int firstChunk = static_cast<int>(total / chunks + (total % chunks != 0 ? 1 : 0));
+	REQUIRE(firstChunk > 1);
+
+	std::vector<int> expected{0};
+	for (int i = firstChunk; i < total; ++i)
+		expected.push_back(i);
+
+	const auto visitedWhenItemZeroThrows = [](const auto& dispatch)
+	{
+		std::mutex mutex;
+		std::vector<int> seen;
+		CHECK_THROWS_AS(dispatch([&](int i)
+								 {
+				{
+					const std::lock_guard<std::mutex> lock(mutex);
+					seen.push_back(i);
+				}
+				if (i == 0)
+					throw std::runtime_error("item 0"); }),
+						std::runtime_error);
+		std::sort(seen.begin(), seen.end());
+		return seen;
+	};
+
+	std::vector<int> items(total);
+	std::iota(items.begin(), items.end(), 0);
+	const std::list<int> listed(items.begin(), items.end());
+
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.range(0, total, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.range(0, total, 1, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(items.begin(), items.end(), f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(items, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(listed, f); }) == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: policy-less each and range visit every item exactly once")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	constexpr int total = 10000;
+	std::vector<std::atomic<int>> hits(total);
+	const auto countOnce = [&](const auto& dispatch)
+	{
+		for (auto& h : hits)
+			h.store(0);
+		dispatch([&](int i)
+				 { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+		return std::all_of(hits.begin(), hits.end(), [](const std::atomic<int>& h)
+						   { return h.load() == 1; });
+	};
+
+	std::vector<int> items(total);
+	std::iota(items.begin(), items.end(), 0);
+	const std::list<int> listed(items.begin(), items.end());
+
+	CHECK(countOnce([&](const auto& f)
+					{ context.range(0, total, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.range(0, total, 1, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(items.begin(), items.end(), f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(items, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(listed, f); }));
+
+	// A stepped range visits every step-th index once and nothing in between.
+	for (auto& h : hits)
+		h.store(0);
+	context.range(0, total, 3, [&](int i)
+				  { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+	bool steppedOnce = true;
+	for (int i = 0; i < total; ++i)
+		steppedOnce = steppedOnce && hits[static_cast<std::size_t>(i)].load() == (i % 3 == 0 ? 1 : 0);
+	CHECK(steppedOnce);
+
+	context.stop();
+}
+
+TEST_CASE("Context: policy-less each and range on an inactive context run in order on the caller")
+{
+	// Never started: Auto still splits into chunks, and every one runs inline in
+	// turn. The recording is a plain vector, so TSAN would see a stray thread.
+	multi::Context context;
+
+	const std::thread::id caller = std::this_thread::get_id();
+	std::vector<int> seen;
+	bool onCaller = true;
+	const auto record = [&](int i)
+	{
+		seen.push_back(i);
+		onCaller = onCaller && std::this_thread::get_id() == caller;
+	};
+
+	std::vector<int> items(1000);
+	std::iota(items.begin(), items.end(), 0);
+
+	context.range(0, 1000, record);
+	CHECK(seen == items);
+	seen.clear();
+	context.each(items.begin(), items.end(), record);
+	CHECK(seen == items);
+	seen.clear();
+	context.each(std::list<int>(items.begin(), items.end()), record);
+	CHECK(seen == items);
+	seen.clear();
+
+	context.range(0, 1000, 3, record);
+	std::vector<int> stepped;
+	for (int i = 0; i < 1000; i += 3)
+		stepped.push_back(i);
+	CHECK(seen == stepped);
+	CHECK(onCaller);
+}
+
 TEST_CASE("Context: range int")
 {
 	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
