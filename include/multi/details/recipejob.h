@@ -26,8 +26,8 @@ namespace multi
 
 namespace multi::details
 {
-	// Steps a RecipeJob runner took back from inline submits, oldest first,
-	// linked through RecipeJob::m_pending (see RecipeJob::runStep).
+	// Steps a RecipeJob runner kept because their submit queued nothing, oldest
+	// first, linked through RecipeJob::m_pending (see RecipeJob::schedule).
 	struct RecipeDeferredSteps
 	{
 		static constexpr std::size_t None = ~std::size_t{0};
@@ -38,7 +38,11 @@ namespace multi::details
 	class RecipeJob : public std::enable_shared_from_this<RecipeJob>
 	{
 	public:
-		using Submit = std::function<void(Task&&)>;
+		// Queues a step's task on the pool, or returns false with the task
+		// untouched when nothing was queued (WorkerPool::trySubmit). It must
+		// never run the task itself: a step that was not queued is run by the
+		// frame that scheduled it, which is what keeps the stack flat.
+		using Submit = std::function<bool(Task&)>;
 
 		RecipeJob(Recipe&& recipe, Submit submit);
 
@@ -81,7 +85,7 @@ namespace multi::details
 		// Per step: predecessors that have not finished yet. Once a step is
 		// Scheduled its count has reached zero and no predecessor touches it
 		// again, so its runner reuses the slot as the link of a deferred-step
-		// list (runStep): deferring a step allocates nothing. start()'s root
+		// list (schedule): deferring a step allocates nothing. start()'s root
 		// scan may still read such a link; a Scheduled step fails
 		// tryMarkScheduled whatever its slot holds.
 		std::vector<std::atomic<std::size_t>> m_pending;

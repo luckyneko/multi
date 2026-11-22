@@ -9,6 +9,7 @@
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <cstddef>
 #include <future>
 #include <memory>
 #include <multi/details/workerpool.h>
@@ -50,6 +51,103 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 	pool.submit([&value]()
 				{ value += 2; });
 	CHECK(value == 45);
+}
+
+// ---------------------------------------------------------------------------
+// trySubmit: queue or report, never run. submit() runs a task inline when it
+// cannot queue it; a caller that must not nest (RecipeJob) uses trySubmit and
+// keeps the task.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("WorkerPool: trySubmit queues nothing when not started")
+{
+	multi::details::WorkerPool pool;
+
+	bool ran = false;
+	multi::details::Task task([&ran]()
+							  { ran = true; });
+	CHECK_FALSE(pool.trySubmit(task));
+	CHECK_FALSE(ran);
+
+	// Untouched: still the caller's to run.
+	REQUIRE(static_cast<bool>(task));
+	task();
+	CHECK(ran);
+}
+
+TEST_CASE("WorkerPool: trySubmit queues nothing after stop")
+{
+	multi::details::WorkerPool pool;
+	pool.start(2);
+	pool.stop();
+
+	bool ran = false;
+	multi::details::Task task([&ran]()
+							  { ran = true; });
+	CHECK_FALSE(pool.trySubmit(task));
+	CHECK_FALSE(ran);
+	CHECK(static_cast<bool>(task));
+}
+
+TEST_CASE("WorkerPool: trySubmit queues a task on a running pool")
+{
+	multi::details::WorkerPool pool;
+	pool.start(2);
+
+	std::promise<void> done;
+	auto doneFuture = done.get_future();
+	multi::details::Task task([&done]()
+							  { done.set_value(); });
+	CHECK(pool.trySubmit(task));
+	CHECK_FALSE(static_cast<bool>(task)); // moved into the deque
+
+	CHECK(doneFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+	pool.stop();
+}
+
+TEST_CASE("WorkerPool: trySubmit reports a full deque without running the task")
+{
+	multi::details::WorkerPool pool;
+	pool.start(1);
+
+	// Hold the only worker, so nothing drains its deque.
+	std::promise<void> release;
+	std::shared_future<void> released = release.get_future().share();
+	std::promise<void> holding;
+	auto holdingFuture = holding.get_future();
+	pool.submit([&holding, released]()
+				{
+		holding.set_value();
+		released.wait(); });
+	REQUIRE(holdingFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+
+	// Fill the worker's overflow ring from this thread until a push is refused.
+	std::atomic<std::size_t> ran(0);
+	std::size_t queued = 0;
+	bool refused = false;
+	bool refusedTaskIntact = false;
+	for (std::size_t i = 0; i < 100000 && !refused; ++i)
+	{
+		multi::details::Task task([&ran]()
+								  { ran.fetch_add(1); });
+		if (pool.trySubmit(task))
+		{
+			++queued;
+		}
+		else
+		{
+			refused = true;
+			refusedTaskIntact = static_cast<bool>(task);
+		}
+	}
+	CHECK(refused);
+	CHECK(refusedTaskIntact);
+	CHECK(queued > 0);
+	CHECK(ran.load() == 0); // nothing ran on this thread, and the worker is held
+
+	release.set_value();
+	pool.stop(); // drains what was queued
+	CHECK(ran.load() == queued);
 }
 
 TEST_CASE("WorkerPool: submit single tasks")

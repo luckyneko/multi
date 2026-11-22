@@ -32,24 +32,6 @@ namespace multi::details
 		return m_promise.get_future();
 	}
 
-	namespace
-	{
-		// Set while RecipeJob::schedule is inside m_submit. The submit runs the
-		// step's task inline on this thread when the pool is not running, is
-		// stopping or the target deque is full; runStep then finds its own job
-		// here and hands the step back to the frame that called schedule,
-		// instead of running it one level deeper on the stack. Only that task
-		// can run inside m_submit, so no step's callable ever sees this set,
-		// and the job check keeps a step of any other RecipeJob off the list.
-		struct InlineSubmit
-		{
-			const RecipeJob* job;
-			RecipeDeferredSteps* deferred;
-		};
-
-		thread_local const InlineSubmit* t_inlineSubmit = nullptr;
-	} // namespace
-
 	void RecipeJob::start()
 	{
 		Deferred deferred;
@@ -69,29 +51,19 @@ namespace multi::details
 
 	void RecipeJob::schedule(std::size_t index, Deferred& deferred)
 	{
-		const InlineSubmit submitting{this, &deferred};
-		struct Restore
-		{
-			const InlineSubmit* previous;
-			~Restore() { t_inlineSubmit = previous; }
-		} restore{t_inlineSubmit};
-		t_inlineSubmit = &submitting;
-
-		m_submit(Task([self = shared_from_this(), index]()
-					  { self->runStep(index); }));
+		// The submit either queues the task or says that it did not: the pool
+		// is not running, is stopping, or the target deque is full. It never
+		// runs the task, so nothing nests here. A step that was not queued
+		// stays with this frame's runner, which runs it once its current chain
+		// ends, however many steps that takes.
+		Task task([self = shared_from_this(), index]()
+				  { self->runStep(index); });
+		if (!m_submit(task))
+			defer(index, deferred);
 	}
 
 	void RecipeJob::runStep(std::size_t index) noexcept
 	{
-		const InlineSubmit* const submitting = t_inlineSubmit;
-		if (submitting != nullptr && submitting->job == this)
-		{
-			// Run inline by our own schedule(): the frame that called it runs
-			// the step once its current chain ends.
-			defer(index, *submitting->deferred);
-			return;
-		}
-
 		Deferred deferred;
 		runChain(index, deferred);
 		runDeferred(deferred);

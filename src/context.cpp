@@ -35,8 +35,8 @@ namespace multi
 	{
 		auto job = std::make_shared<details::RecipeJob>(
 			std::move(recipe),
-			[this](details::Task&& task)
-			{ m_workerPool.submit(std::move(task)); });
+			[this](details::Task& task)
+			{ return m_workerPool.trySubmit(task); });
 		auto future = job->getFuture();
 		job->start();
 		return RecipeHandle(Handle<>(std::move(future)), std::move(job));

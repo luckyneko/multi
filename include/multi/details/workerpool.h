@@ -44,6 +44,13 @@ namespace multi::details
 
 		void submit(Task&& task);
 
+		// Queue task on a worker's deque and wake per the parking protocol.
+		// False, with task untouched, when nothing was queued: the pool is not
+		// running, or the target deque is full. submit() runs the task inline
+		// in those cases; a caller that must not nest (RecipeJob) calls this
+		// and runs the task itself, later.
+		bool trySubmit(Task& task);
+
 		// gen(i) is called count times; Gen must be invocable as Task(size_t).
 		template <class Gen>
 		void submitBatch(size_t count, Gen&& gen);
@@ -76,8 +83,15 @@ namespace multi::details
 			return m_parkedCount.load(std::memory_order_relaxed) != 0;
 		}
 
-		// Push to worker idx; runs inline if deque is full. True if pushed (caller wakes).
+		// Push to worker idx without running anything. False, with task
+		// untouched, if the deque is full.
+		bool tryPush(size_t idx, Task& task);
+
+		// tryPush, or run the task inline if the deque is full. True if pushed.
 		bool pushOrRun(size_t idx, Task& task);
+
+		// After a push to worker idx: wake whoever should take the task.
+		void wakeAfterPush(size_t idx);
 		void runTask(Task& task) noexcept;
 
 	private:

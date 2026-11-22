@@ -151,9 +151,25 @@ namespace multi::details
 		}
 
 		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workerCount;
-		if (!pushOrRun(idx, task))
-			return; // deque full: ran inline, nothing queued
+		if (pushOrRun(idx, task)) // false: deque full, ran inline, nothing queued
+			wakeAfterPush(idx);
+	}
 
+	bool WorkerPool::trySubmit(Task& task)
+	{
+		std::unique_lock<OperationLock> op(m_opLock, std::try_to_lock);
+		if (!op)
+			return false;
+
+		const size_t idx = m_nextWorker.fetch_add(1, std::memory_order_relaxed) % m_workerCount;
+		if (!tryPush(idx, task))
+			return false;
+		wakeAfterPush(idx);
+		return true;
+	}
+
+	void WorkerPool::wakeAfterPush(size_t idx)
+	{
 		// Nobody parked: the target and every other worker are awake and will
 		// scan the deques before they park (see the parking protocol below).
 		if (!anyParkedAfterPush())
@@ -403,15 +419,19 @@ namespace multi::details
 		return false;
 	}
 
-	bool WorkerPool::pushOrRun(size_t idx, Task& task)
+	bool WorkerPool::tryPush(size_t idx, Task& task)
 	{
 		// Owner uses the SPSC Chase-Lev path; everyone else uses the MPMC
 		// overflow ring. Calling tryPushLocal from a non-owner is a data race.
+		// Both move from task only on success.
 		Worker& w = m_workers[idx];
 		const bool isOwner = w.thread.get_id() == std::this_thread::get_id();
-		const bool pushed = isOwner
-								? w.deque.tryPushLocal(std::move(task))
-								: w.deque.tryPushRemote(std::move(task));
+		return isOwner ? w.deque.tryPushLocal(std::move(task)) : w.deque.tryPushRemote(std::move(task));
+	}
+
+	bool WorkerPool::pushOrRun(size_t idx, Task& task)
+	{
+		const bool pushed = tryPush(idx, task);
 		if (!pushed)
 			runTask(task);
 		return pushed;
