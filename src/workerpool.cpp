@@ -13,41 +13,8 @@
 #include <mutex>
 #include <utility>
 
-#if defined(_WIN32)
-#	define WIN32_LEAN_AND_MEAN
-#	define NOMINMAX
-#	include <windows.h>
-#elif defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
-#	include <pthread.h>
-#endif
-
 namespace multi::details
 {
-	namespace
-	{
-		// macOS only names the current thread, so must be called from within
-		// the thread. Names must fit Linux's 16-byte limit.
-		void setCurrentThreadName(const char* name)
-		{
-#if defined(_WIN32)
-			// SetThreadDescription wants UTF-16; worker names are ASCII so a
-			// byte-to-wchar copy suffices. Available since Windows 10 1607.
-			wchar_t wname[32];
-			std::size_t i = 0;
-			for (; i + 1 < sizeof(wname) / sizeof(wname[0]) && name[i] != '\0'; ++i)
-				wname[i] = static_cast<wchar_t>(static_cast<unsigned char>(name[i]));
-			wname[i] = L'\0';
-			SetThreadDescription(GetCurrentThread(), wname);
-#elif defined(__APPLE__)
-			pthread_setname_np(name);
-#elif defined(__linux__) || defined(__ANDROID__)
-			pthread_setname_np(pthread_self(), name);
-#else
-			(void)name;
-#endif
-		}
-	} // namespace
-
 	WorkerPool::WorkerPool()
 		: m_workers()
 		, m_workerCount(0)

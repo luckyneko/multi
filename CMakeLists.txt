@@ -56,6 +56,7 @@ configure_file(
 add_library(${PROJECT_NAME} STATIC 
     src/context.cpp
     src/multi.cpp
+    src/platform.cpp
     src/recipe.cpp
     src/recipehandle.cpp
     src/recipejob.cpp

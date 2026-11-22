@@ -16,6 +16,7 @@
 #include <list>
 #include <map>
 #include <multi/context.h>
+#include <multi/details/platform.h>
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
@@ -24,38 +25,9 @@
 #include <utility>
 #include <vector>
 
-#if defined(_WIN32)
-#	define WIN32_LEAN_AND_MEAN
-#	define NOMINMAX
-#	include <windows.h>
-#else
-#	include <time.h>
-#endif
-
 namespace
 {
 	constexpr std::size_t DATA_SET_MAX_SIZE = 32;
-
-	// CPU time the calling thread has used so far, or a negative duration where
-	// the platform cannot tell.
-	std::chrono::microseconds threadCpuTime()
-	{
-#if defined(_WIN32)
-		FILETIME creation, exited, kernel, user;
-		if (!GetThreadTimes(GetCurrentThread(), &creation, &exited, &kernel, &user))
-			return std::chrono::microseconds(-1);
-		const auto hundredNs = [](const FILETIME& t)
-		{ return (static_cast<std::uint64_t>(t.dwHighDateTime) << 32) | t.dwLowDateTime; };
-		return std::chrono::microseconds(static_cast<std::int64_t>((hundredNs(kernel) + hundredNs(user)) / 10));
-#elif defined(CLOCK_THREAD_CPUTIME_ID)
-		timespec ts{};
-		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0)
-			return std::chrono::microseconds(-1);
-		return std::chrono::seconds(ts.tv_sec) + std::chrono::microseconds(ts.tv_nsec / 1000);
-#else
-		return std::chrono::microseconds(-1);
-#endif
-	}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -339,7 +311,7 @@ TEST_CASE("Context: a long wait still steals work that turns up late")
 
 TEST_CASE("Context: a long wait stops spinning")
 {
-	if (threadCpuTime().count() < 0)
+	if (multi::details::threadCpuTime().count() < 0)
 		SKIP("no per-thread CPU clock on this platform");
 
 	multi::Context context;
@@ -352,9 +324,9 @@ TEST_CASE("Context: a long wait stops spinning")
 		std::this_thread::sleep_for(LONG_TASK); });
 	awaitStart(started);
 	const auto wallStart = std::chrono::steady_clock::now();
-	const auto cpuStart = threadCpuTime();
+	const auto cpuStart = multi::details::threadCpuTime();
 	context.waitAll(hdl);
-	const auto cpu = threadCpuTime() - cpuStart;
+	const auto cpu = multi::details::threadCpuTime() - cpuStart;
 	const auto wall = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - wallStart);
 
 	// Spinning through the whole wait costs about as much CPU as wall time; backing
