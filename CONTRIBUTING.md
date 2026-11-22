@@ -10,17 +10,22 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CMake options (default ON when standalone, OFF when consumed via `add_subdirectory`):
+CMake options (default ON when standalone, OFF when consumed via `add_subdirectory`, except `MULTI_BUILD_DOCS`):
 
 - `MULTI_BUILD_TESTING` — builds `test-multi`
-- `MULTI_BUILD_BENCHMARK` — builds `bench-multi` (off by default; opt in with `-DMULTI_BUILD_BENCHMARK=ON`)
+- `MULTI_BUILD_BENCHMARK` — builds `bench-multi`
+- `MULTI_BUILD_EXAMPLES` — builds an `example-<name>` per file in [examples/](examples/)
+- `MULTI_BUILD_DOCS` — provides the `docs` target (needs Doxygen); OFF by default everywhere
 - `MULTI_INSTALL` — generates install/export rules
 - `MULTI_FORMAT` — provides the `format` / `format-check` targets, downloading the pinned clang-format at configure time
+- `MULTI_WARNINGS_AS_ERRORS` — builds the library with `/WX` (MSVC) or `-Werror` (Clang/GCC)
+
+A standalone build with a single-config generator defaults to `CMAKE_BUILD_TYPE=Release` when none is given.
 
 Single Catch2 test name:
 
 ```sh
-./build/test-multi "Context: reduce sums an integer vector across thread counts"
+./build/test-multi "Context: range int"
 ./build/test-multi -# "[some-tag]"
 ```
 
@@ -66,7 +71,7 @@ open build/docs/html/index.html   # macOS; use xdg-open on Linux
 ## Code style
 
 - C++17, Allman braces, **tabs** for indentation. The repo ships a [.clang-format](.clang-format); VS Code is configured to format on save. `cmake --build build --target format` rewrites the sources listed in [.clang-format-include](.clang-format-include) with the pinned clang-format, and `--target format-check` only reports what it would change. CI runs `format-check`, so a PR that fails it doesn't merge.
-- Strict warnings: `-Werror -Wall -Wextra` (Clang/GCC), `/WX /W4` (MSVC). PRs that warn don't merge.
+- Strict warnings on the library: `-Werror -Wall -Wextra` (Clang/GCC), `/WX /W4` (MSVC). Warnings are errors through `MULTI_WARNINGS_AS_ERRORS`, which is on for standalone builds and so in CI. PRs that warn don't merge.
 - `#pragma once` for header guards (not `_MULTI_*_H_` — those are reserved identifiers per `[lex.name]`).
 - Public headers should not transitively pull in heavy STL headers if it can be avoided. The non-template implementation lives in `src/`.
 - Comments explain *why*, not *what*. The architecture is documented in [CLAUDE.md](CLAUDE.md) — keep it in sync when changing dispatch or scheduling semantics.

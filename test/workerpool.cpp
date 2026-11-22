@@ -9,10 +9,38 @@
 #include <atomic>
 #include <catch2/catch_all.hpp>
 #include <chrono>
+#include <cstddef>
 #include <future>
+#include <memory>
 #include <multi/details/workerpool.h>
 #include <thread>
+#include <utility>
 #include <vector>
+
+#include "support.h"
+
+namespace
+{
+	// How long a parked worker may take to be woken and run a task. Generous
+	// for sanitizer builds under ctest -j; a passing run never waits this long.
+	constexpr auto k_wakeTimeout = std::chrono::seconds(2);
+
+	// Time for started or just-finished workers to reach cv.wait. Only the
+	// unfixed pool depends on it to fail (a worker that has not parked yet
+	// still scans the deques); the fixed pool passes whether or not they have.
+	constexpr auto k_parkDelay = std::chrono::milliseconds(50);
+
+	// One task through submit() or submitBatch(1, ...): either consumes
+	// exactly one round-robin slot, so the slot arithmetic holds for both.
+	void submitOne(multi::details::WorkerPool& pool, multi::details::Task&& task, bool batch)
+	{
+		if (batch)
+			pool.submitBatch(1, [&task](size_t)
+							 { return std::move(task); });
+		else
+			pool.submit(std::move(task));
+	}
+} // namespace
 
 TEST_CASE("WorkerPool: submit runs inline when not started")
 {
@@ -48,6 +76,103 @@ TEST_CASE("WorkerPool: submit runs inline after stop")
 	pool.submit([&value]()
 				{ value += 2; });
 	CHECK(value == 45);
+}
+
+// ---------------------------------------------------------------------------
+// trySubmit: queue or report, never run. submit() runs a task inline when it
+// cannot queue it; a caller that must not nest (RecipeJob) uses trySubmit and
+// keeps the task.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("WorkerPool: trySubmit queues nothing when not started")
+{
+	multi::details::WorkerPool pool;
+
+	bool ran = false;
+	multi::details::Task task([&ran]()
+							  { ran = true; });
+	CHECK_FALSE(pool.trySubmit(task));
+	CHECK_FALSE(ran);
+
+	// Untouched: still the caller's to run.
+	REQUIRE(static_cast<bool>(task));
+	task();
+	CHECK(ran);
+}
+
+TEST_CASE("WorkerPool: trySubmit queues nothing after stop")
+{
+	multi::details::WorkerPool pool;
+	pool.start(2);
+	pool.stop();
+
+	bool ran = false;
+	multi::details::Task task([&ran]()
+							  { ran = true; });
+	CHECK_FALSE(pool.trySubmit(task));
+	CHECK_FALSE(ran);
+	CHECK(static_cast<bool>(task));
+}
+
+TEST_CASE("WorkerPool: trySubmit queues a task on a running pool")
+{
+	multi::details::WorkerPool pool;
+	pool.start(2);
+
+	std::promise<void> done;
+	auto doneFuture = done.get_future();
+	multi::details::Task task([&done]()
+							  { done.set_value(); });
+	CHECK(pool.trySubmit(task));
+	CHECK_FALSE(static_cast<bool>(task)); // moved into the deque
+
+	CHECK(doneFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+	pool.stop();
+}
+
+TEST_CASE("WorkerPool: trySubmit reports a full deque without running the task")
+{
+	multi::details::WorkerPool pool;
+	pool.start(1);
+
+	// Hold the only worker, so nothing drains its deque.
+	std::promise<void> release;
+	std::shared_future<void> released = release.get_future().share();
+	std::promise<void> holding;
+	auto holdingFuture = holding.get_future();
+	pool.submit([&holding, released]()
+				{
+		holding.set_value();
+		released.wait(); });
+	REQUIRE(holdingFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+
+	// Fill the worker's overflow ring from this thread until a push is refused.
+	std::atomic<std::size_t> ran(0);
+	std::size_t queued = 0;
+	bool refused = false;
+	bool refusedTaskIntact = false;
+	for (std::size_t i = 0; i < 100000 && !refused; ++i)
+	{
+		multi::details::Task task([&ran]()
+								  { ran.fetch_add(1); });
+		if (pool.trySubmit(task))
+		{
+			++queued;
+		}
+		else
+		{
+			refused = true;
+			refusedTaskIntact = static_cast<bool>(task);
+		}
+	}
+	CHECK(refused);
+	CHECK(refusedTaskIntact);
+	CHECK(queued > 0);
+	CHECK(ran.load() == 0); // nothing ran on this thread, and the worker is held
+
+	release.set_value();
+	pool.stop(); // drains what was queued
+	CHECK(ran.load() == queued);
 }
 
 TEST_CASE("WorkerPool: submit single tasks")
@@ -354,6 +479,111 @@ TEST_CASE("WorkerPool: external steal and stop race without touching freed worke
 
 		CHECK(totalRun.load(std::memory_order_relaxed) == numTasks);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Wakeups: a task whose round-robin target will not pick it up promptly must
+// wake a parked worker to steal it. Both cases pin tasks to slots through the
+// round-robin counter, which restarts at 0 on start(). Every wait is bounded
+// and every blocker is released, so a regression fails an assertion instead of
+// hanging the suite.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("WorkerPool: parked worker runs a task queued behind a busy worker")
+{
+	const bool batch = GENERATE(false, true);
+	CAPTURE(batch);
+
+	multi::details::WorkerPool pool;
+	pool.start(4);
+	std::this_thread::sleep_for(k_parkDelay); // all four reach cv.wait
+
+	std::promise<void> release;
+	std::shared_future<void> released = release.get_future().share();
+	std::atomic<bool> blockerRunning(false);
+	std::atomic<int> fillersDone(0);
+	std::atomic<bool> probeRan(false);
+
+	// Slot 0: blocks its worker until released. Wait until it is running
+	// before using slots 1..3, so no sibling can steal it off slot 0 first.
+	pool.submit([&blockerRunning, released]()
+				{
+		blockerRunning = true;
+		released.wait(); });
+	CHECK(support::waitFor([&blockerRunning]()
+						   { return blockerRunning.load(); },
+						   k_wakeTimeout));
+
+	// Slots 1..3: finish at once, so their workers park again.
+	for (int i = 0; i < 3; ++i)
+		pool.submit([&fillersDone]()
+					{ fillersDone.fetch_add(1); });
+	CHECK(support::waitFor([&fillersDone]()
+						   { return fillersDone.load() == 3; },
+						   k_wakeTimeout));
+	std::this_thread::sleep_for(k_parkDelay); // workers 1..3 park
+
+	// Slot 0 again: queued behind the blocker. One of the three parked
+	// workers must steal it while the blocker still holds worker 0.
+	submitOne(pool, multi::details::Task([&probeRan]()
+										 { probeRan = true; }),
+			  batch);
+	CHECK(support::waitFor([&]()
+						   { return probeRan.load(); },
+						   k_wakeTimeout));
+
+	release.set_value();
+	pool.stop();
+	CHECK(probeRan.load());
+}
+
+TEST_CASE("WorkerPool: nested task pushed to its own blocked worker is stolen")
+{
+	const bool batch = GENERATE(false, true);
+	CAPTURE(batch);
+
+	multi::details::WorkerPool pool;
+	pool.start(4);
+	std::this_thread::sleep_for(k_parkDelay); // all four reach cv.wait
+
+	std::atomic<bool> outerRunning(false);
+	std::atomic<int> fillersDone(0);
+	std::atomic<bool> nestedRanInTime(false);
+	auto outerDone = std::make_shared<std::promise<void>>();
+	auto outerDoneFuture = outerDone->get_future();
+
+	// Slot 0. Waits for its siblings to run their fillers and park, then
+	// submits a nested task that lands on slot 4 % 4 == 0 — its own deque,
+	// through the owner's local push — and blocks on it.
+	pool.submit([&pool, &outerRunning, &fillersDone, &nestedRanInTime, outerDone, batch]()
+				{
+		outerRunning = true;
+		support::waitFor([&fillersDone]()
+				{ return fillersDone.load() == 3; },
+				k_wakeTimeout);
+		std::this_thread::sleep_for(k_parkDelay); // workers 1..3 park
+
+		auto nested = std::make_shared<std::promise<void>>();
+		auto nestedFuture = nested->get_future();
+		submitOne(pool, multi::details::Task([nested]()
+											 { nested->set_value(); }),
+				  batch);
+		nestedRanInTime = nestedFuture.wait_for(k_wakeTimeout) == std::future_status::ready;
+		outerDone->set_value(); });
+
+	// Fill slots 1..3 only once the outer task is running, so no sibling can
+	// steal it off slot 0 first.
+	CHECK(support::waitFor([&outerRunning]()
+						   { return outerRunning.load(); },
+						   k_wakeTimeout));
+	for (int i = 0; i < 3; ++i)
+		pool.submit([&fillersDone]()
+					{ fillersDone.fetch_add(1); });
+
+	// The outer task's own waits are bounded, so it always finishes.
+	CHECK(outerDoneFuture.wait_for(4 * k_wakeTimeout) == std::future_status::ready);
+	pool.stop();
+	CHECK(nestedRanInTime.load());
 }
 
 // ---------------------------------------------------------------------------

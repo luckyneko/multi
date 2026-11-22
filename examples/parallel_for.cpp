@@ -1,10 +1,13 @@
 // parallel_for.cpp — multi::each and multi::range over containers + indices.
 //
 // Covers:
-//   - multi::each(begin, end, fn)            (per-item dispatch)
-//   - multi::each(chunkPolicy, begin, end, fn) (chunked)
-//   - multi::range(begin, end, fn)           (index range)
-//   - multi::range(chunkPolicy, b, e, step, fn) (chunked index range)
+//   - multi::each(begin, end, fn)            (chunked as multi::Auto)
+//   - multi::each(chunkPolicy, begin, end, fn) (explicit chunking)
+//   - multi::range(begin, end, fn)           (index range, chunked as multi::Auto)
+//   - multi::range(chunkPolicy, b, e, step, fn) (explicit chunking)
+//
+// Without a policy, each() and range() split the work into a few tasks per
+// thread. Pass multi::PerItem as the policy for one task per item.
 
 #include <multi/multi.h>
 
@@ -34,7 +37,7 @@ int main()
 	std::printf("each(16 chunks, 10k items): all set to 7 -> %s\n",
 				eachChunkOk ? "ok" : "FAIL");
 
-	// range — per-index dispatch, atomic accumulator
+	// range — every index once, atomic accumulator
 	std::atomic<int> sum(0);
 	multi::range(0, 100, [&](int i)
 				 { sum += i; });

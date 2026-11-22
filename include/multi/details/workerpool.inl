@@ -27,7 +27,6 @@ namespace multi::details
 
 		// Claim count consecutive round-robin slots in one atomic step.
 		const size_t base = m_nextWorker.fetch_add(count, std::memory_order_relaxed);
-		const std::thread::id callerId = std::this_thread::get_id();
 
 		for (size_t i = 0; i < count; ++i)
 		{
@@ -36,14 +35,30 @@ namespace multi::details
 			pushOrRun(idx, t);
 		}
 
-		// Notify at most one worker per unique slot; round-robin wraps after
-		// workerCount steps so min(count, workerCount) covers all recipients.
-		const size_t wakeCount = count < m_workerCount ? count : m_workerCount;
-		for (size_t i = 0; i < wakeCount; ++i)
+		// One fence for the whole batch: every push above is sequenced before
+		// it. Nobody parked means nobody to wake (see the parking protocol in
+		// workerpool.cpp).
+		if (!anyParkedAfterPush())
+			return;
+
+		// Wake each target slot's worker if it is parked; round-robin wraps
+		// after workerCount steps, so min(count, workerCount) covers them all.
+		// A target that is busy, or is the caller itself (its own local push),
+		// leaves its tasks queued behind running work: wake one other parked
+		// worker per such slot to steal them.
+		const std::thread::id callerId = std::this_thread::get_id();
+		const size_t targets = count < m_workerCount ? count : m_workerCount;
+		size_t unclaimed = 0;
+		for (size_t i = 0; i < targets; ++i)
 		{
 			const size_t idx = (base + i) % m_workerCount;
-			if (m_workers[idx].thread.get_id() != callerId)
-				workerNotify(idx);
+			if (m_workers[idx].thread.get_id() == callerId || !workerNotify(idx))
+				++unclaimed;
+		}
+		for (size_t i = 0; i < unclaimed; ++i)
+		{
+			if (!wakeOneParked(base + targets + i))
+				break;
 		}
 	}
 } // namespace multi::details

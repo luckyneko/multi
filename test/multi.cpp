@@ -12,7 +12,9 @@
 #include <chrono>
 #include <cstddef>
 #include <multi/multi.h>
+#include <mutex>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -190,7 +192,7 @@ TEST_CASE("multi: each over a container (range-based overload)")
 	for (int i = 0; i < 10; ++i)
 		v[static_cast<std::size_t>(i)] = i;
 
-	// 2-arg form: whole-container, one task per item — mirrors for(auto& x : v).
+	// 2-arg form: whole-container, chunked like multi::Auto — mirrors for(auto& x : v).
 	multi::each(v, [](int& x)
 				{ x *= 2; });
 
@@ -339,6 +341,52 @@ TEST_CASE("multi: each/range accept ChunkPolicy policies")
 					 { seen.push_back(i); });
 		CHECK(seen == v);
 	}
+
+	multi::stop();
+}
+
+TEST_CASE("multi: policy-less each and range chunk like multi::Auto")
+{
+	multi::start(2);
+
+	// A throw at item 0 skips the rest of chunk 0, whose length gives away the
+	// chunk count the global context picked. One task per item would skip nothing.
+	constexpr int total = 1000;
+	const std::size_t chunks = multi::Auto.resolve(total, multi::threadCount());
+	const int firstChunk = static_cast<int>(total / chunks + (total % chunks != 0 ? 1 : 0));
+	std::vector<int> expected{0};
+	for (int i = firstChunk; i < total; ++i)
+		expected.push_back(i);
+
+	std::vector<int> items(total);
+	for (int i = 0; i < total; ++i)
+		items[static_cast<std::size_t>(i)] = i;
+
+	const auto visitedWhenItemZeroThrows = [](const auto& dispatch)
+	{
+		std::mutex mutex;
+		std::vector<int> seen;
+		CHECK_THROWS_AS(dispatch([&](int i)
+								 {
+				{
+					const std::lock_guard<std::mutex> lock(mutex);
+					seen.push_back(i);
+				}
+				if (i == 0)
+					throw std::runtime_error("item 0"); }),
+						std::runtime_error);
+		std::sort(seen.begin(), seen.end());
+		return seen;
+	};
+
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ multi::range(0, total, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ multi::range(0, total, 1, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ multi::each(items.begin(), items.end(), f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ multi::each(items, f); }) == expected);
 
 	multi::stop();
 }

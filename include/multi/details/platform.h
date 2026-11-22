@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <new>
 
@@ -39,3 +40,27 @@ namespace multi
 #	define MULTI_BEGIN_CACHE_ALIGNED
 #	define MULTI_END_CACHE_ALIGNED
 #endif
+
+/*
+ * The library's OS-specific calls. They are defined in src/platform.cpp, the
+ * one source file that includes <windows.h> or <pthread.h>: add a new one
+ * here and there rather than putting an #if in the code that needs it.
+ */
+namespace multi::details
+{
+	/// Name the calling thread, for debuggers and profilers. Best-effort: a
+	/// failure is ignored. Pass a short ASCII name (Linux keeps 15 characters).
+	/// macOS can only name the current thread, so call this from inside it.
+	void setCurrentThreadName(const char* name) noexcept;
+
+	/// Sleep the calling thread for about @p d, as precisely as the platform
+	/// can. That is sleep_for everywhere but Windows, where sleep_for rounds up
+	/// to the system timer tick (~15.6 ms by default): there it waits on a
+	/// high-resolution timer, which wakes within about 0.5 ms, and falls back to
+	/// sleep_for where that timer does not exist (before Windows 10 1803).
+	void preciseSleep(std::chrono::microseconds d);
+
+	/// CPU time the calling thread has used so far, or a negative duration where
+	/// the platform cannot tell. Only the tests read it.
+	std::chrono::microseconds threadCpuTime() noexcept;
+} // namespace multi::details

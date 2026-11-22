@@ -43,7 +43,7 @@ Out of scope:
 
 - Performance regressions (file a normal issue or PR).
 - Misuse of the API in caller code (we'll happily document footguns, but they're not vulnerabilities).
-- Issues in vendored dependencies (Catch2 is fetched via `addcatch2.cmake`; report to upstream).
+- Issues in vendored dependencies (Catch2 is fetched with `FetchContent` in `CMakeLists.txt` when tests or benchmarks are built; report to upstream).
 
 ## Disclosure
 

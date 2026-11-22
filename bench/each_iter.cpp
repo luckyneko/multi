@@ -48,7 +48,7 @@ TEST_CASE("each_iter", "[bench][fast]")
 		std::vector<uint64_t> v(1000);
 		for (size_t i = 0; i < v.size(); ++i)
 			v[i] = i + 1;
-		BENCHMARK("multi(items)") { multi::each(v.begin(), v.end(), bodyVec); };
+		BENCHMARK("multi(items)") { multi::each(multi::PerItem, v.begin(), v.end(), bodyVec); };
 		const size_t chunks = bench::chunkCount(static_cast<int>(v.size()));
 		BENCHMARK("multi(chunks)") { multi::each(chunks, v.begin(), v.end(), bodyVec); };
 		REQUIRE(v.back() != 0);
@@ -59,7 +59,7 @@ TEST_CASE("each_iter", "[bench][fast]")
 		std::vector<uint64_t> v(50000);
 		for (size_t i = 0; i < v.size(); ++i)
 			v[i] = i + 1;
-		BENCHMARK("multi(items)") { multi::each(v.begin(), v.end(), bodyVec); };
+		BENCHMARK("multi(items)") { multi::each(multi::PerItem, v.begin(), v.end(), bodyVec); };
 		const size_t chunks = bench::chunkCount(static_cast<int>(v.size()));
 		BENCHMARK("multi(chunks)") { multi::each(chunks, v.begin(), v.end(), bodyVec); };
 		REQUIRE(v.back() != 0);
@@ -70,7 +70,7 @@ TEST_CASE("each_iter", "[bench][fast]")
 		std::map<int, uint64_t> m;
 		for (int i = 0; i < 1000; ++i)
 			m.emplace(i, static_cast<uint64_t>(i + 1));
-		BENCHMARK("multi(items)") { multi::each(m.begin(), m.end(), bodyMap); };
+		BENCHMARK("multi(items)") { multi::each(multi::PerItem, m.begin(), m.end(), bodyMap); };
 		const size_t chunks = bench::chunkCount(static_cast<int>(m.size()));
 		BENCHMARK("multi(chunks)") { multi::each(chunks, m.begin(), m.end(), bodyMap); };
 		REQUIRE(m.rbegin()->second != 0);
@@ -81,7 +81,7 @@ TEST_CASE("each_iter", "[bench][fast]")
 		std::map<int, uint64_t> m;
 		for (int i = 0; i < 50000; ++i)
 			m.emplace(i, static_cast<uint64_t>(i + 1));
-		BENCHMARK("multi(items)") { multi::each(m.begin(), m.end(), bodyMap); };
+		BENCHMARK("multi(items)") { multi::each(multi::PerItem, m.begin(), m.end(), bodyMap); };
 		const size_t chunks = bench::chunkCount(static_cast<int>(m.size()));
 		BENCHMARK("multi(chunks)") { multi::each(chunks, m.begin(), m.end(), bodyMap); };
 		REQUIRE(m.rbegin()->second != 0);

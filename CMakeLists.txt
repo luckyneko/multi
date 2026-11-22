@@ -10,8 +10,12 @@ if (CMAKE_BINARY_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     message(FATAL_ERROR "Building in-source is not supported! Create a build dir and remove ${CMAKE_SOURCE_DIR}/CMakeCache.txt")
 endif()
 
-# Default build release
-if(NOT CMAKE_BUILD_TYPE)
+# Default build release - but only when multi is the top-level project. CMAKE_BUILD_TYPE
+# is a single global cache entry, so forcing it from a vendored multi would pick the
+# parent's build type for it. Multi-config generators ignore it (the configuration is
+# chosen at build time), so leave it alone there too.
+get_property(MULTI_IS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT_SUBPROJECT AND NOT MULTI_IS_MULTI_CONFIG AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
 endif()
 
@@ -28,6 +32,7 @@ option(MULTI_BUILD_EXAMPLES "Build example programs" ${NOT_SUBPROJECT})
 option(MULTI_BUILD_DOCS "Build API documentation (requires doxygen)" OFF)
 option(MULTI_INSTALL "Generate install/export rules for multi" ${NOT_SUBPROJECT})
 option(MULTI_FORMAT "Provide clang-format format / format-check targets" ${NOT_SUBPROJECT})
+option(MULTI_WARNINGS_AS_ERRORS "Build multi with warnings as errors (/WX, -Werror)" ${NOT_SUBPROJECT})
 
 # clang-format `format` / `format-check` targets, over a vendored pinned binary. The
 # set of files is declared in .clang-format-include at the repo root.
@@ -51,9 +56,11 @@ configure_file(
 add_library(${PROJECT_NAME} STATIC 
     src/context.cpp
     src/multi.cpp
+    src/platform.cpp
     src/recipe.cpp
     src/recipehandle.cpp
     src/recipejob.cpp
+    src/waitbackoff.cpp
     src/workstealdeque.cpp
     src/workerpool.cpp
 )
@@ -71,11 +78,20 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     # C4324 (alignas() padded the struct) is suppressed at the DECLARATION instead, via
     # MULTI_BEGIN/END_CACHE_ALIGNED in details/platform.h - a flag here covered multi's own
     # sources and left every consumer of the headers to trip over it.
-    $<$<CXX_COMPILER_ID:MSVC>:/WX;/W4>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
 
     # Clang / GCC Flags
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror;-Wall;-Wextra>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall;-Wextra>
 )
+
+# Warnings as errors: on for multi's own builds (and so for CI), off by default when
+# vendored, where a new warning from the consumer's compiler must not break their build.
+if(MULTI_WARNINGS_AS_ERRORS)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/WX>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror>
+    )
+endif()
 
 # Namespaced alias so consumers can always write multi::multi regardless of
 # whether they got the target via add_subdirectory or find_package.
@@ -109,8 +125,6 @@ if(MULTI_BUILD_TESTING)
         test/workerpool.cpp
     )
     target_link_libraries(test-${PROJECT_NAME} ${PROJECT_NAME} Catch2::Catch2WithMain)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE MULTI_ENABLE_TEST_HOOKS)
-    target_compile_definitions(test-${PROJECT_NAME} PRIVATE MULTI_ENABLE_TEST_HOOKS)
     catch_discover_tests(test-${PROJECT_NAME} TEST_PREFIX "(${PROJECT_NAME}) ")
 endif()
 

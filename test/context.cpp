@@ -16,6 +16,7 @@
 #include <list>
 #include <map>
 #include <multi/context.h>
+#include <multi/details/platform.h>
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
@@ -24,10 +25,16 @@
 #include <utility>
 #include <vector>
 
+#include "support.h"
+
 namespace
 {
 	constexpr std::size_t DATA_SET_MAX_SIZE = 32;
-}
+
+	// Long enough to take a waiter well past details::WAIT_SPIN_TIME, into its
+	// sleeping phase (see the long-wait cases below).
+	constexpr auto LONG_TASK = std::chrono::milliseconds(300);
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Context API behaviour — one TEST_CASE per dispatch shape. Thread counts are
@@ -189,6 +196,141 @@ TEST_CASE("Context: parallel rethrows first exception and runs siblings")
 	context.stop();
 }
 
+// ---------------------------------------------------------------------------
+// Long waits. A waiter with nothing to steal spins for a bounded phase and then
+// backs off to sleeping between steal attempts (details::WAIT_SPIN_TIME). These
+// waits run well past that phase; they check results and stealing, not timing.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: waitAll and waitUntil return the result of a long task")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<bool> valueStarted(false);
+	auto value = context.async([&]()
+							   {
+		valueStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		return 42; });
+	support::awaitFlag(valueStarted);
+	context.waitAll(value);
+	int v = 0;
+	REQUIRE(value.get(&v));
+	CHECK(v == 42);
+
+	int payload = 0;
+	std::atomic<bool> setterStarted(false), ready(false);
+	auto setter = context.async([&]()
+								{
+		setterStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		payload = 7;
+		ready.store(true, std::memory_order_release); });
+	support::awaitFlag(setterStarted);
+	context.waitUntil([&]()
+					  { return ready.load(std::memory_order_acquire); });
+	CHECK(payload == 7);
+	context.waitAll(setter);
+
+	context.stop();
+}
+
+TEST_CASE("Context: parallel returns once a long sibling finishes")
+{
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<int> ran(0);
+	std::atomic<bool> slowStarted(false);
+	const auto slow = [&]()
+	{
+		slowStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		ran += 1;
+	};
+
+	// Two tasks take runQueueJob's count == 2 path: task 0 goes to a worker and
+	// task 1 runs on the caller, which here holds on until a worker has task 0,
+	// so the caller is left waiting on it.
+	context.parallel(slow, [&]()
+					 {
+		support::awaitFlag(slowStarted);
+		ran += 10; });
+	CHECK(ran == 11);
+
+	// More than two take the batch path.
+	ran = 0;
+	const auto fast = [&]()
+	{ ran += 10; };
+	context.parallel(slow, fast, fast, fast);
+	CHECK(ran == 31);
+
+	context.stop();
+}
+
+TEST_CASE("Context: a long wait still steals work that turns up late")
+{
+	// The sole worker stays busy past the spin phase, so by the time it queues the
+	// inner task the caller has backed off to sleeping. Only the caller can run
+	// it: the worker just polls inner.complete(), which never steals.
+	multi::Context context;
+	context.start(1);
+
+	const std::thread::id caller = std::this_thread::get_id();
+	std::atomic<bool> outerStarted(false);
+	auto outer = context.async([&]()
+							   {
+		outerStarted.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK);
+		auto inner = context.async([]()
+								   { return std::this_thread::get_id(); });
+		// Bounded, so a waiter that stopped stealing fails the check below
+		// instead of hanging the suite.
+		support::waitFor([&inner]()
+						 { return inner.complete(); },
+						 std::chrono::seconds(10));
+		std::thread::id ranOn;
+		return inner.get(&ranOn) ? ranOn : std::thread::id(); });
+	support::awaitFlag(outerStarted);
+	context.waitAll(outer);
+
+	std::thread::id innerRanOn;
+	REQUIRE(outer.get(&innerRanOn));
+	CHECK(innerRanOn == caller);
+
+	context.stop();
+}
+
+TEST_CASE("Context: a long wait stops spinning")
+{
+	if (multi::details::threadCpuTime().count() < 0)
+		SKIP("no per-thread CPU clock on this platform");
+
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<bool> started(false);
+	auto hdl = context.async([&]()
+							 {
+		started.store(true, std::memory_order_release);
+		std::this_thread::sleep_for(LONG_TASK); });
+	support::awaitFlag(started);
+	const auto wallStart = std::chrono::steady_clock::now();
+	const auto cpuStart = multi::details::threadCpuTime();
+	context.waitAll(hdl);
+	const auto cpu = multi::details::threadCpuTime() - cpuStart;
+	const auto wall = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - wallStart);
+
+	// Spinning through the whole wait costs about as much CPU as wall time; backing
+	// off costs about the spin phase. Half is far from both, so load and
+	// sanitizers do not move the result across it.
+	CAPTURE(cpu.count(), wall.count());
+	CHECK(cpu < wall / 2);
+
+	context.stop();
+}
+
 TEST_CASE("Context: each over vector")
 {
 	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
@@ -326,6 +468,145 @@ TEST_CASE("Context: each/range ChunkPolicy policies on a local pool")
 	CHECK(rangeSum == expected);
 
 	context.stop();
+}
+
+// ---------------------------------------------------------------------------
+// The policy-less each() / range() overloads chunk like multi::Auto.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Context: policy-less each and range chunk like Auto")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	// A throw ends the rest of its chunk, so a throw at item 0 skips exactly the
+	// rest of chunk 0, and how many that is follows from the chunk count. One
+	// task per item would skip nothing.
+	constexpr int total = 1000;
+	const std::size_t chunks = multi::Auto.resolve(total, context.threadCount());
+	const int firstChunk = static_cast<int>(total / chunks + (total % chunks != 0 ? 1 : 0));
+	REQUIRE(firstChunk > 1);
+
+	std::vector<int> expected{0};
+	for (int i = firstChunk; i < total; ++i)
+		expected.push_back(i);
+
+	const auto visitedWhenItemZeroThrows = [](const auto& dispatch)
+	{
+		std::mutex mutex;
+		std::vector<int> seen;
+		CHECK_THROWS_AS(dispatch([&](int i)
+								 {
+				{
+					const std::lock_guard<std::mutex> lock(mutex);
+					seen.push_back(i);
+				}
+				if (i == 0)
+					throw std::runtime_error("item 0"); }),
+						std::runtime_error);
+		std::sort(seen.begin(), seen.end());
+		return seen;
+	};
+
+	std::vector<int> items(total);
+	std::iota(items.begin(), items.end(), 0);
+	const std::list<int> listed(items.begin(), items.end());
+
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.range(0, total, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.range(0, total, 1, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(items.begin(), items.end(), f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(items, f); }) == expected);
+	CHECK(visitedWhenItemZeroThrows([&](const auto& f)
+									{ context.each(listed, f); }) == expected);
+
+	context.stop();
+}
+
+TEST_CASE("Context: policy-less each and range visit every item exactly once")
+{
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(4));
+	multi::Context context;
+	context.start(threadCount);
+
+	constexpr int total = 10000;
+	std::vector<std::atomic<int>> hits(total);
+	const auto countOnce = [&](const auto& dispatch)
+	{
+		for (auto& h : hits)
+			h.store(0);
+		dispatch([&](int i)
+				 { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+		return std::all_of(hits.begin(), hits.end(), [](const std::atomic<int>& h)
+						   { return h.load() == 1; });
+	};
+
+	std::vector<int> items(total);
+	std::iota(items.begin(), items.end(), 0);
+	const std::list<int> listed(items.begin(), items.end());
+
+	CHECK(countOnce([&](const auto& f)
+					{ context.range(0, total, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.range(0, total, 1, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(items.begin(), items.end(), f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(items, f); }));
+	CHECK(countOnce([&](const auto& f)
+					{ context.each(listed, f); }));
+
+	// A stepped range visits every step-th index once and nothing in between.
+	for (auto& h : hits)
+		h.store(0);
+	context.range(0, total, 3, [&](int i)
+				  { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+	bool steppedOnce = true;
+	for (int i = 0; i < total; ++i)
+		steppedOnce = steppedOnce && hits[static_cast<std::size_t>(i)].load() == (i % 3 == 0 ? 1 : 0);
+	CHECK(steppedOnce);
+
+	context.stop();
+}
+
+TEST_CASE("Context: policy-less each and range on an inactive context run in order on the caller")
+{
+	// Never started: Auto still splits into chunks, and every one runs inline in
+	// turn. The recording is a plain vector, so TSAN would see a stray thread.
+	multi::Context context;
+
+	const std::thread::id caller = std::this_thread::get_id();
+	std::vector<int> seen;
+	bool onCaller = true;
+	const auto record = [&](int i)
+	{
+		seen.push_back(i);
+		onCaller = onCaller && std::this_thread::get_id() == caller;
+	};
+
+	std::vector<int> items(1000);
+	std::iota(items.begin(), items.end(), 0);
+
+	context.range(0, 1000, record);
+	CHECK(seen == items);
+	seen.clear();
+	context.each(items.begin(), items.end(), record);
+	CHECK(seen == items);
+	seen.clear();
+	context.each(std::list<int>(items.begin(), items.end()), record);
+	CHECK(seen == items);
+	seen.clear();
+
+	context.range(0, 1000, 3, record);
+	std::vector<int> stepped;
+	for (int i = 0; i < 1000; i += 3)
+		stepped.push_back(i);
+	CHECK(seen == stepped);
+	CHECK(onCaller);
 }
 
 TEST_CASE("Context: range int")
@@ -581,6 +862,36 @@ TEST_CASE("Context: range stays in bounds at the top of an unsigned type")
 	const std::size_t top = std::numeric_limits<std::size_t>::max();
 	CHECK(visited(std::size_t{0}, top, top - 1) == std::vector<std::size_t>{0, top - 1});
 	CHECK(visited(top - 4, top, std::size_t{3}) == std::vector<std::size_t>{top - 4, top - 1});
+
+	context.stop();
+}
+
+TEMPLATE_TEST_CASE("Context: range wider than a signed type's maximum", "", std::int8_t, std::int16_t, int, long long)
+{
+	// From the type's min to its max: end - begin does not fit the type, and nor
+	// does k * step for the upper half. A step of 2^(bits-4) keeps it to 16
+	// indices. int8_t and int16_t promote to int, so only int and long long
+	// overflowed before; under UBSan that is a report, elsewhere a wrong count.
+	auto policy = GENERATE(multi::ChunkPolicy(1), multi::ChunkPolicy(4), multi::Auto, multi::PerItem, multi::Serial);
+	multi::Context context;
+	context.start(2);
+
+	using Limits = std::numeric_limits<TestType>;
+	const TestType step = static_cast<TestType>(TestType(1) << (Limits::digits - 3));
+
+	std::vector<TestType> expected{Limits::min()};
+	while (expected.size() < 16)
+		expected.push_back(static_cast<TestType>(expected.back() + step));
+	REQUIRE(expected.back() > Limits::max() - step); // the 17th would pass the end
+
+	std::mutex mutex;
+	std::vector<TestType> seen;
+	context.range(policy, Limits::min(), Limits::max(), step, [&](TestType i)
+				  {
+		const std::lock_guard<std::mutex> lock(mutex);
+		seen.push_back(i); });
+	std::sort(seen.begin(), seen.end());
+	CHECK(seen == expected);
 
 	context.stop();
 }

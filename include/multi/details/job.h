@@ -31,10 +31,10 @@ namespace multi::details
 	 * Context::runQueueJob is templated on the concrete subclass so the call
 	 * resolves directly, no virtual indirection.
 	 *
-	 * A sync Job lives on the caller's stack; runQueueJob blocks until every
-	 * run() has completed, so the wrappers dispatched into worker deques never
-	 * outlive it. AsyncJob is the exception — heap-allocated via shared_ptr so
-	 * its wrapper can outlive the calling frame.
+	 * A Job lives on the caller's stack; runQueueJob blocks until every run()
+	 * has completed, so the wrappers dispatched into worker deques never outlive
+	 * it. Context::async needs none of this and uses AsyncJob below, which is
+	 * not a Job.
 	 */
 	class Job
 	{
@@ -75,7 +75,7 @@ namespace multi::details
 
 		// Run user code under try/catch, capture the first exception, and
 		// release-decrement the countdown (which publishes the exception to
-		// waiters). AsyncJob bypasses this — its exception path is the promise.
+		// waiters).
 		template <class F>
 		void runOne(F&& f) noexcept
 		{
@@ -99,26 +99,30 @@ namespace multi::details
 	};
 
 	/*
-	 * AsyncJob — single-task heap-allocated Job for Context::async, held in a
-	 * shared_ptr so its lifetime outlasts the calling frame. The exception path
-	 * goes through std::promise (observed via the Handle's future), not
-	 * Job::runOne, so the inherited m_remaining is unused. R is the functor's
-	 * return type (defaults to invoke_result_t<F>); void uses promise<void>.
+	 * AsyncJob — the single task behind Context::async. Not a Job: it has no
+	 * countdown and no captured exception, because its result or exception goes
+	 * through std::promise to the Handle's future, and it never passes through
+	 * runQueueJob. Held in a shared_ptr so it outlives the calling frame. R is
+	 * the functor's return type (defaults to invoke_result_t<F>); void uses
+	 * promise<void>.
 	 */
 	template <class F, class R = std::invoke_result_t<F>>
-	class AsyncJob : public Job
+	class AsyncJob
 	{
 	public:
 		template <class G>
 		explicit AsyncJob(G&& g)
-			: Job(1)
-			, m_func(std::forward<G>(g))
+			: m_func(std::forward<G>(g))
 		{
 		}
 
+		AsyncJob(const AsyncJob&) = delete;
+		AsyncJob& operator=(const AsyncJob&) = delete;
+
 		std::future<R> getFuture() { return m_promise.get_future(); }
 
-		void run(std::size_t /*i*/) noexcept
+		// Call the functor once, fulfilling the promise with its result or exception.
+		void run() noexcept
 		{
 			try
 			{
@@ -180,7 +184,8 @@ namespace multi::details
 	 * RangeJob. Iterator-category split via if constexpr: random-access
 	 * iterators store the begin iterator directly (no allocation); other
 	 * categories materialise a std::vector<T*> pointer table at construction.
-	 * Per-item each() resolves to PerItem here (one chunk per item).
+	 * A policy-less each() arrives here as multi::Auto; only an explicit
+	 * multi::PerItem gives one chunk per item.
 	 */
 	template <class ITER, class FUNC>
 	class EachJob : public Job
@@ -287,10 +292,32 @@ namespace multi::details
 			runOne([&]()
 				   {
 				for (std::size_t k = startIdx; k < startIdx + len; ++k)
-					(*m_func)(static_cast<IDX>(m_begin + static_cast<IDX>(k) * m_step)); });
+					(*m_func)(indexAt(k)); });
 		}
 
 	private:
+		// The k-th index, begin + k * step. A signed IDX can overflow on the way
+		// (from its min to its max, k * step passes the max halfway), so integers
+		// go through the unsigned type of the same width, where both steps are
+		// exact: k * step is below the span, and the sum lies in [begin, end).
+		// Narrow types promote to int in between, which cannot overflow for the
+		// same reason, so each result is cast straight back. The last cast to a
+		// signed IDX is modular, as every supported compiler does it and C++20
+		// requires, so it yields the true value.
+		IDX indexAt(std::size_t k) const noexcept
+		{
+			if constexpr (std::is_integral_v<IDX>)
+			{
+				using U = std::make_unsigned_t<IDX>;
+				const U offset = static_cast<U>(static_cast<U>(k) * static_cast<U>(m_step));
+				return static_cast<IDX>(static_cast<U>(static_cast<U>(m_begin) + offset));
+			}
+			else
+			{
+				return static_cast<IDX>(m_begin + static_cast<IDX>(k) * m_step);
+			}
+		}
+
 		struct Setup
 		{
 			IDX begin;
@@ -305,10 +332,15 @@ namespace multi::details
 				return 0;
 			if constexpr (std::is_integral_v<IDX>)
 			{
-				// Round up without `span + step - 1`, which wraps near the top of
-				// an unsigned type. auto: narrow types promote rather than truncate.
-				const auto span = end - begin;
-				return static_cast<std::size_t>(span / step) + (span % step != 0 ? std::size_t(1) : std::size_t(0));
+				// In the unsigned type of IDX's width, as in indexAt(): a signed
+				// end - begin can exceed IDX's max, but the true span always fits
+				// there. Narrow types promote to int in between, so the difference
+				// is cast straight back. Round up from the remainder, not with
+				// `span + step - 1`, which wraps near the top of the type.
+				using U = std::make_unsigned_t<IDX>;
+				const U span = static_cast<U>(static_cast<U>(end) - static_cast<U>(begin));
+				const U ustep = static_cast<U>(step);
+				return static_cast<std::size_t>(span / ustep) + (span % ustep != 0 ? std::size_t(1) : std::size_t(0));
 			}
 			else
 			{

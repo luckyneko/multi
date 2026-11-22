@@ -9,6 +9,7 @@
 #include "multi/recipe.h"
 
 #include <utility>
+#include <vector>
 
 namespace multi::details
 {
@@ -33,35 +34,75 @@ namespace multi::details
 
 	void RecipeJob::start()
 	{
+		Deferred deferred;
 		for (std::size_t i = 0; i < m_pending.size(); ++i)
 		{
 			if (m_pending[i].load(std::memory_order_relaxed) == 0)
 			{
 				if (tryMarkScheduled(i))
-					schedule(i);
+					schedule(i, deferred);
 			}
 		}
+		runDeferred(deferred);
 
 		if (m_remaining.load(std::memory_order_acquire) == 0)
 			complete();
 	}
 
-	void RecipeJob::schedule(std::size_t index)
+	void RecipeJob::schedule(std::size_t index, Deferred& deferred)
 	{
-		auto self = shared_from_this();
-		m_submit(Task([self, index]()
-					  { self->runStep(index); }));
+		// The submit either queues the task or says that it did not: the pool
+		// is not running, is stopping, or the target deque is full. It never
+		// runs the task, so nothing nests here. A step that was not queued
+		// stays with this frame's runner, which runs it once its current chain
+		// ends, however many steps that takes.
+		Task task([self = shared_from_this(), index]()
+				  { self->runStep(index); });
+		if (!m_submit(task))
+			defer(index, deferred);
 	}
 
 	void RecipeJob::runStep(std::size_t index) noexcept
 	{
+		Deferred deferred;
+		runChain(index, deferred);
+		runDeferred(deferred);
+	}
+
+	void RecipeJob::defer(std::size_t index, Deferred& deferred) noexcept
+	{
+		// index is Scheduled and not yet run, as is deferred.tail: both slots
+		// are free to hold links.
+		m_pending[index].store(Deferred::None, std::memory_order_relaxed);
+		if (deferred.tail == Deferred::None)
+			deferred.head = index;
+		else
+			m_pending[deferred.tail].store(index, std::memory_order_relaxed);
+		deferred.tail = index;
+	}
+
+	void RecipeJob::runChain(std::size_t index, Deferred& deferred) noexcept
+	{
 		std::size_t current = index;
 		std::size_t inlineSuccessor = 0;
-		while (runStepOnce(current, inlineSuccessor))
+		while (runStepOnce(current, inlineSuccessor, deferred))
 			current = inlineSuccessor;
 	}
 
-	bool RecipeJob::runStepOnce(std::size_t index, std::size_t& inlineSuccessor) noexcept
+	void RecipeJob::runDeferred(Deferred& deferred) noexcept
+	{
+		// A chain may defer more steps; this loop, not the stack, takes them.
+		while (deferred.head != Deferred::None)
+		{
+			const std::size_t index = deferred.head;
+			deferred.head = m_pending[index].load(std::memory_order_relaxed);
+			if (deferred.head == Deferred::None)
+				deferred.tail = Deferred::None;
+			runChain(index, deferred);
+		}
+	}
+
+	bool RecipeJob::runStepOnce(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred) noexcept
 	{
 		const bool succeeded = executeStep(index);
 
@@ -74,25 +115,32 @@ namespace multi::details
 			return false;
 		}
 
-		return scheduleReadySuccessors(index, inlineSuccessor);
+		return scheduleReadySuccessors(index, inlineSuccessor, deferred);
 	}
 
 	bool RecipeJob::executeStep(std::size_t index) noexcept
 	{
+		Task& task = m_graph.step(index).task;
+		bool succeeded = true;
 		try
 		{
-			m_graph.step(index).task();
-			return true;
+			task();
 		}
 		catch (...)
 		{
 			std::call_once(m_exceptionOnce, [this]()
 						   { m_firstException = std::current_exception(); });
-			return false;
+			succeeded = false;
 		}
+
+		// The step has run, so drop its callable and whatever it captured now
+		// rather than with the job, which a RecipeHandle keeps alive. This is
+		// before the step is counted, so a completed recipe holds no callable.
+		task = Task();
+		return succeeded;
 	}
 
-	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor)
+	bool RecipeJob::scheduleReadySuccessors(std::size_t index, std::size_t& inlineSuccessor, Deferred& deferred)
 	{
 		bool hasInlineSuccessor = false;
 		for (const std::size_t successor : m_graph.step(index).successors)
@@ -106,7 +154,7 @@ namespace multi::details
 					hasInlineSuccessor = true;
 				}
 				else
-					schedule(successor);
+					schedule(successor, deferred);
 			}
 		}
 		return hasInlineSuccessor;
@@ -120,8 +168,58 @@ namespace multi::details
 
 	void RecipeJob::skipSuccessors(std::size_t index) noexcept
 	{
-		for (const std::size_t successor : m_graph.step(index).successors)
-			skip(successor);
+		// Walks everything after index with an explicit stack, not recursion,
+		// so the stack stays flat however long the chain. Several threads can
+		// walk at once (two failing steps); skip()'s CAS gives each step to
+		// exactly one of them, and a walker only goes on from steps it won.
+		// The first step claimed from each visited step is walked next without
+		// touching the stack, so skipping a plain chain allocates nothing.
+		//
+		// The stack can fail to grow. Dropping the claimed step would leave
+		// its successors Pending and the recipe could never complete, and
+		// letting bad_alloc reach noexcept would terminate. Instead the step
+		// that could not be pushed is walked by a nested call. Chains still
+		// need no stack, so while memory stays short only branching steps
+		// nest: the walk may run deeper, but every step is still skipped.
+		std::vector<std::size_t> claimed;
+		std::size_t current = index;
+		for (;;)
+		{
+			bool hasNext = false;
+			std::size_t next = 0;
+			for (const std::size_t successor : m_graph.step(current).successors)
+			{
+				if (!skip(successor))
+					continue;
+				if (!hasNext)
+				{
+					next = successor;
+					hasNext = true;
+					continue;
+				}
+
+				bool pushed = true;
+				try
+				{
+					claimed.push_back(successor);
+				}
+				catch (...)
+				{
+					pushed = false;
+				}
+				if (!pushed)
+					skipSuccessors(successor);
+			}
+
+			if (!hasNext)
+			{
+				if (claimed.empty())
+					return;
+				next = claimed.back();
+				claimed.pop_back();
+			}
+			current = next;
+		}
 	}
 
 	std::size_t RecipeJob::stepCount() const noexcept
@@ -144,16 +242,17 @@ namespace multi::details
 		return static_cast<float>(finishedCount()) / static_cast<float>(total);
 	}
 
-	void RecipeJob::skip(std::size_t index) noexcept
+	bool RecipeJob::skip(std::size_t index) noexcept
 	{
 		int expected = Pending;
 		if (!m_state[index].compare_exchange_strong(expected, Finished, std::memory_order_acq_rel))
-			return;
+			return false;
 
+		// Winning the CAS makes the step ours, and it will never run: drop its
+		// callable before counting it, as executeStep does.
+		m_graph.step(index).task = Task();
 		finishOne();
-
-		for (const std::size_t successor : m_graph.step(index).successors)
-			skip(successor);
+		return true;
 	}
 
 	void RecipeJob::finishOne() noexcept

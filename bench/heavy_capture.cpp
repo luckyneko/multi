@@ -23,9 +23,8 @@ using namespace bench;
 // lambdas: by-value forces one heap allocation per chunk; by-reference keeps
 // the chunk lambda small enough to stay in SBO.
 //
-// The 'multi(items)' row routes through the non-chunked range overload
-// (which already captures &func) and serves as a control — it should not
-// move when the chunked overload's capture changes.
+// The 'multi(items)' row passes multi::PerItem, one task per item, and serves
+// as a control — it should not move when the chunk lambda's capture changes.
 // ---------------------------------------------------------------------------
 TEST_CASE("heavy_capture", "[bench][fast]")
 {

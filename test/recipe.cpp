@@ -5,13 +5,18 @@
  *  (See accompanying file LICENSE.md)
  */
 
+#include <array>
 #include <atomic>
 #include <catch2/catch_all.hpp>
+#include <chrono>
+#include <cstddef>
+#include <memory>
 #include <multi/multi.h>
 #include <multi/recipe.h>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace
 {
@@ -27,6 +32,27 @@ namespace
 		MoveOnlyVoid(MoveOnlyVoid&&) = default;
 		void operator()() const {}
 	};
+
+	// spineLength spine steps, each with one leaf. A spine step's successors
+	// are [its leaf, the next spine step], linked in that order, so the leaf
+	// is the successor the executor continues with on the same thread and the
+	// next spine step is the one it submits. Every step runs a copy of body.
+	template <class F>
+	multi::Recipe makeSpineWithLeaves(std::size_t spineLength, const F& body, bool& linked)
+	{
+		multi::Recipe recipe(2 * spineLength);
+		multi::Step previousSpine;
+		for (std::size_t i = 0; i < spineLength; ++i)
+		{
+			auto spine = recipe.step(body);
+			auto leaf = recipe.step(body);
+			linked = linked && recipe.order(spine >> leaf) == multi::RecipeResult::Ok;
+			if (previousSpine)
+				linked = linked && recipe.order(previousSpine >> spine) == multi::RecipeResult::Ok;
+			previousSpine = spine;
+		}
+		return recipe;
+	}
 
 } // namespace
 
@@ -408,4 +434,202 @@ TEST_CASE("Recipe: global async uses the global context")
 	CHECK(ran.load(std::memory_order_acquire) == 1);
 
 	multi::stop();
+}
+
+TEST_CASE("Recipe: inline run of a spine with leaves keeps the stack flat")
+{
+	// Never started, so every submit runs its task inline on this thread.
+	// Each spine step continues with its leaf and submits the next spine
+	// step; run inline, that submit must not nest one call per spine step.
+	// Sized so that nesting overflows a 1 MB stack in Debug and Release, and
+	// an 8 MB one under ASan.
+	constexpr std::size_t SpineLength = 100000;
+	multi::Context context;
+
+	std::atomic<std::size_t> ran{0};
+	bool linked = true;
+	auto recipe = makeSpineWithLeaves(
+		SpineLength, [&ran]()
+		{ ran.fetch_add(1, std::memory_order_relaxed); },
+		linked);
+	REQUIRE(linked);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	CHECK(h.complete());
+	CHECK(h.stepCount() == 2 * SpineLength);
+	CHECK(h.finishedCount() == 2 * SpineLength);
+	CHECK(ran.load(std::memory_order_relaxed) == 2 * SpineLength);
+	CHECK(h.get());
+}
+
+TEST_CASE("Recipe: a recipe launched from a step runs to completion inside it")
+{
+	// 0 threads: both recipes run inline on this thread, the inner one from
+	// inside a step of the outer one. 1 thread: the outer recipe runs on the
+	// worker, which drains the inner recipe through waitAll. Either way the
+	// inner recipe's steps belong to the inner run and must finish there,
+	// not be queued behind the step that launched it.
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(1));
+	multi::Context context;
+	context.start(static_cast<int>(threadCount));
+
+	constexpr std::size_t OuterSpine = 32;
+	constexpr std::size_t InnerSpine = 32;
+	std::atomic<std::size_t> outerRan{0};
+	std::atomic<std::size_t> innerRan{0};
+	std::atomic<int> errors{0};
+
+	auto innerBody = [&innerRan]()
+	{ innerRan.fetch_add(1, std::memory_order_relaxed); };
+	auto outerBody = [&]()
+	{
+		outerRan.fetch_add(1, std::memory_order_relaxed);
+		bool innerLinked = true;
+		auto inner = context.async(makeSpineWithLeaves(InnerSpine, innerBody, innerLinked));
+		context.waitAll(inner);
+		if (!innerLinked || !inner.complete() || inner.finishedCount() != inner.stepCount())
+			errors.fetch_add(1, std::memory_order_relaxed);
+	};
+
+	bool linked = true;
+	auto h = context.async(makeSpineWithLeaves(OuterSpine, outerBody, linked));
+	REQUIRE(linked);
+	REQUIRE(h.valid());
+	context.waitAll(h);
+	CHECK(h.finishedCount() == 2 * OuterSpine);
+	CHECK(outerRan.load(std::memory_order_relaxed) == 2 * OuterSpine);
+	CHECK(innerRan.load(std::memory_order_relaxed) == 2 * OuterSpine * 2 * InnerSpine);
+	CHECK(errors.load(std::memory_order_relaxed) == 0);
+	CHECK(h.get());
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: a failure at the head of a long chain skips the rest")
+{
+	// Skipping walks every step after the failed one. Sized so that a
+	// recursive walk overflows a 1 MB stack in Debug and Release, and an
+	// 8 MB one under ASan.
+	constexpr std::size_t ChainLength = 1000000;
+	multi::Context context;
+	context.start(2);
+
+	std::atomic<std::size_t> ran{0};
+	multi::Recipe recipe(ChainLength);
+	multi::Step previous = recipe.step([]()
+									   { throw std::runtime_error("chain head failed"); });
+	bool linked = true;
+	for (std::size_t i = 1; i < ChainLength; ++i)
+	{
+		auto next = recipe.step([&ran]()
+								{ ran.fetch_add(1, std::memory_order_relaxed); });
+		linked = linked && recipe.order(previous >> next) == multi::RecipeResult::Ok;
+		previous = next;
+	}
+	REQUIRE(linked);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	context.waitAll(h);
+	CHECK(h.stepCount() == ChainLength);
+	CHECK(h.finishedCount() == h.stepCount());
+	CHECK(ran.load(std::memory_order_relaxed) == 0);
+	CHECK_THROWS_AS(h.get(), std::runtime_error);
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: concurrent failures skip shared successors once")
+{
+	// Two failing steps walk the same successors at the same time; each
+	// successor must be claimed, and counted, by exactly one of them.
+	multi::Context context;
+	context.start(4);
+
+	constexpr std::size_t SharedCount = 2000;
+	std::atomic<int> entered{0};
+	std::atomic<std::size_t> ran{0};
+	auto failing = [&entered]()
+	{
+		// Line the two failures up so their walks overlap. Bounded, so the
+		// test still ends if the pool runs them one after the other.
+		entered.fetch_add(1, std::memory_order_acq_rel);
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+		while (entered.load(std::memory_order_acquire) < 2 && std::chrono::steady_clock::now() < deadline)
+			std::this_thread::yield();
+		throw std::runtime_error("recipe step failed");
+	};
+	auto counted = [&ran]()
+	{ ran.fetch_add(1, std::memory_order_relaxed); };
+
+	multi::Recipe recipe;
+	auto first = recipe.step(failing);
+	auto second = recipe.step(failing);
+	std::vector<multi::Step> shared;
+	shared.reserve(SharedCount);
+	bool linked = true;
+	for (std::size_t i = 0; i < SharedCount; ++i)
+	{
+		shared.push_back(recipe.step(counted));
+		linked = linked && recipe.order(first >> shared.back()) == multi::RecipeResult::Ok;
+		linked = linked && recipe.order(second >> shared.back()) == multi::RecipeResult::Ok;
+	}
+	auto join = recipe.step(counted);
+	for (const multi::Step& step : shared)
+		linked = linked && recipe.order(step >> join) == multi::RecipeResult::Ok;
+	REQUIRE(linked);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	context.waitAll(h);
+	CHECK(h.stepCount() == SharedCount + 3);
+	CHECK(h.finishedCount() == h.stepCount());
+	CHECK(ran.load(std::memory_order_relaxed) == 0);
+	CHECK_THROWS_AS(h.get(), std::runtime_error);
+
+	context.stop();
+}
+
+TEST_CASE("Recipe: steps release their callables before the run completes")
+{
+	// The handle keeps the run alive for progress reporting; what the steps
+	// captured must not live on with it. Covers a step that ran, one that
+	// threw and one skipped because of it, inline and on a pool. The
+	// throwing step's capture is too big for the inline buffer, so the
+	// heap-held callable is covered too.
+	auto threadCount = GENERATE(std::size_t(0), std::size_t(2));
+	multi::Context context;
+	context.start(static_cast<int>(threadCount));
+
+	auto ranToken = std::make_shared<int>(0);
+	auto threwToken = std::make_shared<int>(0);
+	auto skippedToken = std::make_shared<int>(0);
+
+	multi::Recipe recipe;
+	auto ran = recipe.step([token = ranToken]()
+						   { (void)token; });
+	auto threw = recipe.step([token = threwToken, padding = std::array<char, 64>{}]()
+							 {
+		(void)padding;
+		if (token)
+			throw std::runtime_error("recipe step failed"); });
+	auto skipped = recipe.step([token = skippedToken]()
+							   { (void)token; });
+	REQUIRE(recipe.order(ran >> threw) == multi::RecipeResult::Ok);
+	REQUIRE(recipe.order(threw >> skipped) == multi::RecipeResult::Ok);
+	REQUIRE(ranToken.use_count() == 2);
+	REQUIRE(threwToken.use_count() == 2);
+	REQUIRE(skippedToken.use_count() == 2);
+
+	auto h = context.async(std::move(recipe));
+	REQUIRE(h.valid());
+	h.wait();
+	CHECK(h.finishedCount() == 3);
+	CHECK(ranToken.use_count() == 1);
+	CHECK(threwToken.use_count() == 1);
+	CHECK(skippedToken.use_count() == 1);
+	CHECK_THROWS_AS(h.get(), std::runtime_error);
+
+	context.stop();
 }
