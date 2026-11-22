@@ -17,6 +17,31 @@
 #include <utility>
 #include <vector>
 
+#include "support.h"
+
+namespace
+{
+	// How long a parked worker may take to be woken and run a task. Generous
+	// for sanitizer builds under ctest -j; a passing run never waits this long.
+	constexpr auto k_wakeTimeout = std::chrono::seconds(2);
+
+	// Time for started or just-finished workers to reach cv.wait. Only the
+	// unfixed pool depends on it to fail (a worker that has not parked yet
+	// still scans the deques); the fixed pool passes whether or not they have.
+	constexpr auto k_parkDelay = std::chrono::milliseconds(50);
+
+	// One task through submit() or submitBatch(1, ...): either consumes
+	// exactly one round-robin slot, so the slot arithmetic holds for both.
+	void submitOne(multi::details::WorkerPool& pool, multi::details::Task&& task, bool batch)
+	{
+		if (batch)
+			pool.submitBatch(1, [&task](size_t)
+							 { return std::move(task); });
+		else
+			pool.submit(std::move(task));
+	}
+} // namespace
+
 TEST_CASE("WorkerPool: submit runs inline when not started")
 {
 	multi::details::WorkerPool pool;
@@ -463,43 +488,6 @@ TEST_CASE("WorkerPool: external steal and stop race without touching freed worke
 // and every blocker is released, so a regression fails an assertion instead of
 // hanging the suite.
 // ---------------------------------------------------------------------------
-namespace
-{
-	using WakeClock = std::chrono::steady_clock;
-
-	// How long a parked worker may take to be woken and run a task. Generous
-	// for sanitizer builds under ctest -j; a passing run never waits this long.
-	constexpr auto k_wakeTimeout = std::chrono::seconds(2);
-
-	// Time for started or just-finished workers to reach cv.wait. Only the
-	// unfixed pool depends on it to fail (a worker that has not parked yet
-	// still scans the deques); the fixed pool passes whether or not they have.
-	constexpr auto k_parkDelay = std::chrono::milliseconds(50);
-
-	template <class Pred>
-	bool waitFor(Pred pred, WakeClock::duration timeout)
-	{
-		const auto deadline = WakeClock::now() + timeout;
-		while (!pred())
-		{
-			if (WakeClock::now() >= deadline)
-				return false;
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-		return true;
-	}
-
-	// One task through submit() or submitBatch(1, ...): either consumes
-	// exactly one round-robin slot, so the slot arithmetic holds for both.
-	void submitOne(multi::details::WorkerPool& pool, multi::details::Task&& task, bool batch)
-	{
-		if (batch)
-			pool.submitBatch(1, [&task](size_t)
-							 { return std::move(task); });
-		else
-			pool.submit(std::move(task));
-	}
-} // namespace
 
 TEST_CASE("WorkerPool: parked worker runs a task queued behind a busy worker")
 {
@@ -522,17 +510,17 @@ TEST_CASE("WorkerPool: parked worker runs a task queued behind a busy worker")
 				{
 		blockerRunning = true;
 		released.wait(); });
-	CHECK(waitFor([&blockerRunning]()
-				  { return blockerRunning.load(); },
-				  k_wakeTimeout));
+	CHECK(support::waitFor([&blockerRunning]()
+						   { return blockerRunning.load(); },
+						   k_wakeTimeout));
 
 	// Slots 1..3: finish at once, so their workers park again.
 	for (int i = 0; i < 3; ++i)
 		pool.submit([&fillersDone]()
 					{ fillersDone.fetch_add(1); });
-	CHECK(waitFor([&fillersDone]()
-				  { return fillersDone.load() == 3; },
-				  k_wakeTimeout));
+	CHECK(support::waitFor([&fillersDone]()
+						   { return fillersDone.load() == 3; },
+						   k_wakeTimeout));
 	std::this_thread::sleep_for(k_parkDelay); // workers 1..3 park
 
 	// Slot 0 again: queued behind the blocker. One of the three parked
@@ -540,9 +528,9 @@ TEST_CASE("WorkerPool: parked worker runs a task queued behind a busy worker")
 	submitOne(pool, multi::details::Task([&probeRan]()
 										 { probeRan = true; }),
 			  batch);
-	CHECK(waitFor([&]()
-				  { return probeRan.load(); },
-				  k_wakeTimeout));
+	CHECK(support::waitFor([&]()
+						   { return probeRan.load(); },
+						   k_wakeTimeout));
 
 	release.set_value();
 	pool.stop();
@@ -570,7 +558,7 @@ TEST_CASE("WorkerPool: nested task pushed to its own blocked worker is stolen")
 	pool.submit([&pool, &outerRunning, &fillersDone, &nestedRanInTime, outerDone, batch]()
 				{
 		outerRunning = true;
-		waitFor([&fillersDone]()
+		support::waitFor([&fillersDone]()
 				{ return fillersDone.load() == 3; },
 				k_wakeTimeout);
 		std::this_thread::sleep_for(k_parkDelay); // workers 1..3 park
@@ -585,9 +573,9 @@ TEST_CASE("WorkerPool: nested task pushed to its own blocked worker is stolen")
 
 	// Fill slots 1..3 only once the outer task is running, so no sibling can
 	// steal it off slot 0 first.
-	CHECK(waitFor([&outerRunning]()
-				  { return outerRunning.load(); },
-				  k_wakeTimeout));
+	CHECK(support::waitFor([&outerRunning]()
+						   { return outerRunning.load(); },
+						   k_wakeTimeout));
 	for (int i = 0; i < 3; ++i)
 		pool.submit([&fillersDone]()
 					{ fillersDone.fetch_add(1); });

@@ -25,9 +25,15 @@
 #include <utility>
 #include <vector>
 
+#include "support.h"
+
 namespace
 {
 	constexpr std::size_t DATA_SET_MAX_SIZE = 32;
+
+	// Long enough to take a waiter well past details::WAIT_SPIN_TIME, into its
+	// sleeping phase (see the long-wait cases below).
+	constexpr auto LONG_TASK = std::chrono::milliseconds(300);
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -196,19 +202,6 @@ TEST_CASE("Context: parallel rethrows first exception and runs siblings")
 // waits run well past that phase; they check results and stealing, not timing.
 // ---------------------------------------------------------------------------
 
-namespace
-{
-	constexpr auto LONG_TASK = std::chrono::milliseconds(300);
-
-	// Spin, without stealing, until a task flags that a worker has picked it up.
-	// A waiter that steals could otherwise take the long task and run it itself.
-	void awaitStart(const std::atomic<bool>& started)
-	{
-		while (!started.load(std::memory_order_acquire))
-			std::this_thread::yield();
-	}
-} // namespace
-
 TEST_CASE("Context: waitAll and waitUntil return the result of a long task")
 {
 	multi::Context context;
@@ -220,7 +213,7 @@ TEST_CASE("Context: waitAll and waitUntil return the result of a long task")
 		valueStarted.store(true, std::memory_order_release);
 		std::this_thread::sleep_for(LONG_TASK);
 		return 42; });
-	awaitStart(valueStarted);
+	support::awaitFlag(valueStarted);
 	context.waitAll(value);
 	int v = 0;
 	REQUIRE(value.get(&v));
@@ -234,7 +227,7 @@ TEST_CASE("Context: waitAll and waitUntil return the result of a long task")
 		std::this_thread::sleep_for(LONG_TASK);
 		payload = 7;
 		ready.store(true, std::memory_order_release); });
-	awaitStart(setterStarted);
+	support::awaitFlag(setterStarted);
 	context.waitUntil([&]()
 					  { return ready.load(std::memory_order_acquire); });
 	CHECK(payload == 7);
@@ -262,7 +255,7 @@ TEST_CASE("Context: parallel returns once a long sibling finishes")
 	// so the caller is left waiting on it.
 	context.parallel(slow, [&]()
 					 {
-		awaitStart(slowStarted);
+		support::awaitFlag(slowStarted);
 		ran += 10; });
 	CHECK(ran == 11);
 
@@ -294,12 +287,12 @@ TEST_CASE("Context: a long wait still steals work that turns up late")
 								   { return std::this_thread::get_id(); });
 		// Bounded, so a waiter that stopped stealing fails the check below
 		// instead of hanging the suite.
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-		while (!inner.complete() && std::chrono::steady_clock::now() < deadline)
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		support::waitFor([&inner]()
+						 { return inner.complete(); },
+						 std::chrono::seconds(10));
 		std::thread::id ranOn;
 		return inner.get(&ranOn) ? ranOn : std::thread::id(); });
-	awaitStart(outerStarted);
+	support::awaitFlag(outerStarted);
 	context.waitAll(outer);
 
 	std::thread::id innerRanOn;
@@ -322,7 +315,7 @@ TEST_CASE("Context: a long wait stops spinning")
 							 {
 		started.store(true, std::memory_order_release);
 		std::this_thread::sleep_for(LONG_TASK); });
-	awaitStart(started);
+	support::awaitFlag(started);
 	const auto wallStart = std::chrono::steady_clock::now();
 	const auto cpuStart = multi::details::threadCpuTime();
 	context.waitAll(hdl);
